@@ -23,8 +23,6 @@ export interface AgentRunResult {
   readonly steps: 1 | 2;
 }
 
-export type ActorContextProvider = () => TrustedToolContext;
-
 export interface OrchestrationLogger {
   info(bindings: object, message: string): void;
   error(bindings: object, message: string): void;
@@ -33,7 +31,6 @@ export interface OrchestrationLogger {
 export interface AgentToolOrchestratorDependencies {
   readonly agentClient: AgentServiceClient;
   readonly toolClient: ToolServiceClient;
-  readonly actorContextProvider: ActorContextProvider;
   readonly logger?: OrchestrationLogger;
 }
 
@@ -47,6 +44,7 @@ export class AgentToolOrchestrator {
   public async run(
     request: AgentRunRequest,
     requestId: string,
+    authorizationContext: TrustedToolContext,
   ): Promise<AgentRunResult> {
     const startedAt = performance.now();
     const initial = await this.dependencies.agentClient.respond(
@@ -63,6 +61,7 @@ export class AgentToolOrchestrator {
       request,
       initial.plan,
       requestId,
+      authorizationContext,
       startedAt,
     );
   }
@@ -71,12 +70,13 @@ export class AgentToolOrchestrator {
     request: AgentRunRequest,
     plan: ToolPlan,
     requestId: string,
+    authorizationContext: TrustedToolContext,
     startedAt: number,
   ): Promise<AgentRunResult> {
     const proposal = plan.tool;
     const toolResult = await this.dependencies.toolClient.execute(
       { tool: proposal.name, input: proposal.input },
-      this.dependencies.actorContextProvider(),
+      authorizationContext,
       requestId,
     );
 

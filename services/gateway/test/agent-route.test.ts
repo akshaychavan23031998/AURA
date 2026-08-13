@@ -4,6 +4,10 @@ import { createApp } from "../src/app/create-app.js";
 import type { AgentServiceClient } from "../src/clients/agent/agent-service-client.js";
 import type { ToolServiceClient } from "../src/clients/tools/tool-service-client.js";
 import { testConfig } from "./test-config.js";
+import {
+  testAuthorizationHeader,
+  testTokenVerifier,
+} from "./auth-test-helpers.js";
 
 function createClient(): {
   client: AgentServiceClient;
@@ -23,11 +27,15 @@ function createClient(): {
 describe("POST /api/v1/agent/respond", () => {
   it("forwards the public request and returns the plan", async () => {
     const { client: agentClient, respond } = createClient();
-    const app = await createApp({ config: testConfig, agentClient });
+    const app = await createApp({
+      config: testConfig,
+      agentClient,
+      tokenVerifier: testTokenVerifier,
+    });
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/agent/respond",
-      headers: { "x-request-id": "request-1" },
+      headers: { ...testAuthorizationHeader, "x-request-id": "request-1" },
       payload: { message: "hello", locale: "en-IN" },
     });
     expect(response.statusCode).toBe(200);
@@ -43,10 +51,15 @@ describe("POST /api/v1/agent/respond", () => {
 
   it("rejects privileged fields before calling the Agent", async () => {
     const { client: agentClient, respond } = createClient();
-    const app = await createApp({ config: testConfig, agentClient });
+    const app = await createApp({
+      config: testConfig,
+      agentClient,
+      tokenVerifier: testTokenVerifier,
+    });
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/agent/respond",
+      headers: testAuthorizationHeader,
       payload: {
         message: "echo hello",
         grantedPermissions: ["system.echo"],
@@ -71,11 +84,15 @@ describe("POST /api/v1/agent/run", () => {
       config: testConfig,
       agentClient,
       toolClient,
+      tokenVerifier: testTokenVerifier,
     });
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/agent/run",
-      headers: { "x-request-id": "orchestration-route-1" },
+      headers: {
+        ...testAuthorizationHeader,
+        "x-request-id": "orchestration-route-1",
+      },
       payload: { message: "hello" },
     });
     expect(response.statusCode).toBe(200);
@@ -108,10 +125,12 @@ describe("POST /api/v1/agent/run", () => {
       config: testConfig,
       agentClient,
       toolClient: { execute },
+      tokenVerifier: testTokenVerifier,
     });
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/agent/run",
+      headers: testAuthorizationHeader,
       payload,
     });
     expect(response.statusCode).toBe(400);

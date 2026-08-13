@@ -5,7 +5,7 @@ import { testConfig } from "./test-config.js";
 
 const request = { tool: "system.echo", input: { message: "hello" } };
 const context = {
-  actorId: "local-dev-user",
+  actorId: "tool-client-test-user",
   grantedPermissions: ["system.echo"],
 };
 

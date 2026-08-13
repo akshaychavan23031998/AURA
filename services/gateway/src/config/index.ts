@@ -1,4 +1,4 @@
-import { parseEnvironment } from "./env.js";
+import { parseAuthEnvironment, parseEnvironment } from "./env.js";
 
 const DEVELOPMENT_DEFAULTS = {
   NODE_ENV: "development",
@@ -9,7 +9,17 @@ const DEVELOPMENT_DEFAULTS = {
   TOOLS_SERVICE_TIMEOUT_MS: "3000",
   AGENT_SERVICE_URL: "http://localhost:8001",
   AGENT_SERVICE_TIMEOUT_MS: "5000",
+  AUTH_JWT_ISSUER: "aura-gateway",
+  AUTH_JWT_AUDIENCE: "aura-api",
+  AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
 } as const;
+
+export interface AuthConfig {
+  readonly secret: string;
+  readonly issuer: string;
+  readonly audience: string;
+  readonly accessTokenTtlSeconds: number;
+}
 
 export interface GatewayConfig {
   readonly runtime: {
@@ -34,6 +44,22 @@ export interface GatewayConfig {
     readonly token: string;
     readonly timeoutMs: number;
   };
+  readonly auth: AuthConfig;
+}
+
+export function loadAuthConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): AuthConfig {
+  const parsed = parseAuthEnvironment({
+    ...DEVELOPMENT_DEFAULTS,
+    ...environment,
+  });
+  return Object.freeze({
+    secret: parsed.AUTH_JWT_SECRET,
+    issuer: parsed.AUTH_JWT_ISSUER,
+    audience: parsed.AUTH_JWT_AUDIENCE,
+    accessTokenTtlSeconds: parsed.AUTH_ACCESS_TOKEN_TTL_SECONDS,
+  });
 }
 
 export function loadConfig(
@@ -58,6 +84,12 @@ export function loadConfig(
       url: parsed.AGENT_SERVICE_URL.replace(/\/$/, ""),
       token: parsed.AGENT_SERVICE_TOKEN,
       timeoutMs: parsed.AGENT_SERVICE_TIMEOUT_MS,
+    }),
+    auth: Object.freeze({
+      secret: parsed.AUTH_JWT_SECRET,
+      issuer: parsed.AUTH_JWT_ISSUER,
+      audience: parsed.AUTH_JWT_AUDIENCE,
+      accessTokenTtlSeconds: parsed.AUTH_ACCESS_TOKEN_TTL_SECONDS,
     }),
   });
 }

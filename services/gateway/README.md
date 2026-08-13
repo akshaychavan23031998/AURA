@@ -1,6 +1,6 @@
 # Gateway Service
 
-The Gateway is AURA's external HTTP entry point. Phase 6 adds a trusted, request-scoped single-tool orchestration loop while real user authentication remains deferred.
+The Gateway is AURA's external HTTP entry point. Phase 7 adds stateless first-party authentication and server-derived authorization context. It is a temporary identity foundation, not a user-account or OAuth system.
 
 ## Implemented
 
@@ -20,6 +20,8 @@ The Gateway is AURA's external HTTP entry point. Phase 6 adds a trusted, request
 - authenticated Agent Service client with correlation, timeout, contract validation, and safe error translation
 - transport-independent Agent/Tool orchestrator with a hard one-tool execution limit
 - explicit partial-failure handling when execution succeeds but Agent finalization fails
+- strict HS256 bearer-token verification with issuer, audience, lifetime, subject, version, and permission validation
+- immutable authenticated principals and authorization contexts for protected application routes
 
 ## Endpoints
 
@@ -27,9 +29,9 @@ The Gateway is AURA's external HTTP entry point. Phase 6 adds a trusted, request
 | ------ | ----------------------- | --------------------------------- | --------------------------------------------- |
 | `GET`  | `/health`               | Process liveness                  | `{ "status": "ok", "service": "gateway" }`    |
 | `GET`  | `/ready`                | Successful Gateway initialization | `{ "status": "ready", "service": "gateway" }` |
-| `POST` | `/api/v1/tools/execute` | External tool envelope            | Validated Tool Service result                 |
-| `POST` | `/api/v1/agent/respond` | External planning envelope        | Response plan or unexecuted tool proposal     |
-| `POST` | `/api/v1/agent/run`     | Deterministic orchestration       | Final user-oriented response and step count   |
+| `POST` | `/api/v1/tools/execute` | Bearer                            | External tool envelope                        | Validated Tool Service result             |
+| `POST` | `/api/v1/agent/respond` | Bearer                            | Planning envelope                             | Response plan or unexecuted tool proposal |
+| `POST` | `/api/v1/agent/run`     | Bearer                            | Deterministic orchestration                   | Final response and step count             |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
@@ -37,18 +39,22 @@ Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
 Copy `.env.example` to `.env` when local overrides are needed. The service currently supports only:
 
-| Variable                   | Development default     | Constraint                             |
-| -------------------------- | ----------------------- | -------------------------------------- |
-| `NODE_ENV`                 | `development`           | `development`, `test`, or `production` |
-| `GATEWAY_HOST`             | `0.0.0.0`               | non-empty host                         |
-| `GATEWAY_PORT`             | `4000`                  | integer from 1 through 65535           |
-| `LOG_LEVEL`                | `info`                  | supported Pino level or `silent`       |
-| `TOOLS_SERVICE_URL`        | `http://localhost:4001` | trusted HTTP/HTTPS URL                 |
-| `TOOLS_SERVICE_TOKEN`      | none                    | required, minimum 32 characters        |
-| `TOOLS_SERVICE_TIMEOUT_MS` | `3000`                  | 100–30000 ms                           |
-| `AGENT_SERVICE_URL`        | `http://localhost:8001` | trusted HTTP/HTTPS URL                 |
-| `AGENT_SERVICE_TOKEN`      | none                    | required, minimum 32 characters        |
-| `AGENT_SERVICE_TIMEOUT_MS` | `5000`                  | 100–30000 ms                           |
+| Variable                        | Development default     | Constraint                             |
+| ------------------------------- | ----------------------- | -------------------------------------- |
+| `NODE_ENV`                      | `development`           | `development`, `test`, or `production` |
+| `GATEWAY_HOST`                  | `0.0.0.0`               | non-empty host                         |
+| `GATEWAY_PORT`                  | `4000`                  | integer from 1 through 65535           |
+| `LOG_LEVEL`                     | `info`                  | supported Pino level or `silent`       |
+| `TOOLS_SERVICE_URL`             | `http://localhost:4001` | trusted HTTP/HTTPS URL                 |
+| `TOOLS_SERVICE_TOKEN`           | none                    | required, minimum 32 characters        |
+| `TOOLS_SERVICE_TIMEOUT_MS`      | `3000`                  | 100–30000 ms                           |
+| `AGENT_SERVICE_URL`             | `http://localhost:8001` | trusted HTTP/HTTPS URL                 |
+| `AGENT_SERVICE_TOKEN`           | none                    | required, minimum 32 characters        |
+| `AGENT_SERVICE_TIMEOUT_MS`      | `5000`                  | 100–30000 ms                           |
+| `AUTH_JWT_SECRET`               | none                    | required, 32–512 characters            |
+| `AUTH_JWT_ISSUER`               | `aura-gateway`          | non-empty, at most 128 characters      |
+| `AUTH_JWT_AUDIENCE`             | `aura-api`              | non-empty, at most 128 characters      |
+| `AUTH_ACCESS_TOKEN_TTL_SECONDS` | `900`                   | 60–3600 seconds                        |
 
 Configuration is read once during startup and fails fast when supplied values are malformed. The root `.env.example` remains an architectural overview; this service-local file is the executable Gateway contract.
 
@@ -79,7 +85,7 @@ Authentication, authorization coordination, rate limiting, WebSockets, service r
 
 ## Trusted tool path
 
-The public route accepts only `{ "tool": string, "input": unknown }`; strict validation rejects caller-supplied identity, permissions, approvals, and internal credentials. Gateway currently derives the temporary actor `local-dev-user` with only `system.echo` and no approval. This is not user authentication.
+The protected route accepts only `{ "tool": string, "input": unknown }`; strict validation rejects caller-supplied identity, permissions, approvals, and credentials. Gateway derives actor ID and grants exclusively from the verified principal. Tool Service still decides whether those grants satisfy a specific tool and whether approval is required.
 
 Gateway JSON bodies are capped at 64 KiB; voice and file payloads belong on purpose-built transports.
 
@@ -89,8 +95,23 @@ Gateway readiness reports its own initialization and does not synchronously prob
 
 ## Trusted Agent path
 
-Both public Agent routes accept only `message`, optional `conversationId`, and optional `locale`. Gateway rejects caller-supplied permissions, actors, approvals, credentials, tool results, orchestration state, and execution directives. `/respond` preserves the planning-only Phase 5 behavior.
+Both protected Agent routes accept only `message`, optional `conversationId`, and optional `locale`. Gateway rejects caller-supplied permissions, actors, approvals, credentials, tool results, orchestration state, and execution directives. `/respond` preserves the planning-only Phase 5 behavior.
 
-`/run` calls Agent, returns immediately for a response plan, or sends one proposed tool to the existing authenticated Tool Service client using the trusted development actor. Only a successful tool result is sent back to Agent for finalization. The same request ID is used throughout. A follow-up tool proposal fails closed with `ORCHESTRATION_STEP_LIMIT_EXCEEDED`; no second tool executes.
+`/run` calls Agent, returns immediately for a response plan, or sends one proposed tool to the existing authenticated Tool Service client using context derived from the principal. Only a successful tool result is sent back to Agent for finalization. The same request ID is used throughout. A follow-up tool proposal fails closed with `ORCHESTRATION_STEP_LIMIT_EXCEEDED`; no second tool executes.
+
+## Authentication
+
+Protected routes require exactly `Authorization: Bearer <JWT>`. Tokens use HS256 and require `sub`, `iss`, `aud`, `iat`, `exp`, `permissions`, and `tokenVersion: 1`; optional `nbf` is honored. The only recognized Phase 7 permission is `system.echo`. Unknown or duplicate permissions invalidate the token. Subjects use a bounded safe identifier format.
+
+For local development, set the four `AUTH_*` variables and generate a controlled token:
+
+```powershell
+$env:AUTH_JWT_SECRET = "replace-with-at-least-32-characters"
+pnpm.cmd auth:dev-token -- --subject local-user-001
+```
+
+The CLI always grants the fixed `system.echo` development permission and prints only the token. It is not an HTTP login endpoint. Authentication is stateless: there are no user records, password login, refresh tokens, revocation storage, or sessions. A future cookie-session design would require explicit CSRF protection; Phase 7 uses bearer headers and does not enable CORS.
+
+External JWT trust and internal service trust are separate. Gateway verifies the external token, discards it at the boundary, and sends only actor/grant context to Tool Service. Agent and Tool calls continue using their distinct internal service tokens. Neither downstream service receives the JWT or JWT signing secret.
 
 Tool policy errors remain authoritative and do not return to Agent for reinterpretation. If a tool succeeds but Agent finalization fails, Gateway returns `AGENT_FINALIZATION_FAILED` and states that the action may have completed. It never retries execution. Individual downstream timeouts bound each call; cumulative orchestration latency is the sum of up to two Agent calls and one Tool call.

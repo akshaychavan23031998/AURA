@@ -14,4 +14,10 @@ export const testConfig: GatewayConfig = {
     token: "agent-test-token-at-least-32-characters",
     timeoutMs: 1000,
   },
+  auth: {
+    secret: "gateway-jwt-test-secret-at-least-32-characters",
+    issuer: "aura-gateway",
+    audience: "aura-api",
+    accessTokenTtlSeconds: 900,
+  },
 };

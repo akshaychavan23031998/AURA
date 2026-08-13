@@ -1,8 +1,10 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { z } from "zod";
 
 import { AppError } from "../../errors/app-error.js";
 import type { AgentToolOrchestrator } from "../../orchestration/agent-tool-orchestrator.js";
+import { deriveAuthorizationContext } from "../../auth/authorization-context.js";
+import { requirePrincipal } from "../../auth/auth-plugin.js";
 
 const requestSchema = z
   .object({
@@ -19,25 +21,34 @@ const requestSchema = z
 export function registerAgentRunRoute(
   app: FastifyInstance,
   orchestrator: AgentToolOrchestrator,
+  authenticate: preHandlerHookHandler,
 ): void {
-  app.post("/api/v1/agent/run", async (request) => {
-    const parsed = requestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      throw new AppError({
-        code: "VALIDATION_ERROR",
-        httpStatus: 400,
-        message: "Request validation failed",
-      });
-    }
-    const runRequest = {
-      message: parsed.data.message,
-      ...(parsed.data.conversationId === undefined
-        ? {}
-        : { conversationId: parsed.data.conversationId }),
-      ...(parsed.data.locale === undefined
-        ? {}
-        : { locale: parsed.data.locale }),
-    };
-    return orchestrator.run(runRequest, request.id);
-  });
+  app.post(
+    "/api/v1/agent/run",
+    { preHandler: authenticate },
+    async (request) => {
+      const parsed = requestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        throw new AppError({
+          code: "VALIDATION_ERROR",
+          httpStatus: 400,
+          message: "Request validation failed",
+        });
+      }
+      const runRequest = {
+        message: parsed.data.message,
+        ...(parsed.data.conversationId === undefined
+          ? {}
+          : { conversationId: parsed.data.conversationId }),
+        ...(parsed.data.locale === undefined
+          ? {}
+          : { locale: parsed.data.locale }),
+      };
+      return orchestrator.run(
+        runRequest,
+        request.id,
+        deriveAuthorizationContext(requirePrincipal(request)),
+      );
+    },
+  );
 }

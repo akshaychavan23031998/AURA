@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 
 import { registerHealthRoutes } from "./health/health.route.js";
 import type { ToolServiceClient } from "../clients/tools/tool-service-client.js";
@@ -13,9 +13,10 @@ export function registerRoutes(
   toolClient: ToolServiceClient,
   agentClient: AgentServiceClient,
   orchestrator: AgentToolOrchestrator,
+  authenticate: preHandlerHookHandler,
 ): void {
   app.register(registerHealthRoutes);
-  registerToolExecutionRoute(app, toolClient);
-  registerAgentResponseRoute(app, agentClient);
-  registerAgentRunRoute(app, orchestrator);
+  registerToolExecutionRoute(app, toolClient, authenticate);
+  registerAgentResponseRoute(app, agentClient, authenticate);
+  registerAgentRunRoute(app, orchestrator, authenticate);
 }

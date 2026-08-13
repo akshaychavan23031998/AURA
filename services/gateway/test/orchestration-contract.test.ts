@@ -10,6 +10,7 @@ import { createApp as createToolApp } from "../../tools/src/app/create-app.js";
 import type { ToolsConfig } from "../../tools/src/config/index.js";
 import { createApp as createGatewayApp } from "../src/app/create-app.js";
 import type { GatewayConfig } from "../src/config/index.js";
+import { issueDevelopmentAccessToken } from "../src/auth/token-issuer.js";
 
 const serviceToken = "orchestration-contract-token-at-least-32-characters";
 const repositoryRoot = join(
@@ -98,6 +99,12 @@ describe("Gateway Agent Tool orchestration contract", () => {
         token: serviceToken,
         timeoutMs: 2000,
       },
+      auth: {
+        secret: "gateway-jwt-test-secret-at-least-32-characters",
+        issuer: "aura-gateway",
+        audience: "aura-api",
+        accessTokenTtlSeconds: 900,
+      },
     };
     const gatewayApp = await createGatewayApp({
       config: gatewayConfig,
@@ -105,10 +112,17 @@ describe("Gateway Agent Tool orchestration contract", () => {
     });
     closeables.push(gatewayApp);
 
+    const accessToken = await issueDevelopmentAccessToken(
+      gatewayConfig.auth,
+      "orchestration-user-1",
+    );
     const response = await gatewayApp.inject({
       method: "POST",
       url: "/api/v1/agent/run",
-      headers: { "x-request-id": "orchestration-test-1" },
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "x-request-id": "orchestration-test-1",
+      },
       payload: { message: "echo AURA" },
     });
 
@@ -124,6 +138,34 @@ describe("Gateway Agent Tool orchestration contract", () => {
     expect(agentLogs.match(/"requestId":"orchestration-test-1"/g)).toHaveLength(
       2,
     );
+
+    const noPermissionToken = await issueDevelopmentAccessToken(
+      gatewayConfig.auth,
+      "no-permission-user",
+      [],
+    );
+    const deniedResponse = await gatewayApp.inject({
+      method: "POST",
+      url: "/api/v1/agent/run",
+      headers: { authorization: `Bearer ${noPermissionToken}` },
+      payload: { message: "echo AURA" },
+    });
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(deniedResponse.json<unknown>()).toMatchObject({
+      error: { code: "PERMISSION_DENIED" },
+    });
+
+    const forgedResponse = await gatewayApp.inject({
+      method: "POST",
+      url: "/api/v1/agent/run",
+      headers: { authorization: `Bearer ${noPermissionToken}` },
+      payload: {
+        message: "echo AURA",
+        actorId: "admin",
+        permissions: ["system.echo"],
+      },
+    });
+    expect(forgedResponse.statusCode).toBe(400);
   }, 15_000);
 });
 

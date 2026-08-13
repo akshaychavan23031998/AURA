@@ -20,7 +20,8 @@
     "agent:typecheck": "node scripts/run-agent-python.mjs -m pyright -p services/agent/pyproject.toml",
     "agent:test": "node scripts/run-agent-python.mjs -m pytest services/agent",
     "agent:format": "node scripts/run-agent-python.mjs -m ruff format services/agent",
-    "agent:format:check": "node scripts/run-agent-python.mjs -m ruff format --check services/agent"
+    "agent:format:check": "node scripts/run-agent-python.mjs -m ruff format --check services/agent",
+    "auth:dev-token": "pnpm --filter @aura/gateway auth:dev-token"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

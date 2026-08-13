@@ -21,14 +21,19 @@ import {
 } from "../plugins/request-context.js";
 import { registerSecurity } from "../plugins/security.js";
 import { registerRoutes } from "../routes/index.js";
-import { deriveDevelopmentActorContext } from "../context/development-actor.js";
 import { AgentToolOrchestrator } from "../orchestration/agent-tool-orchestrator.js";
+import { registerAuthentication } from "../auth/auth-plugin.js";
+import {
+  createAccessTokenVerifier,
+  type AccessTokenVerifier,
+} from "../auth/token-verifier.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
   readonly logger?: FastifyServerOptions["logger"];
   readonly toolClient?: ToolServiceClient;
   readonly agentClient?: AgentServiceClient;
+  readonly tokenVerifier?: AccessTokenVerifier;
 }
 
 export async function createApp(
@@ -63,6 +68,10 @@ export async function createApp(
 
   await registerSecurity(app);
   registerRequestContext(app);
+  const authenticate = registerAuthentication(
+    app,
+    options.tokenVerifier ?? createAccessTokenVerifier(options.config),
+  );
   registerRoutes(
     app,
     toolClient,
@@ -70,9 +79,9 @@ export async function createApp(
     new AgentToolOrchestrator({
       agentClient,
       toolClient,
-      actorContextProvider: deriveDevelopmentActorContext,
       logger: app.log,
     }),
+    authenticate,
   );
   registerErrorHandling(app);
 

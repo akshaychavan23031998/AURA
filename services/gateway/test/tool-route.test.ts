@@ -5,6 +5,10 @@ import { AppError } from "../src/errors/app-error.js";
 import type { ToolServiceClient } from "../src/clients/tools/tool-service-client.js";
 import type { ErrorResponse } from "../src/errors/error-response.js";
 import { testConfig } from "./test-config.js";
+import {
+  testAuthorizationHeader,
+  testTokenVerifier,
+} from "./auth-test-helpers.js";
 
 describe("public tool execution route", () => {
   const apps: Awaited<ReturnType<typeof createApp>>[] = [];
@@ -17,12 +21,13 @@ describe("public tool execution route", () => {
       config: testConfig,
       logger: false,
       toolClient: client,
+      tokenVerifier: testTokenVerifier,
     });
     apps.push(instance);
     return instance;
   }
 
-  it("derives trusted local context and propagates the request ID", async () => {
+  it("derives trusted principal context and propagates the request ID", async () => {
     const execute = vi.fn(() =>
       Promise.resolve({
         status: "success" as const,
@@ -35,13 +40,16 @@ describe("public tool execution route", () => {
     ).inject({
       method: "POST",
       url: "/api/v1/tools/execute",
-      headers: { "x-request-id": "public-request-1" },
+      headers: {
+        ...testAuthorizationHeader,
+        "x-request-id": "public-request-1",
+      },
       payload: { tool: "system.echo", input: { message: "hello" } },
     });
     expect(response.statusCode).toBe(200);
     expect(execute).toHaveBeenCalledWith(
       { tool: "system.echo", input: { message: "hello" } },
-      { actorId: "local-dev-user", grantedPermissions: ["system.echo"] },
+      { actorId: "local-user-001", grantedPermissions: ["system.echo"] },
       "public-request-1",
     );
     expect(response.headers["x-request-id"]).toBe("public-request-1");
@@ -54,6 +62,7 @@ describe("public tool execution route", () => {
     ).inject({
       method: "POST",
       url: "/api/v1/tools/execute",
+      headers: testAuthorizationHeader,
       payload: {
         tool: "system.echo",
         input: { message: "hello" },
@@ -84,6 +93,7 @@ describe("public tool execution route", () => {
     ).inject({
       method: "POST",
       url: "/api/v1/tools/execute",
+      headers: testAuthorizationHeader,
       payload: { tool: "does.not.exist", input: {} },
     });
     expect(response.statusCode).toBe(status);

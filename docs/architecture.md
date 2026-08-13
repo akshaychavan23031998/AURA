@@ -12,6 +12,7 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 4 trusted Gateway-to-Tool-Service communication with derived development context, service authentication, correlation propagation, bounded timeout, contract validation, and safe error translation
 - Phase 5 Python Agent planning foundation with deterministic intent handling, typed response/tool plans, internal authentication, and a strict Gateway-to-Agent boundary
 - Phase 6 deterministic single-tool orchestration with Gateway-owned coordination, successful tool-result continuation, a hard loop limit, and explicit partial-failure semantics
+- Phase 7 stateless HS256 authentication with strict claims, immutable principals, server-derived authorization context, and protected application routes
 
 ### Planned
 
@@ -108,7 +109,7 @@ sequenceDiagram
   G-->>C: final response
 ```
 
-Agent output is untrusted planning data. It cannot grant permissions, assign risk, approve work, or call Tool Service. Gateway owns orchestration and uses its server-derived development actor; Tool Service remains authoritative for existence, input, permissions, risk, approval, and execution. TypeScript/Zod and Python/Pydantic independently validate the cross-language contract, backed by a real cross-service contract test.
+Agent output is untrusted planning data. It cannot grant permissions, assign risk, approve work, or call Tool Service. Gateway owns orchestration and uses authorization context derived from a verified principal; Tool Service remains authoritative for existence, input, permissions, risk, approval, and execution. TypeScript/Zod and Python/Pydantic independently validate the cross-language contract, backed by a real cross-service contract test.
 
 Phase 6 permits exactly one tool execution. A second tool proposal fails closed because multi-step workflows require explicit iteration budgets, approval state, dependency tracking, idempotency, recovery, and loop detection. State exists only for the request lifetime. There are no retries: if a tool succeeds and final Agent generation fails, Gateway reports that the action may have completed and does not execute it again. Future state-changing workflows require durable idempotency before retry behavior can be considered.
 
@@ -121,7 +122,18 @@ flowchart TD
   Tools --> Core[Registry / Policy / Executor]
 ```
 
-External callers cannot assign actor identity, permissions, approvals, or internal credentials. Gateway derives the temporary `local-dev-user` identity with only `system.echo`; Tool Service authenticates Gateway before accepting metadata or execution. Shared-secret identity is transitional and should later be replaced with mTLS, workload identity, signed service tokens, or service-mesh identity.
+External callers cannot assign actor identity, permissions, approvals, or internal credentials. Gateway verifies short-lived HS256 tokens, converts their bounded subject and allowlisted grants into an immutable principal, and derives Tool context from that principal. Tool Service authenticates Gateway before accepting context and remains the permission-policy authority.
+
+```mermaid
+flowchart LR
+  Client -->|Bearer JWT| Auth[Gateway verifier]
+  Auth -->|AuthenticatedPrincipal| Context[Authorization context]
+  Context --> Orchestrator[Gateway orchestrator]
+  Orchestrator -->|internal auth; no JWT| Agent
+  Orchestrator -->|internal auth + actor/grants; no JWT| Tools
+```
+
+External JWT signing and internal service authentication are distinct trust domains with separate secrets. Tokens are never forwarded to Agent or Tool Service. Phase 7 has no login endpoint, user store, refresh token, revocation list, or session persistence. HS256 is an interim first-party mechanism intended to migrate to an external identity provider and asymmetric verification later.
 
 ```mermaid
 flowchart TD

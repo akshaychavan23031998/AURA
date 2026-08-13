@@ -4,6 +4,7 @@ import { createApp as createToolApp } from "../../tools/src/app/create-app.js";
 import type { ToolsConfig } from "../../tools/src/config/index.js";
 import { createApp as createGatewayApp } from "../src/app/create-app.js";
 import type { GatewayConfig } from "../src/config/index.js";
+import { issueDevelopmentAccessToken } from "../src/auth/token-issuer.js";
 
 const sharedTestToken = "cross-service-test-token-at-least-32-characters";
 
@@ -42,6 +43,12 @@ describe("Gateway to Tool Service contract", () => {
         token: sharedTestToken,
         timeoutMs: 1000,
       },
+      auth: {
+        secret: "gateway-jwt-test-secret-at-least-32-characters",
+        issuer: "aura-gateway",
+        audience: "aura-api",
+        accessTokenTtlSeconds: 900,
+      },
     };
     const gatewayApp = await createGatewayApp({
       config: gatewayConfig,
@@ -49,10 +56,17 @@ describe("Gateway to Tool Service contract", () => {
     });
     closeables.push(gatewayApp);
 
+    const accessToken = await issueDevelopmentAccessToken(
+      gatewayConfig.auth,
+      "contract-user-1",
+    );
     const response = await gatewayApp.inject({
       method: "POST",
       url: "/api/v1/tools/execute",
-      headers: { "x-request-id": "contract-request-1" },
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "x-request-id": "contract-request-1",
+      },
       payload: { tool: "system.echo", input: { message: "AURA" } },
     });
 

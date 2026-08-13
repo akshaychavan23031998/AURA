@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { z } from "zod";
 
 import type { AgentServiceClient } from "../../clients/agent/agent-service-client.js";
@@ -19,25 +19,30 @@ const requestSchema = z
 export function registerAgentResponseRoute(
   app: FastifyInstance,
   agentClient: AgentServiceClient,
+  authenticate: preHandlerHookHandler,
 ): void {
-  app.post("/api/v1/agent/respond", async (request) => {
-    const parsed = requestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      throw new AppError({
-        code: "VALIDATION_ERROR",
-        httpStatus: 400,
-        message: "Request validation failed",
-      });
-    }
-    const agentRequest = {
-      message: parsed.data.message,
-      ...(parsed.data.conversationId === undefined
-        ? {}
-        : { conversationId: parsed.data.conversationId }),
-      ...(parsed.data.locale === undefined
-        ? {}
-        : { locale: parsed.data.locale }),
-    };
-    return agentClient.respond(agentRequest, request.id);
-  });
+  app.post(
+    "/api/v1/agent/respond",
+    { preHandler: authenticate },
+    async (request) => {
+      const parsed = requestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        throw new AppError({
+          code: "VALIDATION_ERROR",
+          httpStatus: 400,
+          message: "Request validation failed",
+        });
+      }
+      const agentRequest = {
+        message: parsed.data.message,
+        ...(parsed.data.conversationId === undefined
+          ? {}
+          : { conversationId: parsed.data.conversationId }),
+        ...(parsed.data.locale === undefined
+          ? {}
+          : { locale: parsed.data.locale }),
+      };
+      return agentClient.respond(agentRequest, request.id);
+    },
+  );
 }

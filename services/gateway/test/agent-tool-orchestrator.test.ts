@@ -10,6 +10,10 @@ import { AgentToolOrchestrator } from "../src/orchestration/agent-tool-orchestra
 
 const requestId = "orchestration-test-1";
 const request = { message: "echo AURA" };
+const authorizationContext = {
+  actorId: "local-user-001",
+  grantedPermissions: ["system.echo"],
+} as const;
 const toolPlan: AgentResult = {
   requestId,
   intent: "propose_tool",
@@ -37,10 +41,6 @@ function dependencies(agentResults: readonly AgentResult[] = [finalPlan]) {
   const orchestrator = new AgentToolOrchestrator({
     agentClient: { respond },
     toolClient: { execute },
-    actorContextProvider: () => ({
-      actorId: "local-dev-user",
-      grantedPermissions: ["system.echo"],
-    }),
   });
   return { orchestrator, respond, execute };
 }
@@ -49,7 +49,7 @@ describe("AgentToolOrchestrator", () => {
   it("returns a direct response without calling Tool Service", async () => {
     const { orchestrator, respond, execute } = dependencies([finalPlan]);
     await expect(
-      orchestrator.run({ message: "hello" }, requestId),
+      orchestrator.run({ message: "hello" }, requestId, authorizationContext),
     ).resolves.toEqual({
       status: "completed",
       response: { text: "Echo completed successfully: AURA" },
@@ -64,7 +64,9 @@ describe("AgentToolOrchestrator", () => {
       toolPlan,
       finalPlan,
     ]);
-    await expect(orchestrator.run(request, requestId)).resolves.toEqual({
+    await expect(
+      orchestrator.run(request, requestId, authorizationContext),
+    ).resolves.toEqual({
       status: "completed",
       response: { text: "Echo completed successfully: AURA" },
       steps: 2,
@@ -72,7 +74,7 @@ describe("AgentToolOrchestrator", () => {
     expect(execute).toHaveBeenCalledOnce();
     expect(execute).toHaveBeenCalledWith(
       { tool: "system.echo", input: { message: "AURA" } },
-      { actorId: "local-dev-user", grantedPermissions: ["system.echo"] },
+      authorizationContext,
       requestId,
     );
     expect(respond).toHaveBeenCalledTimes(2);
@@ -99,7 +101,9 @@ describe("AgentToolOrchestrator", () => {
         message: "Agent unavailable",
       }),
     );
-    await expect(orchestrator.run(request, requestId)).rejects.toMatchObject({
+    await expect(
+      orchestrator.run(request, requestId, authorizationContext),
+    ).rejects.toMatchObject({
       code: "UPSTREAM_SERVICE_UNAVAILABLE",
     });
     expect(execute).not.toHaveBeenCalled();
@@ -114,7 +118,9 @@ describe("AgentToolOrchestrator", () => {
         message: "Tool permission denied",
       }),
     );
-    await expect(orchestrator.run(request, requestId)).rejects.toMatchObject({
+    await expect(
+      orchestrator.run(request, requestId, authorizationContext),
+    ).rejects.toMatchObject({
       code: "PERMISSION_DENIED",
     });
     expect(respond).toHaveBeenCalledOnce();
@@ -125,7 +131,9 @@ describe("AgentToolOrchestrator", () => {
     respond.mockRejectedValueOnce(
       new Error("Agent unavailable after execution"),
     );
-    await expect(orchestrator.run(request, requestId)).rejects.toMatchObject({
+    await expect(
+      orchestrator.run(request, requestId, authorizationContext),
+    ).rejects.toMatchObject({
       code: "AGENT_FINALIZATION_FAILED",
       httpStatus: 502,
     });
@@ -138,7 +146,9 @@ describe("AgentToolOrchestrator", () => {
       toolPlan,
       toolPlan,
     ]);
-    await expect(orchestrator.run(request, requestId)).rejects.toMatchObject({
+    await expect(
+      orchestrator.run(request, requestId, authorizationContext),
+    ).rejects.toMatchObject({
       code: "ORCHESTRATION_STEP_LIMIT_EXCEEDED",
     });
     expect(respond).toHaveBeenCalledTimes(2);

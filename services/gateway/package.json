@@ -10,11 +10,13 @@
     "lint": "eslint src test --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "auth:dev-token": "tsx src/auth/create-dev-access-token.ts"
   },
   "dependencies": {
     "@fastify/helmet": "13.1.0",
     "fastify": "5.11.3",
+    "jose": "6.2.8",
     "zod": "4.4.3"
   },
   "devDependencies": {

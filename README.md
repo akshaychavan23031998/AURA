@@ -6,7 +6,7 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 6 — Deterministic single-tool orchestration.** The Gateway can now run one complete request-scoped `Agent → Tool → Agent` loop. Agent proposals remain untrusted, Tool Service remains authoritative for execution policy, and the Gateway enforces a hard one-tool limit. Real AI inference, user authentication, external integrations, databases, messaging, and voice are not implemented yet.
+**Phase 7 — Trusted authentication and authorization context foundation.** Gateway application APIs now require short-lived HS256 bearer tokens. Verified subjects and allowlisted grants become immutable Tool Service context, replacing the development actor without exposing external JWTs downstream. User accounts, OAuth, refresh tokens, persistent sessions, real AI inference, integrations, databases, messaging, and voice are not implemented yet.
 
 ## Planned architecture
 
