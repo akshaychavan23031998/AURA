@@ -2,7 +2,16 @@
 
 ## 1. Goals
 
-AURA aims to become a self-hosted multilingual autonomous voice agent with natural mixed-language conversation, contextual memory, knowledge retrieval, and permission-aware action execution. The system must remain understandable, testable, secure by default, and independently evolvable. Phase 1 establishes boundaries and tooling only; it does not implement these capabilities.
+AURA aims to become a self-hosted multilingual autonomous voice agent with natural mixed-language conversation, contextual memory, knowledge retrieval, and permission-aware action execution. The system must remain understandable, testable, secure by default, and independently evolvable.
+
+### Implemented
+
+- Phase 1 monorepo and web foundation
+- Phase 2 Fastify Gateway runtime with validated configuration, operational endpoints, request correlation, structured logging, security headers, stable external errors, and graceful shutdown
+
+### Planned
+
+Voice, agent reasoning, knowledge, tools, analytics, authentication, WebSockets, databases, and event infrastructure remain architectural direction rather than implemented capability.
 
 ## 2. Architectural style
 
@@ -24,15 +33,15 @@ flowchart LR
 
 ## 3. Service boundaries
 
-| Boundary  | Owns                                                                    | Explicitly excludes                                     |
-| --------- | ----------------------------------------------------------------------- | ------------------------------------------------------- |
-| Web       | User experience and client-side interaction state                       | Authorization decisions and secrets                     |
-| Gateway   | External API, edge policy, routing, sessions, WebSockets                | AI inference, audio processing, integrations, retrieval |
-| Voice     | Realtime speech/audio transformation and short-lived processing state   | Planning, permissions, and business workflows           |
-| Agent     | Reasoning, planning, intent, tool proposals, response generation        | OAuth secrets, direct actions, unrestricted databases   |
-| Tools     | Integrations, credentials, permissions, approvals, idempotent execution | Agent reasoning and voice processing                    |
-| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access          | Privileged actions and broad credential access          |
-| Analytics | Derived metrics from asynchronous events                                | Critical-path processing and transactional truth        |
+| Boundary  | Owns                                                                                               | Explicitly excludes                                     |
+| --------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Web       | User experience and client-side interaction state                                                  | Authorization decisions and secrets                     |
+| Gateway   | Implemented HTTP lifecycle, operations, correlation, errors; planned routing, sessions, WebSockets | AI inference, audio processing, integrations, retrieval |
+| Voice     | Realtime speech/audio transformation and short-lived processing state                              | Planning, permissions, and business workflows           |
+| Agent     | Reasoning, planning, intent, tool proposals, response generation                                   | OAuth secrets, direct actions, unrestricted databases   |
+| Tools     | Integrations, credentials, permissions, approvals, idempotent execution                            | Agent reasoning and voice processing                    |
+| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                     | Privileged actions and broad credential access          |
+| Analytics | Derived metrics from asynchronous events                                                           | Critical-path processing and transactional truth        |
 
 Services do not receive unrestricted access to every datastore. Each service gains only the data access its responsibility requires, exposed through controlled APIs where another service owns that data.
 

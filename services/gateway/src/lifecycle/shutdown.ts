@@ -1,0 +1,30 @@
+import type { FastifyInstance } from "fastify";
+
+export function registerShutdownHandlers(app: FastifyInstance): () => void {
+  let shuttingDown = false;
+
+  const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    app.log.info({ signal }, "Gateway shutdown started");
+    try {
+      await app.close();
+      app.log.info("Gateway shutdown completed");
+    } catch (error) {
+      app.log.error({ err: error }, "Gateway shutdown failed");
+      process.exitCode = 1;
+    }
+  };
+
+  const onSigint = (): void => void shutdown("SIGINT");
+  const onSigterm = (): void => void shutdown("SIGTERM");
+
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
+
+  return () => {
+    process.removeListener("SIGINT", onSigint);
+    process.removeListener("SIGTERM", onSigterm);
+  };
+}

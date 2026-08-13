@@ -6,7 +6,7 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 1 — Foundation.** The repository currently provides the monorepo, a minimal web application, shared-package foundations, service-boundary documentation, and engineering configuration. Voice, AI, integrations, databases, messaging, and backend services are not implemented yet.
+**Phase 2 — API Gateway foundation.** The repository provides the monorepo, minimal web application, and an operational Fastify Gateway foundation with validated configuration, health/readiness endpoints, request correlation, structured logging, secure error handling, and graceful shutdown. Voice, AI, authentication, integrations, databases, messaging, and domain APIs are not implemented yet.
 
 ## Planned architecture
 
