@@ -8,10 +8,11 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 
 - Phase 1 monorepo and web foundation
 - Phase 2 Fastify Gateway runtime with validated configuration, operational endpoints, request correlation, structured logging, security headers, stable external errors, and graceful shutdown
+- Phase 3 Tool Service execution foundation with a trusted registry, typed contracts, input validation, permission enforcement, approval policy, and the local `system.echo` tool
 
 ### Planned
 
-Voice, agent reasoning, knowledge, tools, analytics, authentication, WebSockets, databases, and event infrastructure remain architectural direction rather than implemented capability.
+Voice, agent reasoning, knowledge, analytics, authentication, WebSockets, databases, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
 
 ## 2. Architectural style
 
@@ -33,15 +34,15 @@ flowchart LR
 
 ## 3. Service boundaries
 
-| Boundary  | Owns                                                                                               | Explicitly excludes                                     |
-| --------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Web       | User experience and client-side interaction state                                                  | Authorization decisions and secrets                     |
-| Gateway   | Implemented HTTP lifecycle, operations, correlation, errors; planned routing, sessions, WebSockets | AI inference, audio processing, integrations, retrieval |
-| Voice     | Realtime speech/audio transformation and short-lived processing state                              | Planning, permissions, and business workflows           |
-| Agent     | Reasoning, planning, intent, tool proposals, response generation                                   | OAuth secrets, direct actions, unrestricted databases   |
-| Tools     | Integrations, credentials, permissions, approvals, idempotent execution                            | Agent reasoning and voice processing                    |
-| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                     | Privileged actions and broad credential access          |
-| Analytics | Derived metrics from asynchronous events                                                           | Critical-path processing and transactional truth        |
+| Boundary  | Owns                                                                                                                      | Explicitly excludes                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Web       | User experience and client-side interaction state                                                                         | Authorization decisions and secrets                     |
+| Gateway   | Implemented HTTP lifecycle, operations, correlation, errors; planned routing, sessions, WebSockets                        | AI inference, audio processing, integrations, retrieval |
+| Voice     | Realtime speech/audio transformation and short-lived processing state                                                     | Planning, permissions, and business workflows           |
+| Agent     | Reasoning, planning, intent, tool proposals, response generation                                                          | OAuth secrets, direct actions, unrestricted databases   |
+| Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency | Agent reasoning and voice processing                    |
+| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                            | Privileged actions and broad credential access          |
+| Analytics | Derived metrics from asynchronous events                                                                                  | Critical-path processing and transactional truth        |
 
 Services do not receive unrestricted access to every datastore. Each service gains only the data access its responsibility requires, exposed through controlled APIs where another service owns that data.
 
@@ -85,6 +86,22 @@ flowchart LR
 The Agent Service will not directly access OAuth credentials, execute external actions, or receive unrestricted transactional database access. The Tool Service controls sensitive integrations; the Knowledge Service controls graph and retrieval access. Exact table and dataset ownership will be decided with each implemented domain.
 
 ## 7. Security, errors, and observability
+
+### Tool execution boundary
+
+```mermaid
+flowchart TD
+  Agent[Agent proposes action] --> Contract[Validate tool request]
+  Contract --> Registry[Trusted static registry]
+  Registry --> Permissions[Permission policy]
+  Permissions --> Approval[Approval policy]
+  Approval --> Executor[Central executor]
+  Executor --> Adapter[Trusted tool adapter]
+```
+
+The Tool Service is authoritative for tool existence, input schemas, required permissions, risk, approval, and execution. Agent or LLM output cannot override those values. Phase 3 request-body identity, permissions, and approval assertions exist only for local contract development and are not production authorization. Future production context must derive from authenticated trusted services; approvals must bind actor, exact action, tool, expiry, and approving identity.
+
+Only `system.echo` is currently registered. Real permissions, OAuth, Gmail, Calendar, Jira, GitHub, signed or database-backed approvals, persisted idempotency, and Kafka execution events remain planned.
 
 - **Least privilege:** Every integration and service receives only the permissions it requires.
 - **Explicit authorization:** Client state is never authority. Backend code enforces permissions and approval policy.
