@@ -2,6 +2,7 @@ import { jwtVerify } from "jose";
 import { z } from "zod";
 
 import type { GatewayConfig } from "../config/index.js";
+import type { SessionManager } from "../identity/session-service.js";
 import {
   allowedPermissions,
   type AuthenticatedPrincipal,
@@ -10,6 +11,7 @@ import {
 const claimsSchema = z
   .object({
     sub: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
+    sid: z.uuid(),
     iss: z.string(),
     aud: z.string(),
     iat: z.number().int().nonnegative(),
@@ -31,6 +33,7 @@ export interface AccessTokenVerifier {
 
 export function createAccessTokenVerifier(
   config: GatewayConfig,
+  sessions?: Pick<SessionManager, "isActive">,
 ): AccessTokenVerifier {
   const secret = new TextEncoder().encode(config.auth.secret);
   return {
@@ -47,8 +50,12 @@ export function createAccessTokenVerifier(
       if (claims.iat > now + 2 || claims.exp <= claims.iat) {
         throw new Error("Invalid token lifetime");
       }
+      if (sessions && !(await sessions.isActive(claims.sid, claims.sub))) {
+        throw new Error("Inactive session");
+      }
       return Object.freeze({
         actorId: claims.sub,
+        sessionId: claims.sid,
         permissions: Object.freeze([...claims.permissions]),
         tokenIssuedAt: claims.iat,
         tokenExpiresAt: claims.exp,

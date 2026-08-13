@@ -5,7 +5,10 @@ import {
   readinessResponseSchema,
 } from "./health.schema.js";
 
-export function registerHealthRoutes(app: FastifyInstance): void {
+export function registerHealthRoutes(
+  app: FastifyInstance,
+  checkDatabase: () => Promise<void>,
+): void {
   app.get(
     "/health",
     { schema: { response: { 200: healthResponseSchema } } },
@@ -15,6 +18,9 @@ export function registerHealthRoutes(app: FastifyInstance): void {
   app.get(
     "/ready",
     { schema: { response: { 200: readinessResponseSchema } } },
-    () => ({ status: "ready", service: "gateway" }),
+    async () => {
+      await checkDatabase();
+      return { status: "ready", service: "gateway" };
+    },
   );
 }

@@ -11,7 +11,15 @@ describe("operational endpoints", () => {
   });
 
   it("reports liveness", async () => {
-    const app = await createApp({ config: testConfig, logger: false });
+    const app = await createApp({
+      config: testConfig,
+      logger: false,
+      database: {
+        db: {} as never,
+        check: () => Promise.resolve(),
+        close: () => Promise.resolve(),
+      },
+    });
     apps.push(app);
 
     const response = await app.inject({ method: "GET", url: "/health" });
@@ -22,7 +30,15 @@ describe("operational endpoints", () => {
   });
 
   it("reports readiness after successful initialization", async () => {
-    const app = await createApp({ config: testConfig, logger: false });
+    const app = await createApp({
+      config: testConfig,
+      logger: false,
+      database: {
+        db: {} as never,
+        check: () => Promise.resolve(),
+        close: () => Promise.resolve(),
+      },
+    });
     apps.push(app);
 
     const response = await app.inject({ method: "GET", url: "/ready" });

@@ -12,11 +12,12 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 4 trusted Gateway-to-Tool-Service communication with derived development context, service authentication, correlation propagation, bounded timeout, contract validation, and safe error translation
 - Phase 5 Python Agent planning foundation with deterministic intent handling, typed response/tool plans, internal authentication, and a strict Gateway-to-Agent boundary
 - Phase 6 deterministic single-tool orchestration with Gateway-owned coordination, successful tool-result continuation, a hard loop limit, and explicit partial-failure semantics
-- Phase 7 stateless HS256 authentication with strict claims, immutable principals, server-derived authorization context, and protected application routes
+- Phase 7 HS256 authentication with strict claims, immutable principals, server-derived authorization context, and protected application routes
+- Phase 8 PostgreSQL-backed users, revocable sessions, transactional opaque refresh-token rotation, and per-request session enforcement
 
 ### Planned
 
-AI-backed reasoning, voice, knowledge, analytics, authentication, WebSockets, databases, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+AI-backed reasoning, voice, knowledge, analytics, OAuth/account login, WebSockets, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
 
 ## 2. Architectural style
 
@@ -38,15 +39,15 @@ flowchart LR
 
 ## 3. Service boundaries
 
-| Boundary  | Owns                                                                                                                         | Explicitly excludes                                     |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Web       | User experience and client-side interaction state                                                                            | Authorization decisions and secrets                     |
-| Gateway   | Implemented HTTP lifecycle, correlation, errors, trusted clients, and single-tool orchestration; planned sessions/WebSockets | AI inference, audio processing, integrations, retrieval |
-| Voice     | Realtime speech/audio transformation and short-lived processing state                                                        | Planning, permissions, and business workflows           |
-| Agent     | Implemented deterministic intent, planning, responses, and typed tool proposals; planned AI-backed reasoning                 | Permissions, approvals, OAuth secrets, direct actions   |
-| Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency    | Agent reasoning and voice processing                    |
-| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                               | Privileged actions and broad credential access          |
-| Analytics | Derived metrics from asynchronous events                                                                                     | Critical-path processing and transactional truth        |
+| Boundary  | Owns                                                                                                                                                    | Explicitly excludes                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Web       | User experience and client-side interaction state                                                                                                       | Authorization decisions and secrets                     |
+| Gateway   | Implemented HTTP lifecycle, identity/session persistence, correlation, errors, trusted clients, and single-tool orchestration; planned OAuth/WebSockets | AI inference, audio processing, integrations, retrieval |
+| Voice     | Realtime speech/audio transformation and short-lived processing state                                                                                   | Planning, permissions, and business workflows           |
+| Agent     | Implemented deterministic intent, planning, responses, and typed tool proposals; planned AI-backed reasoning                                            | Permissions, approvals, OAuth secrets, direct actions   |
+| Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency                               | Agent reasoning and voice processing                    |
+| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                                                          | Privileged actions and broad credential access          |
+| Analytics | Derived metrics from asynchronous events                                                                                                                | Critical-path processing and transactional truth        |
 
 Services do not receive unrestricted access to every datastore. Each service gains only the data access its responsibility requires, exposed through controlled APIs where another service owns that data.
 
@@ -133,7 +134,9 @@ flowchart LR
   Orchestrator -->|internal auth + actor/grants; no JWT| Tools
 ```
 
-External JWT signing and internal service authentication are distinct trust domains with separate secrets. Tokens are never forwarded to Agent or Tool Service. Phase 7 has no login endpoint, user store, refresh token, revocation list, or session persistence. HS256 is an interim first-party mechanism intended to migrate to an external identity provider and asymmetric verification later.
+External JWT signing and internal service authentication are distinct trust domains with separate secrets. Tokens are never forwarded to Agent or Tool Service. Phase 8 stores users, sessions, and SHA-256 refresh-token digests in PostgreSQL. Access JWTs carry persisted user `sub` and session `sid`; cryptographic validation is followed by a session/user-state lookup on every protected request, so logout, revocation, and user disable take effect immediately. Refresh rotation uses a transaction and row lock, preserves absolute session expiry, and revokes the session family when rotated evidence is replayed. HS256 remains an interim first-party mechanism intended to migrate to an external identity provider and asymmetric verification later.
+
+Identity persistence establishes who the caller is and whether its session remains active. It does not grant tool authority: the fixed Phase 8 `system.echo` permission becomes immutable authorization context, while Tool Service remains authoritative for tool-specific permission and approval policy. A future Redis cache may reduce the per-request PostgreSQL lookup, but Redis is not part of this milestone.
 
 ```mermaid
 flowchart TD

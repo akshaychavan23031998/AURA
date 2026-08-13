@@ -19,5 +19,7 @@ export const testConfig: GatewayConfig = {
     issuer: "aura-gateway",
     audience: "aura-api",
     accessTokenTtlSeconds: 900,
+    sessionTtlSeconds: 604_800,
   },
+  database: { url: "postgresql://aura:aura@127.0.0.1:5432/aura_test" },
 };

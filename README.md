@@ -6,7 +6,7 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 7 — Trusted authentication and authorization context foundation.** Gateway application APIs now require short-lived HS256 bearer tokens. Verified subjects and allowlisted grants become immutable Tool Service context, replacing the development actor without exposing external JWTs downstream. User accounts, OAuth, refresh tokens, persistent sessions, real AI inference, integrations, databases, messaging, and voice are not implemented yet.
+**Phase 8 — PostgreSQL-backed identity and session foundation.** Persisted users and revocable sessions now bind short-lived HS256 access tokens to `sub` and `sid`. Opaque refresh tokens rotate transactionally with replay detection; protected Gateway requests verify current session and user state. OAuth, passwords, frontend login, real AI inference, external integrations, messaging, and voice are not implemented yet.
 
 ## Planned architecture
 

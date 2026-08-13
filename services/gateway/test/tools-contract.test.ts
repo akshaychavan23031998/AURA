@@ -4,7 +4,8 @@ import { createApp as createToolApp } from "../../tools/src/app/create-app.js";
 import type { ToolsConfig } from "../../tools/src/config/index.js";
 import { createApp as createGatewayApp } from "../src/app/create-app.js";
 import type { GatewayConfig } from "../src/config/index.js";
-import { issueDevelopmentAccessToken } from "../src/auth/token-issuer.js";
+import { issueAccessToken } from "../src/auth/token-issuer.js";
+import { createAccessTokenVerifier } from "../src/auth/token-verifier.js";
 
 const sharedTestToken = "cross-service-test-token-at-least-32-characters";
 
@@ -48,17 +49,21 @@ describe("Gateway to Tool Service contract", () => {
         issuer: "aura-gateway",
         audience: "aura-api",
         accessTokenTtlSeconds: 900,
+        sessionTtlSeconds: 604_800,
       },
+      database: { url: "postgresql://aura:aura@127.0.0.1:5432/aura_test" },
     };
     const gatewayApp = await createGatewayApp({
       config: gatewayConfig,
       logger: false,
+      tokenVerifier: createAccessTokenVerifier(gatewayConfig),
     });
     closeables.push(gatewayApp);
 
-    const accessToken = await issueDevelopmentAccessToken(
+    const accessToken = await issueAccessToken(
       gatewayConfig.auth,
       "contract-user-1",
+      "00000000-0000-4000-8000-000000000001",
     );
     const response = await gatewayApp.inject({
       method: "POST",

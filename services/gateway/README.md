@@ -1,117 +1,93 @@
 # Gateway Service
 
-The Gateway is AURA's external HTTP entry point. Phase 7 adds stateless first-party authentication and server-derived authorization context. It is a temporary identity foundation, not a user-account or OAuth system.
+The Gateway is AURA's external HTTP entry point. Phase 8 adds PostgreSQL-backed users, revocable sessions, rotating opaque refresh tokens, and server-derived authorization context. It is an identity/session foundation, not a user-account or OAuth system.
 
 ## Implemented
 
-- Fastify application construction separated from process startup
-- centrally validated, immutable configuration
-- structured Pino logging with stable `service: gateway` identity
-- authorization and cookie header redaction
-- bounded incoming request IDs with generated fallback IDs
-- `x-request-id` response correlation
-- Helmet security headers
-- stable not-found, application-error, validation-error, and internal-error contracts
-- graceful `SIGINT` and `SIGTERM` shutdown
-- liveness and readiness endpoints
-- injection-based behavioral tests
-- strict public tool-execution envelope and server-derived development context
-- authenticated Tool Service client with timeout, contract validation, and error translation
-- authenticated Agent Service client with correlation, timeout, contract validation, and safe error translation
-- transport-independent Agent/Tool orchestrator with a hard one-tool execution limit
-- explicit partial-failure handling when execution succeeds but Agent finalization fails
-- strict HS256 bearer-token verification with issuer, audience, lifetime, subject, version, and permission validation
-- immutable authenticated principals and authorization contexts for protected application routes
+- Fastify lifecycle, validated immutable configuration, structured/redacted logging, request correlation, Helmet headers, stable errors, and graceful shutdown
+- liveness plus PostgreSQL-backed readiness
+- trusted Agent and Tool Service clients and deterministic single-tool orchestration
+- strict HS256 bearer verification with issuer, audience, lifetime, persisted user `sub`, session `sid`, version, and permission validation
+- Drizzle-managed PostgreSQL users, sessions, and refresh-token history
+- immediate active-session and active-user enforcement on protected requests
+- transactional refresh rotation, replay-family revocation, and idempotent logout
+- idempotent development-user bootstrap and development-session CLIs
 
 ## Endpoints
 
-| Method | Path                    | Purpose                           | Response                                      |
-| ------ | ----------------------- | --------------------------------- | --------------------------------------------- |
-| `GET`  | `/health`               | Process liveness                  | `{ "status": "ok", "service": "gateway" }`    |
-| `GET`  | `/ready`                | Successful Gateway initialization | `{ "status": "ready", "service": "gateway" }` |
-| `POST` | `/api/v1/tools/execute` | Bearer                            | External tool envelope                        | Validated Tool Service result             |
-| `POST` | `/api/v1/agent/respond` | Bearer                            | Planning envelope                             | Response plan or unexecuted tool proposal |
-| `POST` | `/api/v1/agent/run`     | Bearer                            | Deterministic orchestration                   | Final response and step count             |
+| Method | Path                    | Authentication | Purpose                                     |
+| ------ | ----------------------- | -------------- | ------------------------------------------- |
+| `GET`  | `/health`               | None           | Process liveness                            |
+| `GET`  | `/ready`                | None           | Gateway and PostgreSQL readiness            |
+| `POST` | `/api/v1/auth/refresh`  | Refresh body   | Rotate refresh token and issue access token |
+| `POST` | `/api/v1/auth/logout`   | Bearer         | Revoke the caller's current session         |
+| `POST` | `/api/v1/tools/execute` | Bearer         | Execute a validated Tool Service request    |
+| `POST` | `/api/v1/agent/respond` | Bearer         | Produce an unexecuted planning response     |
+| `POST` | `/api/v1/agent/run`     | Bearer         | Run deterministic orchestration             |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
 ## Configuration
 
-Copy `.env.example` to `.env` when local overrides are needed. The service currently supports only:
+The service-local `.env.example` is the executable Gateway contract; the root example remains a workspace overview.
 
-| Variable                        | Development default     | Constraint                             |
+| Variable                        | Default                 | Constraint                             |
 | ------------------------------- | ----------------------- | -------------------------------------- |
 | `NODE_ENV`                      | `development`           | `development`, `test`, or `production` |
 | `GATEWAY_HOST`                  | `0.0.0.0`               | non-empty host                         |
-| `GATEWAY_PORT`                  | `4000`                  | integer from 1 through 65535           |
-| `LOG_LEVEL`                     | `info`                  | supported Pino level or `silent`       |
+| `GATEWAY_PORT`                  | `4000`                  | 1-65535                                |
+| `LOG_LEVEL`                     | `info`                  | supported Pino level                   |
 | `TOOLS_SERVICE_URL`             | `http://localhost:4001` | trusted HTTP/HTTPS URL                 |
-| `TOOLS_SERVICE_TOKEN`           | none                    | required, minimum 32 characters        |
-| `TOOLS_SERVICE_TIMEOUT_MS`      | `3000`                  | 100–30000 ms                           |
+| `TOOLS_SERVICE_TOKEN`           | none                    | required, 32+ characters               |
+| `TOOLS_SERVICE_TIMEOUT_MS`      | `3000`                  | 100-30000 ms                           |
 | `AGENT_SERVICE_URL`             | `http://localhost:8001` | trusted HTTP/HTTPS URL                 |
-| `AGENT_SERVICE_TOKEN`           | none                    | required, minimum 32 characters        |
-| `AGENT_SERVICE_TIMEOUT_MS`      | `5000`                  | 100–30000 ms                           |
-| `AUTH_JWT_SECRET`               | none                    | required, 32–512 characters            |
+| `AGENT_SERVICE_TOKEN`           | none                    | required, 32+ characters               |
+| `AGENT_SERVICE_TIMEOUT_MS`      | `5000`                  | 100-30000 ms                           |
+| `AUTH_JWT_SECRET`               | none                    | required, 32-512 characters            |
 | `AUTH_JWT_ISSUER`               | `aura-gateway`          | non-empty, at most 128 characters      |
 | `AUTH_JWT_AUDIENCE`             | `aura-api`              | non-empty, at most 128 characters      |
-| `AUTH_ACCESS_TOKEN_TTL_SECONDS` | `900`                   | 60–3600 seconds                        |
+| `AUTH_ACCESS_TOKEN_TTL_SECONDS` | `900`                   | 60-3600 seconds                        |
+| `AUTH_SESSION_TTL_SECONDS`      | `604800`                | 3600-2592000 seconds                   |
+| `DATABASE_URL`                  | none                    | required PostgreSQL URL                |
 
-Configuration is read once during startup and fails fast when supplied values are malformed. The root `.env.example` remains an architectural overview; this service-local file is the executable Gateway contract.
+Configuration is read once and fails fast. Database connection and query timeouts are bounded. URLs, tokens, hashes, secrets, cookies, authorization headers, and request bodies are not logged.
 
-## Development
+## Local identity flow
 
-From the repository root:
+PostgreSQL is required. The focused Compose file runs PostgreSQL only:
 
-```bash
-pnpm install
-pnpm --filter @aura/gateway dev
+```powershell
+$env:POSTGRES_PASSWORD = "replace-with-local-password"
+docker compose -f infrastructure/docker/postgres.compose.yml up -d
+pnpm.cmd db:migrate
+$userId = pnpm.cmd identity:bootstrap-dev-user
+$env:AUTH_JWT_SECRET = "replace-with-at-least-32-characters"
+pnpm.cmd identity:dev-session -- --user-id $userId
 ```
 
-The default health URL is <http://localhost:4000/health>. The runtime uses environment variables directly in line with Twelve-Factor principles; shell variables or a process manager can supply overrides.
+The final command deliberately prints development-only tokens to the local terminal. It never writes them to repository files or structured logs. Gateway startup never seeds identities.
 
-```bash
-pnpm --filter @aura/gateway lint
-pnpm --filter @aura/gateway typecheck
-pnpm --filter @aura/gateway test
-pnpm --filter @aura/gateway build
-pnpm --filter @aura/gateway start
+For validation, set `TEST_DATABASE_URL` to a separate database whose name ends in `_test` or `_tests`, then run:
+
+```powershell
+pnpm.cmd lint
+pnpm.cmd typecheck
+pnpm.cmd test
+pnpm.cmd build
 ```
+
+The persistence suite deliberately rebuilds only that test database's `public` schema, applies fresh migrations, and does not silently skip when the variable is absent.
+
+## Identity and session security
+
+Access JWTs are short lived. Their `sub` identifies a persisted user and `sid` identifies a persisted session. After cryptographic verification, every protected request checks that the session is unexpired and unrevoked and that the user remains `ACTIVE`. Logout, revocation, and user disable therefore take effect immediately. One PostgreSQL lookup per protected request is an intentional Phase 8 security tradeoff; a future Redis cache may optimize it, but Redis is not implemented.
+
+Refresh tokens contain 32 cryptographically random bytes encoded as base64url. Only SHA-256 digests are stored because high-entropy opaque tokens do not need password hashing. Rotation locks and consumes the current record transactionally, stores a replacement, and preserves absolute session expiry. Reuse of consumed/revoked evidence returns the same generic 401 as other authentication failures and revokes the whole session family. Raw tokens and hashes never enter application logs.
+
+`/refresh` accepts `{ "refreshToken": "..." }` and returns a replacement access/refresh pair. `/logout` requires a current access token and returns 204. There are no login, signup, password, OAuth, or public user-creation endpoints. JSON refresh responses are for development/testing; a future browser design should prefer an HttpOnly, Secure, SameSite refresh cookie after explicit CSRF design.
+
+The fixed Phase 8 permission is `system.echo`; persistent RBAC is not implemented. Identity persistence establishes who the caller is and whether the session is active. Tool Service remains authoritative for tool-specific permission, risk, approval, and execution policy. External JWTs are never forwarded to Agent or Tool Service.
 
 ## Boundaries
 
-The Gateway owns HTTP ingress, request lifecycle, external error shape, correlation, and baseline edge hardening. It does not own LLM inference, STT/TTS, RAG, database domain logic, integrations, tool execution, or Kafka analytics.
-
-Authentication, authorization coordination, rate limiting, WebSockets, service routing, CORS policy, and API documentation remain planned. They will be added only with concrete ingress and API requirements. Realtime audio will eventually pass through Gateway WebSockets to the Voice Service and will never be routed through Kafka.
-
-## Trusted tool path
-
-The protected route accepts only `{ "tool": string, "input": unknown }`; strict validation rejects caller-supplied identity, permissions, approvals, and credentials. Gateway derives actor ID and grants exclusively from the verified principal. Tool Service still decides whether those grants satisfy a specific tool and whether approval is required.
-
-Gateway JSON bodies are capped at 64 KiB; voice and file payloads belong on purpose-built transports.
-
-The dedicated client authenticates as `gateway`, forwards `x-request-id`, validates all downstream JSON contracts, and aborts after the configured timeout. Execution POSTs are never automatically retried because future actions may mutate state without idempotency guarantees. Tool errors map to stable 400/403/404/409 responses; unavailable, timed-out, and malformed upstreams map to 502/504/502 without exposing URLs, tokens, fetch errors, or downstream messages.
-
-Gateway readiness reports its own initialization and does not synchronously probe Tool Service, avoiding cascading probe failures. Tool availability is evaluated at execution time.
-
-## Trusted Agent path
-
-Both protected Agent routes accept only `message`, optional `conversationId`, and optional `locale`. Gateway rejects caller-supplied permissions, actors, approvals, credentials, tool results, orchestration state, and execution directives. `/respond` preserves the planning-only Phase 5 behavior.
-
-`/run` calls Agent, returns immediately for a response plan, or sends one proposed tool to the existing authenticated Tool Service client using context derived from the principal. Only a successful tool result is sent back to Agent for finalization. The same request ID is used throughout. A follow-up tool proposal fails closed with `ORCHESTRATION_STEP_LIMIT_EXCEEDED`; no second tool executes.
-
-## Authentication
-
-Protected routes require exactly `Authorization: Bearer <JWT>`. Tokens use HS256 and require `sub`, `iss`, `aud`, `iat`, `exp`, `permissions`, and `tokenVersion: 1`; optional `nbf` is honored. The only recognized Phase 7 permission is `system.echo`. Unknown or duplicate permissions invalidate the token. Subjects use a bounded safe identifier format.
-
-For local development, set the four `AUTH_*` variables and generate a controlled token:
-
-```powershell
-$env:AUTH_JWT_SECRET = "replace-with-at-least-32-characters"
-pnpm.cmd auth:dev-token -- --subject local-user-001
-```
-
-The CLI always grants the fixed `system.echo` development permission and prints only the token. It is not an HTTP login endpoint. Authentication is stateless: there are no user records, password login, refresh tokens, revocation storage, or sessions. A future cookie-session design would require explicit CSRF protection; Phase 7 uses bearer headers and does not enable CORS.
-
-External JWT trust and internal service trust are separate. Gateway verifies the external token, discards it at the boundary, and sends only actor/grant context to Tool Service. Agent and Tool calls continue using their distinct internal service tokens. Neither downstream service receives the JWT or JWT signing secret.
-
-Tool policy errors remain authoritative and do not return to Agent for reinterpretation. If a tool succeeds but Agent finalization fails, Gateway returns `AGENT_FINALIZATION_FAILED` and states that the action may have completed. It never retries execution. Individual downstream timeouts bound each call; cumulative orchestration latency is the sum of up to two Agent calls and one Tool call.
+The Gateway owns HTTP ingress, identity/session persistence, request lifecycle, external errors, correlation, edge hardening, trusted downstream calls, and orchestration. It does not own LLM inference, audio processing, retrieval, tool execution, external integrations, Kafka analytics, or Agent/Tool database access. OAuth, passwords, frontend login, RBAC, WebSockets, rate limiting, Redis, and production deployment remain future milestones.

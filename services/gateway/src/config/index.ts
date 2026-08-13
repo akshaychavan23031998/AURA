@@ -1,4 +1,8 @@
-import { parseAuthEnvironment, parseEnvironment } from "./env.js";
+import {
+  parseAuthEnvironment,
+  parseDatabaseEnvironment,
+  parseEnvironment,
+} from "./env.js";
 
 const DEVELOPMENT_DEFAULTS = {
   NODE_ENV: "development",
@@ -12,6 +16,7 @@ const DEVELOPMENT_DEFAULTS = {
   AUTH_JWT_ISSUER: "aura-gateway",
   AUTH_JWT_AUDIENCE: "aura-api",
   AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
+  AUTH_SESSION_TTL_SECONDS: "604800",
 } as const;
 
 export interface AuthConfig {
@@ -19,6 +24,7 @@ export interface AuthConfig {
   readonly issuer: string;
   readonly audience: string;
   readonly accessTokenTtlSeconds: number;
+  readonly sessionTtlSeconds: number;
 }
 
 export interface GatewayConfig {
@@ -45,6 +51,11 @@ export interface GatewayConfig {
     readonly timeoutMs: number;
   };
   readonly auth: AuthConfig;
+  readonly database: { readonly url: string };
+}
+
+export interface DatabaseConfig {
+  readonly url: string;
 }
 
 export function loadAuthConfig(
@@ -59,7 +70,15 @@ export function loadAuthConfig(
     issuer: parsed.AUTH_JWT_ISSUER,
     audience: parsed.AUTH_JWT_AUDIENCE,
     accessTokenTtlSeconds: parsed.AUTH_ACCESS_TOKEN_TTL_SECONDS,
+    sessionTtlSeconds: parsed.AUTH_SESSION_TTL_SECONDS,
   });
+}
+
+export function loadDatabaseConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): DatabaseConfig {
+  const parsed = parseDatabaseEnvironment(environment);
+  return Object.freeze({ url: parsed.DATABASE_URL });
 }
 
 export function loadConfig(
@@ -90,6 +109,8 @@ export function loadConfig(
       issuer: parsed.AUTH_JWT_ISSUER,
       audience: parsed.AUTH_JWT_AUDIENCE,
       accessTokenTtlSeconds: parsed.AUTH_ACCESS_TOKEN_TTL_SECONDS,
+      sessionTtlSeconds: parsed.AUTH_SESSION_TTL_SECONDS,
     }),
+    database: Object.freeze({ url: parsed.DATABASE_URL }),
   });
 }

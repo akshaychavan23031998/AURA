@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app/create-app.js";
 import { parseBearerAuthorization } from "../src/auth/auth-plugin.js";
-import { issueDevelopmentAccessToken } from "../src/auth/token-issuer.js";
+import { issueAccessToken } from "../src/auth/token-issuer.js";
 import { createAccessTokenVerifier } from "../src/auth/token-verifier.js";
 import { testConfig } from "./test-config.js";
 
 const now = Math.floor(Date.now() / 1000);
+const sessionId = "00000000-0000-4000-8000-000000000001";
 
 describe("bearer authorization parser", () => {
   it("accepts exactly one Bearer JWT", () => {
@@ -37,19 +38,21 @@ describe("access-token verification", () => {
   const verifier = createAccessTokenVerifier(testConfig);
 
   it("creates an immutable trusted principal from a valid token", async () => {
-    const token = await issueDevelopmentAccessToken(
+    const token = await issueAccessToken(
       testConfig.auth,
       "local-user-001",
+      sessionId,
       ["system.echo"],
       now,
     );
     const principal = await verifier.verify(token);
-    expect(principal).toEqual({
+    expect(principal).toMatchObject({
       actorId: "local-user-001",
       permissions: ["system.echo"],
       tokenIssuedAt: now,
       tokenExpiresAt: now + 900,
     });
+    expect(principal.sessionId).toMatch(/^[0-9a-f-]{36}$/);
     expect(Object.isFrozen(principal)).toBe(true);
     expect(Object.isFrozen(principal.permissions)).toBe(true);
   });
@@ -91,10 +94,11 @@ describe("access-token verification", () => {
     ).rejects.toBeDefined();
   });
 
-  it("issues controlled, bounded development tokens", async () => {
-    const token = await issueDevelopmentAccessToken(
+  it("issues controlled, bounded session-bound tokens", async () => {
+    const token = await issueAccessToken(
       testConfig.auth,
       "developer-001",
+      sessionId,
       undefined,
       now,
     );
@@ -154,12 +158,14 @@ interface TokenOverrides {
   readonly permissions?: readonly string[];
   readonly issuedAt?: number;
   readonly expiresAt?: number;
+  readonly sessionId?: string;
 }
 
 async function signToken(overrides: TokenOverrides): Promise<string> {
   let token = new SignJWT({
     permissions: overrides.permissions ?? ["system.echo"],
     tokenVersion: 1,
+    sid: overrides.sessionId ?? sessionId,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer(overrides.issuer ?? testConfig.auth.issuer)

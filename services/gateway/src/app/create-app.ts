@@ -27,6 +27,12 @@ import {
   createAccessTokenVerifier,
   type AccessTokenVerifier,
 } from "../auth/token-verifier.js";
+import { createDatabaseClient, type DatabaseClient } from "../db/client.js";
+import { IdentityRepository } from "../identity/repositories.js";
+import {
+  SessionService,
+  type SessionManager,
+} from "../identity/session-service.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -34,6 +40,8 @@ export interface CreateAppOptions {
   readonly toolClient?: ToolServiceClient;
   readonly agentClient?: AgentServiceClient;
   readonly tokenVerifier?: AccessTokenVerifier;
+  readonly database?: DatabaseClient;
+  readonly sessionService?: SessionManager;
 }
 
 export async function createApp(
@@ -59,6 +67,10 @@ export async function createApp(
     bodyLimit: options.config.server.bodyLimit,
   };
   const app = Fastify(serverOptions);
+  const database = options.database ?? createDatabaseClient(options.config);
+  const sessions =
+    options.sessionService ??
+    new SessionService(new IdentityRepository(database), options.config.auth);
   const toolClient =
     options.toolClient ??
     createToolServiceClient(options.config, fetch, app.log);
@@ -70,7 +82,8 @@ export async function createApp(
   registerRequestContext(app);
   const authenticate = registerAuthentication(
     app,
-    options.tokenVerifier ?? createAccessTokenVerifier(options.config),
+    options.tokenVerifier ??
+      createAccessTokenVerifier(options.config, sessions),
   );
   registerRoutes(
     app,
@@ -82,7 +95,10 @@ export async function createApp(
       logger: app.log,
     }),
     authenticate,
+    sessions,
+    () => database.check(),
   );
+  app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);
 
   return app;

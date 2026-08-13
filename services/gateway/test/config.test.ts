@@ -20,6 +20,8 @@ describe("gateway configuration", () => {
       AUTH_JWT_ISSUER: "aura-gateway",
       AUTH_JWT_AUDIENCE: "aura-api",
       AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
+      AUTH_SESSION_TTL_SECONDS: "604800",
+      DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
     });
 
     expect(config).toEqual({
@@ -41,6 +43,10 @@ describe("gateway configuration", () => {
         issuer: "aura-gateway",
         audience: "aura-api",
         accessTokenTtlSeconds: 900,
+        sessionTtlSeconds: 604_800,
+      },
+      database: {
+        url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
       },
     });
     expect(Object.isFrozen(config)).toBe(true);

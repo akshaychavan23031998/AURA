@@ -9,6 +9,7 @@ export const testTokenVerifier: AccessTokenVerifier = {
     Promise.resolve(
       Object.freeze({
         actorId: "local-user-001",
+        sessionId: "00000000-0000-4000-8000-000000000001",
         permissions: Object.freeze(["system.echo"] as const),
         tokenIssuedAt: 1_700_000_000,
         tokenExpiresAt: 1_700_000_900,

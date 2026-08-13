@@ -7,6 +7,8 @@ import type { AgentServiceClient } from "../clients/agent/agent-service-client.j
 import { registerAgentResponseRoute } from "./agent/agent-response.route.js";
 import { registerAgentRunRoute } from "./agent/agent-run.route.js";
 import type { AgentToolOrchestrator } from "../orchestration/agent-tool-orchestrator.js";
+import type { SessionManager } from "../identity/session-service.js";
+import { registerAuthRoutes } from "./auth/auth.route.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -14,8 +16,11 @@ export function registerRoutes(
   agentClient: AgentServiceClient,
   orchestrator: AgentToolOrchestrator,
   authenticate: preHandlerHookHandler,
+  sessions: SessionManager,
+  checkDatabase: () => Promise<void>,
 ): void {
-  app.register(registerHealthRoutes);
+  registerHealthRoutes(app, checkDatabase);
+  registerAuthRoutes(app, sessions, authenticate);
   registerToolExecutionRoute(app, toolClient, authenticate);
   registerAgentResponseRoute(app, agentClient, authenticate);
   registerAgentRunRoute(app, orchestrator, authenticate);
