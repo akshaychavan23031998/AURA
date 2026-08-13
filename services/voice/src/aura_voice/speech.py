@@ -1,19 +1,14 @@
 import asyncio
 import io
-import wave
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Protocol, cast
 
 from aura_voice.audio import NoSpeechDetectedError, ValidatedAudio
 from aura_voice.contracts import TranscriptionResult
+from aura_voice.locale import SynthesisLocale
 
 
 class SpeechRuntimeError(Exception):
-    pass
-
-
-class UnsupportedSynthesisLanguageError(Exception):
     pass
 
 
@@ -26,7 +21,7 @@ class SpeechTranscriber(Protocol):
 
 class SpeechSynthesizer(Protocol):
     async def initialize(self) -> None: ...
-    async def synthesize(self, text: str, language: str) -> bytes: ...
+    async def synthesize(self, text: str, locale: SynthesisLocale) -> bytes: ...
 
 
 class _Segment(Protocol):
@@ -86,41 +81,3 @@ class LocalSpeechTranscriber:
         return TranscriptionResult(
             text=text, detectedLanguage=detected, durationMs=audio.duration_ms
         )
-
-
-class LocalTtsSynthesizer:
-    def __init__(self, model_path: Path, semaphore: asyncio.Semaphore) -> None:
-        self._model_path = model_path
-        self._semaphore = semaphore
-        self._voice: object | None = None
-
-    async def initialize(self) -> None:
-        if (
-            not self._model_path.is_file()
-            or not self._model_path.with_suffix(
-                self._model_path.suffix + ".json"
-            ).is_file()
-        ):
-            raise SpeechRuntimeError("TTS model files are unavailable")
-        try:
-            from piper import PiperVoice
-
-            self._voice = await asyncio.to_thread(
-                PiperVoice.load, str(self._model_path)
-            )
-        except Exception as error:
-            raise SpeechRuntimeError("TTS model could not be initialized") from error
-
-    async def synthesize(self, text: str, language: str) -> bytes:
-        if self._voice is None:
-            raise SpeechRuntimeError("TTS model is not initialized")
-        if language.split("-")[0].lower() != "en":
-            raise UnsupportedSynthesisLanguageError
-        async with self._semaphore:
-            return await asyncio.to_thread(self._synthesize_sync, text)
-
-    def _synthesize_sync(self, text: str) -> bytes:
-        output = io.BytesIO()
-        with wave.open(output, "wb") as wav_file:
-            getattr(self._voice, "synthesize_wav")(text, wav_file)  # noqa: B009 - optional runtime is dynamically imported
-        return output.getvalue()

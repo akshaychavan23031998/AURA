@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StringConstraints
 
 
 class TranscriptionResult(BaseModel):
@@ -15,4 +15,7 @@ class SynthesisRequest(BaseModel):
     text: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8192)
     ]
-    language: Annotated[str, StringConstraints(min_length=2, max_length=35)]
+    locale: Annotated[str, StringConstraints(min_length=2, max_length=35)] = Field(
+        validation_alias=AliasChoices("locale", "language"),
+        serialization_alias="locale",
+    )

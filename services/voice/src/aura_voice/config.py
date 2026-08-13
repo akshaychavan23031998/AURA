@@ -22,7 +22,14 @@ class Settings(BaseSettings):
     )
     voice_stt_device: Literal["cpu", "cuda", "auto"] = "cpu"
     voice_stt_compute_type: str = Field(default="int8", min_length=1, max_length=32)
-    voice_tts_model_path: Path
+    tts_model_root: Path = Path("../../models/voice")
+    tts_voice_en: str = "en_US-lessac-medium"
+    tts_voice_hi: str = "hi_IN-pratham-medium"
+    tts_voice_te: str = "te_IN-padmavathi-medium"
+    tts_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    tts_max_output_bytes: int = Field(
+        default=12 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024
+    )
     voice_max_audio_seconds: float = Field(default=30, gt=0, le=60)
     voice_max_audio_bytes: int = Field(
         default=10 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024

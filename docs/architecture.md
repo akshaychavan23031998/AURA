@@ -16,6 +16,7 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 8 PostgreSQL-backed users, revocable sessions, transactional opaque refresh-token rotation, and per-request session enforcement
 - Phase 9 self-hosted llama.cpp/Qwen3 planning with explicit planner modes, constrained JSON generation, strict plan validation, multilingual text handling, and lifecycle-aware readiness
 - Phase 10 authenticated turn-based voice orchestration with bounded WAV ingress, local faster-whisper STT, local Piper TTS, correlation propagation, and explicit post-action synthesis failure semantics
+- Phase 11 config-driven multilingual Piper voice selection for English, Hindi, experimental Hinglish/Telugu, conservative locale/text normalization, bounded synthesis, WAV validation, and explicit unsupported Kannada behavior
 
 ### Planned
 

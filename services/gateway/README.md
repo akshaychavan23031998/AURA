@@ -97,3 +97,5 @@ The Gateway owns HTTP ingress, identity/session persistence, request lifecycle, 
 `POST /api/v1/voice/run` requires the same persisted bearer session as Agent routes. It accepts multipart `audio` (16 kHz mono 16-bit PCM WAV, at most 10 MiB/30 seconds), optional `conversationId`, and optional locale hint. Gateway calls Voice STT, runs the transcript through the existing `AgentToolOrchestrator`, calls Voice TTS once, and returns bounded JSON with `transcript`, `detectedLanguage`, `responseText`, `audioBase64`, and `audioMimeType`.
 
 Gateway uses a distinct `VOICE_SERVICE_TOKEN` and propagates `x-request-id` to STT and TTS. Uploaded audio and text are not logged. If synthesis fails after an action, Gateway reports that the action may have completed and never repeats Agent/Tool execution. This endpoint is a turn-based foundation; no streaming transport is implemented.
+
+The internal TTS request uses a normalized locale. Current capability is English and Hindi supported, Hinglish/Telugu experimental, and Kannada explicitly unsupported. Gateway does not select model paths or expose internal voice identifiers.

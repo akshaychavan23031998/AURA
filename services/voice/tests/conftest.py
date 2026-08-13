@@ -28,7 +28,7 @@ class FakeSynthesizer:
     async def initialize(self) -> None:
         pass
 
-    async def synthesize(self, text, language):
+    async def synthesize(self, text, locale):
         return wav_bytes()
 
 
@@ -50,7 +50,6 @@ def settings() -> Settings:
         voice_port=8002,
         log_level="CRITICAL",
         aura_internal_service_token=TOKEN,
-        voice_tts_model_path="unused-test-voice.onnx",
     )
 
 

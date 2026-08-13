@@ -20,11 +20,7 @@ export interface VoiceServiceClient {
     requestId: string,
     locale?: string,
   ): Promise<Transcription>;
-  synthesize(
-    text: string,
-    language: string,
-    requestId: string,
-  ): Promise<Buffer>;
+  synthesize(text: string, locale: string, requestId: string): Promise<Buffer>;
 }
 export interface VoiceClientLogger {
   info(bindings: object, message: string): void;
@@ -97,7 +93,7 @@ export function createVoiceServiceClient(
         );
       }
     },
-    async synthesize(text, language, requestId) {
+    async synthesize(text, locale, requestId) {
       const startedAt = performance.now();
       try {
         const response = await fetchImplementation(
@@ -108,7 +104,7 @@ export function createVoiceServiceClient(
               ...headers(requestId),
               "content-type": "application/json",
             },
-            body: JSON.stringify({ text, language }),
+            body: JSON.stringify({ text, locale }),
             signal: AbortSignal.timeout(config.voiceService.timeoutMs),
           },
         );

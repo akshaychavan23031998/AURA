@@ -6,7 +6,7 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 10 — turn-based self-hosted voice foundation.** Authenticated callers can upload bounded PCM WAV audio to Gateway, which invokes local STT, the existing Agent/Tool orchestration, and local TTS while preserving request correlation and authority boundaries. This is not streaming realtime audio; VAD, interruption, WebRTC/WebSockets, RAG, memory, and external integrations remain unimplemented.
+**Phase 11 — multilingual TTS and voice-quality hardening.** The local Voice Service now routes normalized English, Hindi, Hinglish, and Telugu synthesis through a typed Piper voice registry, validates every WAV result, and fails closed for unsupported Kannada. This is not streaming realtime audio; VAD, interruption, WebRTC/WebSockets, RAG, memory, and external integrations remain unimplemented.
 
 ## Planned architecture
 

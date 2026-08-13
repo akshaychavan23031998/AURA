@@ -38,3 +38,17 @@ def test_tts_returns_wav(client, headers):
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/wav"
     assert response.content.startswith(b"RIFF")
+
+
+def test_tts_accepts_locale_and_rejects_unknown_locale(client, headers):
+    assert (
+        client.post(
+            "/v1/tts", headers=headers, json={"text": "नमस्ते", "locale": "hi-IN"}
+        ).status_code
+        == 200
+    )
+    response = client.post(
+        "/v1/tts", headers=headers, json={"text": "bonjour", "locale": "fr"}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VOICE_LANGUAGE_UNSUPPORTED"

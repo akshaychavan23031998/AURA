@@ -7,7 +7,7 @@ The Voice Service is AURA's internal, self-hosted speech transformation boundary
 - `GET /health`: process liveness.
 - `GET /ready`: STT and TTS models were loaded once and are available.
 - `POST /v1/stt`: authenticated multipart `audio` upload; accepts only 16 kHz, mono, 16-bit PCM WAV up to 10 MiB and 30 seconds.
-- `POST /v1/tts`: authenticated JSON `{ "text": "...", "language": "en" }`; returns `audio/wav`.
+- `POST /v1/tts`: authenticated JSON `{ "text": "...", "locale": "hi-IN" }`; returns validated mono PCM `audio/wav`. The legacy `language` field remains accepted internally for Phase 10 compatibility.
 
 Gateway is the only normal caller and authenticates with `x-aura-service-id: gateway`, a dedicated `x-aura-service-token`, and `x-request-id`. Voice does not verify users, plan actions, or execute tools. It does not persist audio or log transcript/response content.
 
@@ -16,7 +16,9 @@ Gateway is the only normal caller and authenticates with `x-aura-service-id: gat
 Run `pnpm voice:model:setup` after creating `services/voice/.venv` and installing `.[dev,speech]`. Model files go under ignored `models/voice`; normal startup never downloads them.
 
 - STT: `Systran/faster-whisper-tiny`, about 78.2 MB, MIT, multilingual (model card lists 99 languages), CTranslate2 CPU `int8`. This is the practical latency-first choice for the i5-7200U/12 GiB machine. English smoke was accurate; the synthetic English-voice Hinglish attempt was not accurate, so Hinglish quality is not claimed.
-- TTS: Piper `en_US-lessac-medium`, about 63.3 MB, MIT voice weights, 22.05 kHz mono output. The installed Piper runtime is GPL-3.0-or-later. This voice supports English only; Hindi, Hinglish, Telugu, and Kannada synthesis fail explicitly instead of using misleading English phonetics.
+- TTS: the GPL-3.0-or-later Piper runtime with three official MIT medium ONNX voices, approximately 63.5 MB each: `en_US-lessac-medium`, `hi_IN-pratham-medium`, and `te_IN-padmavathi-medium`. All emit 22.05 kHz mono PCM WAV. Setup verifies the official Hindi/Telugu MD5 digests and startup loads every configured voice once.
+
+Language capability is explicit: English and Hindi are supported; Hinglish is experimental and routes Latin-mixed text to the Hindi voice without transliteration; Telugu is experimental pending broader human listening; Kannada is unsupported because Piper has no official Kannada voice and the evaluated MMS alternative is non-commercial and requires another runtime. Unsupported Kannada requests return `VOICE_TTS_UNAVAILABLE` rather than misleading output.
 
 Configuration is documented in `.env.example`. Start from the repository root after setting the service token:
 
@@ -34,4 +36,4 @@ Run deterministic checks with `pnpm voice:lint`, `voice:typecheck`, `voice:test`
 
 ## Limitations
 
-There is no WebSocket/WebRTC transport, partial transcript, VAD boundary, barge-in, wake word, retry, frontend, or continuous conversation. The public Phase 10 response uses bounded base64 WAV in JSON; streaming should replace it in a later milestone. CPU LLM latency still dominates complete voice turns.
+There is no WebSocket/WebRTC transport, partial transcript, VAD boundary, barge-in, wake word, retry, frontend, continuous conversation, or automatic transliteration. The public response uses bounded base64 WAV in JSON. CPU LLM latency still dominates complete voice turns.

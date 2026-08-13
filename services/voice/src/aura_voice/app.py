@@ -14,12 +14,18 @@ from fastapi.responses import JSONResponse
 from aura_voice.audio import InvalidAudioError, NoSpeechDetectedError, validate_wav
 from aura_voice.config import Settings, get_settings
 from aura_voice.contracts import SynthesisRequest
+from aura_voice.locale import UnsupportedLocaleError, normalize_locale, normalize_text
 from aura_voice.logging import configure_logging
 from aura_voice.speech import (
     SpeechRuntimeError,
     SpeechSynthesizer,
     SpeechTranscriber,
-    UnsupportedSynthesisLanguageError,
+)
+from aura_voice.tts import (
+    InvalidSynthesisOutputError,
+    TtsFailedError,
+    TtsTimeoutError,
+    TtsUnavailableError,
 )
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -128,7 +134,9 @@ def create_app(
         if len(payload.text) > settings.voice_max_tts_characters:
             raise InvalidSynthesisRequestError
         started = time.perf_counter()
-        audio = await synthesizer.synthesize(payload.text, payload.language)
+        text = normalize_text(payload.text)
+        selected = normalize_locale(payload.locale, text)
+        audio = await synthesizer.synthesize(text, selected)
         logger.info(
             "Speech synthesis completed",
             extra={
@@ -197,9 +205,9 @@ def register_error_handlers(app: FastAPI) -> None:
             422, "VOICE_NO_SPEECH_DETECTED", "No speech was detected", request
         )
 
-    @app.exception_handler(UnsupportedSynthesisLanguageError)
+    @app.exception_handler(UnsupportedLocaleError)
     async def unsupported_language(
-        request: Request, _: UnsupportedSynthesisLanguageError
+        request: Request, _: UnsupportedLocaleError
     ) -> JSONResponse:
         return error_response(
             422,
@@ -237,6 +245,31 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(SpeechRuntimeError, runtime_error)
     app.add_exception_handler(ServiceNotReadyError, runtime_error)
 
+    async def tts_error(request: Request, error: Exception) -> JSONResponse:
+        mapping: tuple[int, str, str]
+        if isinstance(error, TtsTimeoutError):
+            mapping = (504, "VOICE_TTS_TIMEOUT", "Speech synthesis timed out")
+        elif isinstance(error, TtsUnavailableError):
+            mapping = (503, "VOICE_TTS_UNAVAILABLE", "Speech synthesis is unavailable")
+        elif isinstance(error, InvalidSynthesisOutputError):
+            mapping = (
+                502,
+                "VOICE_INVALID_SYNTHESIS_OUTPUT",
+                "Speech synthesis returned invalid audio",
+            )
+        else:
+            mapping = (502, "VOICE_TTS_FAILED", "Speech synthesis failed")
+        logger.exception("Speech synthesis failed", exc_info=error)
+        return error_response(mapping[0], mapping[1], mapping[2], request)
+
+    for error_type in (
+        TtsTimeoutError,
+        TtsUnavailableError,
+        InvalidSynthesisOutputError,
+        TtsFailedError,
+    ):
+        app.add_exception_handler(error_type, tts_error)
+
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, error: Exception) -> JSONResponse:
         logger.exception("Unexpected Voice Service error", exc_info=error)
@@ -251,7 +284,8 @@ def register_error_handlers(app: FastAPI) -> None:
 def create_runtime_app() -> FastAPI:
     import asyncio
 
-    from aura_voice.speech import LocalSpeechTranscriber, LocalTtsSynthesizer
+    from aura_voice.speech import LocalSpeechTranscriber
+    from aura_voice.tts import PiperEngine, VoiceCapability, VoiceRegistry
 
     settings = get_settings()
     semaphore = asyncio.Semaphore(settings.voice_inference_concurrency)
@@ -263,5 +297,35 @@ def create_runtime_app() -> FastAPI:
             settings.voice_stt_compute_type,
             semaphore,
         ),
-        LocalTtsSynthesizer(settings.voice_tts_model_path, semaphore),
+        VoiceRegistry(
+            {
+                "en": PiperEngine(
+                    settings.tts_model_root / f"{settings.tts_voice_en}.onnx", semaphore
+                ),
+                "hi": PiperEngine(
+                    settings.tts_model_root / f"{settings.tts_voice_hi}.onnx", semaphore
+                ),
+                "te": PiperEngine(
+                    settings.tts_model_root / f"{settings.tts_voice_te}.onnx", semaphore
+                ),
+            },
+            (
+                VoiceCapability(
+                    "en",
+                    ("en", "en-IN", "en-US"),
+                    settings.tts_voice_en,
+                    22050,
+                    "supported",
+                ),
+                VoiceCapability(
+                    "hi", ("hi", "hi-IN"), settings.tts_voice_hi, 22050, "supported"
+                ),
+                VoiceCapability(
+                    "te", ("te", "te-IN"), settings.tts_voice_te, 22050, "experimental"
+                ),
+                VoiceCapability("kn", ("kn", "kn-IN"), None, None, "unsupported"),
+            ),
+            settings.tts_timeout_seconds,
+            settings.tts_max_output_bytes,
+        ),
     )
