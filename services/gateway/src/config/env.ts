@@ -13,6 +13,11 @@ const environmentSchema = z.object({
     "trace",
     "silent",
   ]),
+  TOOLS_SERVICE_URL: z
+    .url()
+    .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
+  TOOLS_SERVICE_TOKEN: z.string().min(32),
+  TOOLS_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000),
 });
 
 export type GatewayEnvironment = z.infer<typeof environmentSchema>;

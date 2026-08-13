@@ -2,7 +2,7 @@
 
 The Tool Service is AURA's controlled action-execution boundary. It treats Agent and LLM output as untrusted, resolves only statically registered tools, validates every input, and centrally enforces permission and approval policy before invoking trusted code.
 
-## Implemented in Phase 3
+## Implemented through Phase 4
 
 - Fastify runtime with validated immutable configuration
 - structured Pino logging, request IDs, sensitive-field redaction, and Helmet headers
@@ -12,6 +12,7 @@ The Tool Service is AURA's controlled action-execution boundary. It treats Agent
 - centralized executor and approval policy
 - `system.echo`, the only production-registered tool
 - operational, metadata, and execution endpoints
+- timing-safe shared-secret authentication for internal tool routes
 
 ## Execution flow
 
@@ -40,12 +41,14 @@ The server accepts JSON bodies up to 64 KiB. Tool inputs and outputs are not log
 
 ## Configuration and development
 
-| Variable     | Default       | Constraint                             |
-| ------------ | ------------- | -------------------------------------- |
-| `NODE_ENV`   | `development` | `development`, `test`, or `production` |
-| `TOOLS_HOST` | `0.0.0.0`     | non-empty host                         |
-| `TOOLS_PORT` | `4001`        | integer from 1 through 65535           |
-| `LOG_LEVEL`  | `info`        | supported Pino level or `silent`       |
+| Variable                      | Default       | Constraint                             |
+| ----------------------------- | ------------- | -------------------------------------- |
+| `NODE_ENV`                    | `development` | `development`, `test`, or `production` |
+| `TOOLS_HOST`                  | `0.0.0.0`     | non-empty host                         |
+| `TOOLS_PORT`                  | `4001`        | integer from 1 through 65535           |
+| `LOG_LEVEL`                   | `info`        | supported Pino level or `silent`       |
+| `INTERNAL_SERVICE_TOKEN`      | none          | required, minimum 32 characters        |
+| `INTERNAL_ALLOWED_SERVICE_ID` | `gateway`     | only Gateway is accepted               |
 
 ```bash
 pnpm --filter @aura/tools dev
@@ -66,13 +69,15 @@ Permissions are stable namespaced strings such as `system.echo` or future `gmail
 
 Approval assertions bind an approval identifier and reviewer to an actor and tool. They are an intentionally incomplete in-memory contract: future trusted approval records must additionally bind the exact action, arguments, expiry, and authenticated approving principal.
 
-## Critical Phase 3 limitation
+## Current trust limitation
 
-**The Phase 3 HTTP execution context is NOT a production authorization boundary.** The caller currently supplies `actorId`, permissions, and optional approval context in the request body solely to establish and test service contracts. A public caller must never be allowed to self-assign permissions such as `gmail.send`, `github.write`, or `admin.*`.
+**The internal execution context is NOT user authentication.** `/tools` and `/tools/execute` require `x-aura-service-id: gateway` and `x-aura-service-token`; unauthenticated request bodies cannot self-assign permissions. Gateway still supplies a temporary local-development actor and permissions solely to establish service contracts.
 
 The future production flow is Browser → Gateway → authenticated identity/authorization context → Agent proposal → trusted service context → Tool Service. Approval will be created and validated by trusted services and bound to the actor, tool, exact action, and expiration window.
 
-The Tool Service is internal and enables no browser CORS. It contains no authentication, OAuth, database, Kafka, Redis, external integration, shell, arbitrary HTTP, or filesystem execution.
+The Tool Service is internal and enables no browser CORS. It contains no user authentication, OAuth, database, Kafka, Redis, external integration, shell, arbitrary HTTP, or filesystem execution.
+
+The shared secret is transitional service authentication. It is required at startup, compared timing-safely, and redacted from logs. Future identity should use mTLS, workload identity, signed service tokens, or service-mesh identity, with key IDs and overlapping rotation windows. Secret rotation is not implemented now.
 
 ## Reliability evolution
 

@@ -10,6 +10,10 @@ import {
   registerRequestContext,
   resolveRequestId,
 } from "../plugins/request-context.js";
+import {
+  createInternalAuthGuard,
+  INTERNAL_SERVICE_TOKEN_HEADER,
+} from "../plugins/internal-auth.js";
 import { registerSecurity } from "../plugins/security.js";
 import { createToolRegistry } from "../registry/create-registry.js";
 import type { ToolRegistry } from "../registry/tool-registry.js";
@@ -35,6 +39,7 @@ export async function createApp(
           paths: [
             "req.headers.authorization",
             "req.headers.cookie",
+            `req.headers.${INTERNAL_SERVICE_TOKEN_HEADER}`,
             "req.body",
             "*.token",
             "*.secret",
@@ -51,7 +56,11 @@ export async function createApp(
   await registerSecurity(app);
   registerRequestContext(app);
   registerHealthRoutes(app);
-  registerToolRoutes(app, { registry, executor: new ToolExecutor(registry) });
+  registerToolRoutes(app, {
+    registry,
+    executor: new ToolExecutor(registry),
+    internalAuth: createInternalAuthGuard(options.config),
+  });
   registerErrorHandling(app);
   return app;
 }

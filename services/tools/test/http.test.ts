@@ -4,6 +4,11 @@ import { createApp } from "../src/app/create-app.js";
 import type { ErrorResponse } from "../src/errors/error-response.js";
 import { testConfig } from "./test-config.js";
 
+const internalHeaders = {
+  "x-aura-service-id": "gateway",
+  "x-aura-service-token": testConfig.internalAuth.token,
+};
+
 describe("Tool Service HTTP contract", () => {
   const apps: Awaited<ReturnType<typeof createApp>>[] = [];
 
@@ -31,7 +36,7 @@ describe("Tool Service HTTP contract", () => {
   it("lists only safe production tool metadata", async () => {
     const response = await (
       await app()
-    ).inject({ method: "GET", url: "/tools" });
+    ).inject({ method: "GET", url: "/tools", headers: internalHeaders });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       tools: [
@@ -53,6 +58,7 @@ describe("Tool Service HTTP contract", () => {
     ).inject({
       method: "POST",
       url: "/tools/execute",
+      headers: internalHeaders,
       payload: {
         tool: "system.echo",
         input: { message: "hello" },
@@ -73,6 +79,7 @@ describe("Tool Service HTTP contract", () => {
     ).inject({
       method: "POST",
       url: "/tools/execute",
+      headers: internalHeaders,
       payload: {
         tool: "does.not.exist",
         input: {},
@@ -89,6 +96,7 @@ describe("Tool Service HTTP contract", () => {
     ).inject({
       method: "POST",
       url: "/tools/execute",
+      headers: internalHeaders,
       payload: {
         tool: "system.echo",
         input: {},
@@ -107,6 +115,7 @@ describe("Tool Service HTTP contract", () => {
     ).inject({
       method: "POST",
       url: "/tools/execute",
+      headers: internalHeaders,
       payload: {
         tool: "system.echo",
         input: { message: "hello" },
@@ -126,6 +135,7 @@ describe("Tool Service HTTP contract", () => {
     ).inject({
       method: "POST",
       url: "/tools/execute",
+      headers: internalHeaders,
       payload: { tool: "system.echo", input: { message: "hello" } },
     });
     expect(response.statusCode).toBe(400);
@@ -138,7 +148,7 @@ describe("Tool Service HTTP contract", () => {
     ).inject({
       method: "POST",
       url: "/tools/execute",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...internalHeaders },
       payload: '{"tool":',
     });
     expect(response.statusCode).toBe(400);

@@ -13,6 +13,8 @@ const environmentSchema = z.object({
     "trace",
     "silent",
   ]),
+  INTERNAL_SERVICE_TOKEN: z.string().min(32),
+  INTERNAL_ALLOWED_SERVICE_ID: z.literal("gateway"),
 });
 
 export class ConfigurationError extends Error {

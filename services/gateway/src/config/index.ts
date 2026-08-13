@@ -5,6 +5,8 @@ const DEVELOPMENT_DEFAULTS = {
   GATEWAY_HOST: "0.0.0.0",
   GATEWAY_PORT: "4000",
   LOG_LEVEL: "info",
+  TOOLS_SERVICE_URL: "http://localhost:4001",
+  TOOLS_SERVICE_TIMEOUT_MS: "3000",
 } as const;
 
 export interface GatewayConfig {
@@ -14,10 +16,16 @@ export interface GatewayConfig {
   readonly server: {
     readonly host: string;
     readonly port: number;
+    readonly bodyLimit: number;
   };
   readonly logging: {
     readonly level:
       "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
+  };
+  readonly toolsService: {
+    readonly url: string;
+    readonly token: string;
+    readonly timeoutMs: number;
   };
 }
 
@@ -31,7 +39,13 @@ export function loadConfig(
     server: Object.freeze({
       host: parsed.GATEWAY_HOST,
       port: parsed.GATEWAY_PORT,
+      bodyLimit: 64 * 1024,
     }),
     logging: Object.freeze({ level: parsed.LOG_LEVEL }),
+    toolsService: Object.freeze({
+      url: parsed.TOOLS_SERVICE_URL.replace(/\/$/, ""),
+      token: parsed.TOOLS_SERVICE_TOKEN,
+      timeoutMs: parsed.TOOLS_SERVICE_TIMEOUT_MS,
+    }),
   });
 }

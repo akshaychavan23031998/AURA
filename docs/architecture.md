@@ -9,6 +9,7 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 1 monorepo and web foundation
 - Phase 2 Fastify Gateway runtime with validated configuration, operational endpoints, request correlation, structured logging, security headers, stable external errors, and graceful shutdown
 - Phase 3 Tool Service execution foundation with a trusted registry, typed contracts, input validation, permission enforcement, approval policy, and the local `system.echo` tool
+- Phase 4 trusted Gateway-to-Tool-Service communication with derived development context, service authentication, correlation propagation, bounded timeout, contract validation, and safe error translation
 
 ### Planned
 
@@ -91,6 +92,15 @@ The Agent Service will not directly access OAuth credentials, execute external a
 
 ```mermaid
 flowchart TD
+  Client[External caller] -->|strict tool + input| Gateway[Public trust boundary: Gateway]
+  Gateway -->|service identity + secret; derived context| Tools[Internal Tool Service]
+  Tools --> Core[Registry / Policy / Executor]
+```
+
+External callers cannot assign actor identity, permissions, approvals, or internal credentials. Gateway derives the temporary `local-dev-user` identity with only `system.echo`; Tool Service authenticates Gateway before accepting metadata or execution. Shared-secret identity is transitional and should later be replaced with mTLS, workload identity, signed service tokens, or service-mesh identity.
+
+```mermaid
+flowchart TD
   Agent[Agent proposes action] --> Contract[Validate tool request]
   Contract --> Registry[Trusted static registry]
   Registry --> Permissions[Permission policy]
@@ -99,7 +109,7 @@ flowchart TD
   Executor --> Adapter[Trusted tool adapter]
 ```
 
-The Tool Service is authoritative for tool existence, input schemas, required permissions, risk, approval, and execution. Agent or LLM output cannot override those values. Phase 3 request-body identity, permissions, and approval assertions exist only for local contract development and are not production authorization. Future production context must derive from authenticated trusted services; approvals must bind actor, exact action, tool, expiry, and approving identity.
+The Tool Service is authoritative for tool existence, input schemas, required permissions, risk, approval, and execution. Agent or LLM output cannot override those values. Gateway-derived development identity is not production authentication. Future context must derive from authenticated users and trusted services; approvals must bind actor, exact action, tool, expiry, and approving identity.
 
 Only `system.echo` is currently registered. Real permissions, OAuth, Gmail, Calendar, Jira, GitHub, signed or database-backed approvals, persisted idempotency, and Kafka execution events remain planned.
 

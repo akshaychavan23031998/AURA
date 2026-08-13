@@ -20,6 +20,10 @@ export interface ToolsConfig {
     readonly level:
       "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   };
+  readonly internalAuth: {
+    readonly token: string;
+    readonly allowedServiceId: "gateway";
+  };
 }
 
 export function loadConfig(
@@ -34,5 +38,9 @@ export function loadConfig(
       bodyLimit: 64 * 1024,
     }),
     logging: Object.freeze({ level: parsed.LOG_LEVEL }),
+    internalAuth: Object.freeze({
+      token: parsed.INTERNAL_SERVICE_TOKEN,
+      allowedServiceId: parsed.INTERNAL_ALLOWED_SERVICE_ID,
+    }),
   });
 }
