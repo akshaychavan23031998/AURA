@@ -5,6 +5,12 @@ import type { AgentToolOrchestrator } from "./agent-tool-orchestrator.js";
 export interface VoiceTurnLogger {
   info(bindings: object, message: string): void;
 }
+export interface VoiceTurnObserver {
+  onTranscript?(transcript: { text: string; detectedLanguage: string }): void;
+  onAgentStarted?(): void;
+  onAgentCompleted?(responseText: string): void;
+  onSynthesisStarted?(): void;
+}
 export class VoiceTurnService {
   public constructor(
     private readonly voice: VoiceServiceClient,
@@ -20,6 +26,7 @@ export class VoiceTurnService {
     },
     requestId: string,
     context: TrustedToolContext,
+    observer?: VoiceTurnObserver,
   ) {
     const startedAt = performance.now();
     const sttAt = performance.now();
@@ -29,8 +36,10 @@ export class VoiceTurnService {
       requestId,
       input.locale,
     );
+    observer?.onTranscript?.(transcript);
     const sttDurationMs = performance.now() - sttAt;
     const agentAt = performance.now();
+    observer?.onAgentStarted?.();
     const result = await this.agent.run(
       {
         message: transcript.text,
@@ -42,8 +51,10 @@ export class VoiceTurnService {
       requestId,
       context,
     );
+    observer?.onAgentCompleted?.(result.response.text);
     const agentDurationMs = performance.now() - agentAt;
     const ttsAt = performance.now();
+    observer?.onSynthesisStarted?.();
     const audio = await this.voice.synthesize(
       result.response.text,
       input.locale ?? transcript.detectedLanguage,

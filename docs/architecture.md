@@ -17,10 +17,11 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 9 self-hosted llama.cpp/Qwen3 planning with explicit planner modes, constrained JSON generation, strict plan validation, multilingual text handling, and lifecycle-aware readiness
 - Phase 10 authenticated turn-based voice orchestration with bounded WAV ingress, local faster-whisper STT, local Piper TTS, correlation propagation, and explicit post-action synthesis failure semantics
 - Phase 11 config-driven multilingual Piper voice selection for English, Hindi, experimental Hinglish/Telugu, conservative locale/text normalization, bounded synthesis, WAV validation, and explicit unsupported Kannada behavior
+- Phase 12 authenticated `aura.voice.v1` WebSocket ingress with fixed PCM framing, deterministic server-side energy VAD, explicit one-turn state, bounded buffers, correlated lifecycle events, and chunked completed-WAV output
 
 ### Planned
 
-Streaming voice, VAD/interruption, knowledge/RAG, memory, analytics, OAuth/account login, WebSockets, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+True streaming STT/TTS, partial transcripts, interruption/barge-in, knowledge/RAG, memory, analytics, OAuth/account login, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
 
 ## 2. Architectural style
 
@@ -56,7 +57,7 @@ Services do not receive unrestricted access to every datastore. Each service gai
 
 ## 4. Realtime communication
 
-Phase 10 implements the preceding non-streaming foundation:
+Phase 12 adds a realtime transport and server-detected turn boundary over the existing whole-turn processing pipeline:
 
 ```mermaid
 flowchart LR
@@ -69,7 +70,7 @@ flowchart LR
   TTS --> Gateway
 ```
 
-Voice transforms speech only. Gateway authenticates the user, derives authority, owns orchestration, and preserves one request ID across Voice, Agent, and Tools. The current bounded multipart/JSON API is deliberately not described as low-latency realtime streaming.
+Voice transforms speech only. Gateway authenticates the user, derives authority, owns orchestration, and preserves correlated request IDs across Voice, Agent, and Tools. The multipart/JSON API remains a compatibility path. WebSocket input is realtime framed PCM, but STT/TTS remain completed-turn calls and output is a chunked completed WAV; partial transcripts and streaming synthesis are not implemented.
 
 Realtime voice uses a direct, low-latency streaming path:
 

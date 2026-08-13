@@ -106,6 +106,18 @@ describe("Gateway Agent Tool orchestration contract", () => {
         timeoutMs: 1000,
         maxAudioBytes: 10485760,
       },
+      voiceStream: {
+        frameBytes: 640,
+        maxFrameBytes: 640,
+        maxBufferBytes: 960000,
+        maxUtteranceMs: 30000,
+        audioChunkBytes: 16384,
+        vadThreshold: 500,
+        vadMinSpeechMs: 100,
+        vadEndSilenceMs: 600,
+        frameMs: 20,
+        idleTimeoutMs: 120000,
+      },
       auth: {
         secret: "gateway-jwt-test-secret-at-least-32-characters",
         issuer: "aura-gateway",

@@ -1,6 +1,6 @@
 # Gateway Service
 
-The Gateway is AURA's external HTTP entry point. Phase 8 adds PostgreSQL-backed users, revocable sessions, rotating opaque refresh tokens, and server-derived authorization context. It is an identity/session foundation, not a user-account or OAuth system.
+The Gateway is AURA's external HTTP and WebSocket entry point. Phase 12 adds an authenticated, bounded realtime voice-session transport while reusing the existing STT, Agent/Tool orchestration, and TTS pipeline.
 
 ## Implemented
 
@@ -12,6 +12,7 @@ The Gateway is AURA's external HTTP entry point. Phase 8 adds PostgreSQL-backed 
 - immediate active-session and active-user enforcement on protected requests
 - transactional refresh rotation, replay-family revocation, and idempotent logout
 - idempotent development-user bootstrap and development-session CLIs
+- authenticated `aura.voice.v1` WebSocket sessions with fixed PCM framing, server-side energy VAD, explicit turn states, correlation, heartbeat/idle cleanup, and chunked completed-WAV output
 
 ## Endpoints
 
@@ -24,6 +25,8 @@ The Gateway is AURA's external HTTP entry point. Phase 8 adds PostgreSQL-backed 
 | `POST` | `/api/v1/tools/execute` | Bearer         | Execute a validated Tool Service request    |
 | `POST` | `/api/v1/agent/respond` | Bearer         | Produce an unexecuted planning response     |
 | `POST` | `/api/v1/agent/run`     | Bearer         | Run deterministic orchestration             |
+| `POST` | `/api/v1/voice/run`     | Bearer         | Run one multipart voice turn                |
+| `GET`  | `/api/v1/voice/session` | Bearer upgrade | Open an `aura.voice.v1` WebSocket session   |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
@@ -49,6 +52,11 @@ The service-local `.env.example` is the executable Gateway contract; the root ex
 | `AUTH_ACCESS_TOKEN_TTL_SECONDS` | `900`                   | 60-3600 seconds                        |
 | `AUTH_SESSION_TTL_SECONDS`      | `604800`                | 3600-2592000 seconds                   |
 | `DATABASE_URL`                  | none                    | required PostgreSQL URL                |
+| `VOICE_STREAM_MAX_FRAME_BYTES`  | `640`                   | maximum inbound binary frame           |
+| `VOICE_VAD_THRESHOLD`           | `500`                   | absolute PCM energy threshold          |
+| `VOICE_VAD_MIN_SPEECH_MS`       | `100`                   | speech-start debounce                  |
+| `VOICE_VAD_END_SILENCE_MS`      | `600`                   | utterance-end silence                  |
+| `VOICE_SESSION_IDLE_TIMEOUT_MS` | `120000`                | inactive session lifetime              |
 
 Configuration is read once and fails fast. Database connection and query timeouts are bounded. URLs, tokens, hashes, secrets, cookies, authorization headers, and request bodies are not logged.
 
@@ -99,3 +107,11 @@ The Gateway owns HTTP ingress, identity/session persistence, request lifecycle, 
 Gateway uses a distinct `VOICE_SERVICE_TOKEN` and propagates `x-request-id` to STT and TTS. Uploaded audio and text are not logged. If synthesis fails after an action, Gateway reports that the action may have completed and never repeats Agent/Tool execution. This endpoint is a turn-based foundation; no streaming transport is implemented.
 
 The internal TTS request uses a normalized locale. Current capability is English and Hindi supported, Hinglish/Telugu experimental, and Kannada explicitly unsupported. Gateway does not select model paths or expose internal voice identifiers.
+
+## Realtime voice session
+
+Connect to `GET /api/v1/voice/session` with the normal bearer credential and optional validated `x-request-id`. Send `{"protocol":"aura.voice.v1","type":"session.start"}`, then binary 20 ms frames of 16 kHz, mono, signed 16-bit little-endian PCM (exactly 640 bytes). JSON server events describe readiness, speech boundaries, transcript, Agent/TTS lifecycle, completion, and stable errors; binary messages contain bounded chunks of one completed WAV result.
+
+The state path is `CONNECTED → READY → LISTENING → PROCESSING → SPEAKING → READY`, with `CLOSED` terminal. Only one turn may be active. Frames during processing/speaking return `VOICE_BUSY`; invalid or oversized frames, utterances, buffers, and idle sessions fail closed without orchestration retries. Audio/text content is not logged. Request IDs are rooted in the upgrade request and each turn derives a correlated child ID.
+
+Current VAD is a deterministic in-process PCM energy detector. It is dependency-light and testable, but less robust than neural VAD in noise. STT and TTS remain whole-turn Voice Service calls; completed WAV bytes are chunked only for transport. Barge-in, interruption, partial transcripts, native browser capture, streamed STT/TTS, multi-turn persistence, and Redis coordination are not implemented.

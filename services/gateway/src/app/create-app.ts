@@ -3,6 +3,7 @@ import Fastify, {
   type FastifyServerOptions,
 } from "fastify";
 import multipart from "@fastify/multipart";
+import websocket from "@fastify/websocket";
 
 import type { GatewayConfig } from "../config/index.js";
 import {
@@ -91,6 +92,9 @@ export async function createApp(
     createVoiceServiceClient(options.config, fetch, app.log);
 
   await registerSecurity(app);
+  await app.register(websocket, {
+    options: { maxPayload: options.config.voiceService.maxAudioBytes },
+  });
   await app.register(multipart, {
     limits: {
       files: 1,
@@ -121,6 +125,7 @@ export async function createApp(
       new AgentToolOrchestrator({ agentClient, toolClient, logger: app.log }),
       app.log,
     ),
+    options.config,
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);

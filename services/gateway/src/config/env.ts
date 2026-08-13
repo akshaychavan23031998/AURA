@@ -52,6 +52,15 @@ const environmentSchema = z.object({
     .int()
     .min(1024)
     .max(20 * 1024 * 1024),
+  VOICE_STREAM_MAX_FRAME_BYTES: z.coerce.number().int().min(640).max(65_536),
+  VOICE_VAD_THRESHOLD: z.coerce.number().int().min(1).max(32_767),
+  VOICE_VAD_END_SILENCE_MS: z.coerce.number().int().min(100).max(5_000),
+  VOICE_VAD_MIN_SPEECH_MS: z.coerce.number().int().min(20).max(2_000),
+  VOICE_SESSION_IDLE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(3_600_000),
   ...authEnvironmentSchema.shape,
   ...databaseEnvironmentSchema.shape,
 });

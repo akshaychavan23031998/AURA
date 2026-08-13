@@ -16,6 +16,11 @@ const DEVELOPMENT_DEFAULTS = {
   VOICE_SERVICE_URL: "http://localhost:8002",
   VOICE_SERVICE_TIMEOUT_MS: "180000",
   VOICE_MAX_AUDIO_BYTES: "10485760",
+  VOICE_STREAM_MAX_FRAME_BYTES: "640",
+  VOICE_VAD_THRESHOLD: "500",
+  VOICE_VAD_END_SILENCE_MS: "600",
+  VOICE_VAD_MIN_SPEECH_MS: "100",
+  VOICE_SESSION_IDLE_TIMEOUT_MS: "120000",
   AUTH_JWT_ISSUER: "aura-gateway",
   AUTH_JWT_AUDIENCE: "aura-api",
   AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
@@ -58,6 +63,18 @@ export interface GatewayConfig {
     readonly token: string;
     readonly timeoutMs: number;
     readonly maxAudioBytes: number;
+  };
+  readonly voiceStream: {
+    readonly frameBytes: 640;
+    readonly maxFrameBytes: number;
+    readonly maxBufferBytes: 960000;
+    readonly maxUtteranceMs: 30000;
+    readonly audioChunkBytes: 16384;
+    readonly vadThreshold: number;
+    readonly vadMinSpeechMs: number;
+    readonly vadEndSilenceMs: number;
+    readonly frameMs: 20;
+    readonly idleTimeoutMs: number;
   };
   readonly auth: AuthConfig;
   readonly database: { readonly url: string };
@@ -118,6 +135,18 @@ export function loadConfig(
       token: parsed.VOICE_SERVICE_TOKEN,
       timeoutMs: parsed.VOICE_SERVICE_TIMEOUT_MS,
       maxAudioBytes: parsed.VOICE_MAX_AUDIO_BYTES,
+    }),
+    voiceStream: Object.freeze({
+      frameBytes: 640 as const,
+      maxFrameBytes: parsed.VOICE_STREAM_MAX_FRAME_BYTES,
+      maxBufferBytes: 960000 as const,
+      maxUtteranceMs: 30000 as const,
+      audioChunkBytes: 16384 as const,
+      vadThreshold: parsed.VOICE_VAD_THRESHOLD,
+      vadMinSpeechMs: parsed.VOICE_VAD_MIN_SPEECH_MS,
+      vadEndSilenceMs: parsed.VOICE_VAD_END_SILENCE_MS,
+      frameMs: 20 as const,
+      idleTimeoutMs: parsed.VOICE_SESSION_IDLE_TIMEOUT_MS,
     }),
     auth: Object.freeze({
       secret: parsed.AUTH_JWT_SECRET,

@@ -48,6 +48,18 @@ describe("gateway configuration", () => {
         timeoutMs: 180_000,
         maxAudioBytes: 10_485_760,
       },
+      voiceStream: {
+        frameBytes: 640,
+        maxFrameBytes: 640,
+        maxBufferBytes: 960_000,
+        maxUtteranceMs: 30_000,
+        audioChunkBytes: 16_384,
+        vadThreshold: 500,
+        vadMinSpeechMs: 100,
+        vadEndSilenceMs: 600,
+        frameMs: 20,
+        idleTimeoutMs: 120_000,
+      },
       auth: {
         secret: "gateway-jwt-test-secret-at-least-32-characters",
         issuer: "aura-gateway",
