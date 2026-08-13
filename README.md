@@ -6,13 +6,13 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 9 — Self-hosted LLM inference foundation.** The Agent can explicitly select a local llama.cpp-backed Qwen3-4B planner while retaining deterministic CI. Model output is schema-constrained and strictly validated before Gateway orchestration; the LLM proposes, Gateway orchestrates, and Tool Service authorizes and executes. RAG, memory, hosted AI APIs, external integrations, and voice remain unimplemented.
+**Phase 10 — turn-based self-hosted voice foundation.** Authenticated callers can upload bounded PCM WAV audio to Gateway, which invokes local STT, the existing Agent/Tool orchestration, and local TTS while preserving request correlation and authority boundaries. This is not streaming realtime audio; VAD, interruption, WebRTC/WebSockets, RAG, memory, and external integrations remain unimplemented.
 
 ## Planned architecture
 
 - **Web:** Next.js user interface and realtime client.
 - **Gateway:** External API entry point, policy enforcement, routing, and WebSocket lifecycle.
-- **Voice:** Realtime audio, STT, TTS, VAD, and interruption handling.
+- **Voice:** Implemented local STT/TTS transformation; realtime streaming, VAD, and interruption are planned.
 - **Agent:** Language understanding, reasoning, planning, and tool selection.
 - **Tools:** Permission-aware integrations and privileged action execution.
 - **Knowledge:** RAG, retrieval, contextual memory, and graph access.
@@ -40,7 +40,7 @@ docs/                     Architecture decisions and system direction
 
 - Node.js 22 LTS (see `.nvmrc`)
 - pnpm 11.13.0 (Corepack can provision the version declared in `package.json`)
-- Python 3.12 or newer with the Agent development extras installed in `services/agent/.venv`
+- Python 3.12 with isolated Agent and Voice venvs
 
 ### Install and run
 

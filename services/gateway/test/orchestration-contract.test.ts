@@ -100,6 +100,12 @@ describe("Gateway Agent Tool orchestration contract", () => {
         token: serviceToken,
         timeoutMs: 2000,
       },
+      voiceService: {
+        url: "http://127.0.0.1:8002",
+        token: "voice-test-token-at-least-32-characters",
+        timeoutMs: 1000,
+        maxAudioBytes: 10485760,
+      },
       auth: {
         secret: "gateway-jwt-test-secret-at-least-32-characters",
         issuer: "aura-gateway",

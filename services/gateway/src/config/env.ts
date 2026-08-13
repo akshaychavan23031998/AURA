@@ -42,6 +42,16 @@ const environmentSchema = z.object({
     .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
   AGENT_SERVICE_TOKEN: z.string().min(32),
   AGENT_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(300_000),
+  VOICE_SERVICE_URL: z
+    .url()
+    .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
+  VOICE_SERVICE_TOKEN: z.string().min(32),
+  VOICE_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(600_000),
+  VOICE_MAX_AUDIO_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(20 * 1024 * 1024),
   ...authEnvironmentSchema.shape,
   ...databaseEnvironmentSchema.shape,
 });

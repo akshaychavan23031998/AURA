@@ -16,6 +16,10 @@ describe("gateway configuration", () => {
       AGENT_SERVICE_URL: "http://127.0.0.1:8001",
       AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
       AGENT_SERVICE_TIMEOUT_MS: "4500",
+      VOICE_SERVICE_URL: "http://127.0.0.1:8002",
+      VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
+      VOICE_SERVICE_TIMEOUT_MS: "180000",
+      VOICE_MAX_AUDIO_BYTES: "10485760",
       AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
       AUTH_JWT_ISSUER: "aura-gateway",
       AUTH_JWT_AUDIENCE: "aura-api",
@@ -37,6 +41,12 @@ describe("gateway configuration", () => {
         url: "http://127.0.0.1:8001",
         token: "agent-test-token-at-least-32-characters",
         timeoutMs: 4500,
+      },
+      voiceService: {
+        url: "http://127.0.0.1:8002",
+        token: "voice-test-token-at-least-32-characters",
+        timeoutMs: 180_000,
+        maxAudioBytes: 10_485_760,
       },
       auth: {
         secret: "gateway-jwt-test-secret-at-least-32-characters",
@@ -103,6 +113,7 @@ describe("gateway configuration", () => {
       loadConfig({
         TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
         AGENT_SERVICE_TOKEN: "short",
+        VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
       }),
     ).toThrow(/AGENT_SERVICE_TOKEN/);
   });
@@ -112,6 +123,7 @@ describe("gateway configuration", () => {
       loadConfig({
         TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
         AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+        VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
         AUTH_JWT_SECRET: "short",
       }),
     ).toThrow(/AUTH_JWT_SECRET/);
@@ -119,6 +131,7 @@ describe("gateway configuration", () => {
       loadConfig({
         TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
         AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+        VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
         AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
         AUTH_ACCESS_TOKEN_TTL_SECONDS: "86400",
       }),

@@ -14,6 +14,12 @@ export const testConfig: GatewayConfig = {
     token: "agent-test-token-at-least-32-characters",
     timeoutMs: 1000,
   },
+  voiceService: {
+    url: "http://127.0.0.1:8002",
+    token: "voice-test-token-at-least-32-characters",
+    timeoutMs: 1000,
+    maxAudioBytes: 10 * 1024 * 1024,
+  },
   auth: {
     secret: "gateway-jwt-test-secret-at-least-32-characters",
     issuer: "aura-gateway",

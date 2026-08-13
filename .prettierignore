@@ -4,3 +4,8 @@ coverage
 dist
 node_modules
 pnpm-lock.yaml
+services/agent/.pytest_cache
+services/voice/.pytest_cache
+services/agent/.venv
+services/voice/.venv
+models

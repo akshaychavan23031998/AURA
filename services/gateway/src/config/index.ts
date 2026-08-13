@@ -13,6 +13,9 @@ const DEVELOPMENT_DEFAULTS = {
   TOOLS_SERVICE_TIMEOUT_MS: "3000",
   AGENT_SERVICE_URL: "http://localhost:8001",
   AGENT_SERVICE_TIMEOUT_MS: "5000",
+  VOICE_SERVICE_URL: "http://localhost:8002",
+  VOICE_SERVICE_TIMEOUT_MS: "180000",
+  VOICE_MAX_AUDIO_BYTES: "10485760",
   AUTH_JWT_ISSUER: "aura-gateway",
   AUTH_JWT_AUDIENCE: "aura-api",
   AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
@@ -49,6 +52,12 @@ export interface GatewayConfig {
     readonly url: string;
     readonly token: string;
     readonly timeoutMs: number;
+  };
+  readonly voiceService: {
+    readonly url: string;
+    readonly token: string;
+    readonly timeoutMs: number;
+    readonly maxAudioBytes: number;
   };
   readonly auth: AuthConfig;
   readonly database: { readonly url: string };
@@ -103,6 +112,12 @@ export function loadConfig(
       url: parsed.AGENT_SERVICE_URL.replace(/\/$/, ""),
       token: parsed.AGENT_SERVICE_TOKEN,
       timeoutMs: parsed.AGENT_SERVICE_TIMEOUT_MS,
+    }),
+    voiceService: Object.freeze({
+      url: parsed.VOICE_SERVICE_URL.replace(/\/$/, ""),
+      token: parsed.VOICE_SERVICE_TOKEN,
+      timeoutMs: parsed.VOICE_SERVICE_TIMEOUT_MS,
+      maxAudioBytes: parsed.VOICE_MAX_AUDIO_BYTES,
     }),
     auth: Object.freeze({
       secret: parsed.AUTH_JWT_SECRET,

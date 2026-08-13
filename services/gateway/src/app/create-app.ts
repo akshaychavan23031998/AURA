@@ -2,6 +2,7 @@ import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
 } from "fastify";
+import multipart from "@fastify/multipart";
 
 import type { GatewayConfig } from "../config/index.js";
 import {
@@ -33,6 +34,12 @@ import {
   SessionService,
   type SessionManager,
 } from "../identity/session-service.js";
+import {
+  createVoiceServiceClient,
+  VOICE_SERVICE_TOKEN_HEADER,
+  type VoiceServiceClient,
+} from "../clients/voice/voice-service-client.js";
+import { VoiceTurnService } from "../orchestration/voice-turn-service.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -42,6 +49,7 @@ export interface CreateAppOptions {
   readonly tokenVerifier?: AccessTokenVerifier;
   readonly database?: DatabaseClient;
   readonly sessionService?: SessionManager;
+  readonly voiceClient?: VoiceServiceClient;
 }
 
 export async function createApp(
@@ -59,6 +67,7 @@ export async function createApp(
             "req.headers.cookie",
             `req.headers.${TOOL_SERVICE_TOKEN_HEADER}`,
             `req.headers.${INTERNAL_SERVICE_TOKEN_HEADER}`,
+            `req.headers.${VOICE_SERVICE_TOKEN_HEADER}`,
           ],
           censor: "[REDACTED]",
         },
@@ -77,8 +86,18 @@ export async function createApp(
   const agentClient =
     options.agentClient ??
     createAgentServiceClient(options.config, fetch, app.log);
+  const voiceClient =
+    options.voiceClient ??
+    createVoiceServiceClient(options.config, fetch, app.log);
 
   await registerSecurity(app);
+  await app.register(multipart, {
+    limits: {
+      files: 1,
+      fields: 2,
+      fileSize: options.config.voiceService.maxAudioBytes,
+    },
+  });
   registerRequestContext(app);
   const authenticate = registerAuthentication(
     app,
@@ -97,6 +116,11 @@ export async function createApp(
     authenticate,
     sessions,
     () => database.check(),
+    new VoiceTurnService(
+      voiceClient,
+      new AgentToolOrchestrator({ agentClient, toolClient, logger: app.log }),
+      app.log,
+    ),
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);

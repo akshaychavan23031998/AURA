@@ -9,6 +9,8 @@ import { registerAgentRunRoute } from "./agent/agent-run.route.js";
 import type { AgentToolOrchestrator } from "../orchestration/agent-tool-orchestrator.js";
 import type { SessionManager } from "../identity/session-service.js";
 import { registerAuthRoutes } from "./auth/auth.route.js";
+import type { VoiceTurnService } from "../orchestration/voice-turn-service.js";
+import { registerVoiceRunRoute } from "./voice/voice-run.route.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -18,10 +20,12 @@ export function registerRoutes(
   authenticate: preHandlerHookHandler,
   sessions: SessionManager,
   checkDatabase: () => Promise<void>,
+  voiceTurns: VoiceTurnService,
 ): void {
   registerHealthRoutes(app, checkDatabase);
   registerAuthRoutes(app, sessions, authenticate);
   registerToolExecutionRoute(app, toolClient, authenticate);
   registerAgentResponseRoute(app, agentClient, authenticate);
   registerAgentRunRoute(app, orchestrator, authenticate);
+  registerVoiceRunRoute(app, voiceTurns, authenticate);
 }

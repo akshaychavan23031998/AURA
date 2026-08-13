@@ -15,10 +15,11 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 7 HS256 authentication with strict claims, immutable principals, server-derived authorization context, and protected application routes
 - Phase 8 PostgreSQL-backed users, revocable sessions, transactional opaque refresh-token rotation, and per-request session enforcement
 - Phase 9 self-hosted llama.cpp/Qwen3 planning with explicit planner modes, constrained JSON generation, strict plan validation, multilingual text handling, and lifecycle-aware readiness
+- Phase 10 authenticated turn-based voice orchestration with bounded WAV ingress, local faster-whisper STT, local Piper TTS, correlation propagation, and explicit post-action synthesis failure semantics
 
 ### Planned
 
-Voice, knowledge/RAG, memory, analytics, OAuth/account login, WebSockets, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+Streaming voice, VAD/interruption, knowledge/RAG, memory, analytics, OAuth/account login, WebSockets, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
 
 ## 2. Architectural style
 
@@ -53,6 +54,21 @@ flowchart LR
 Services do not receive unrestricted access to every datastore. Each service gains only the data access its responsibility requires, exposed through controlled APIs where another service owns that data.
 
 ## 4. Realtime communication
+
+Phase 10 implements the preceding non-streaming foundation:
+
+```mermaid
+flowchart LR
+  User[Authenticated user] --> Gateway[Gateway voice orchestrator]
+  Gateway --> STT[Voice Service STT]
+  STT --> Agent[Agent and local LLM]
+  Agent --> Tools[Tool Service]
+  Tools --> Agent
+  Agent --> TTS[Voice Service TTS]
+  TTS --> Gateway
+```
+
+Voice transforms speech only. Gateway authenticates the user, derives authority, owns orchestration, and preserves one request ID across Voice, Agent, and Tools. The current bounded multipart/JSON API is deliberately not described as low-latency realtime streaming.
 
 Realtime voice uses a direct, low-latency streaming path:
 

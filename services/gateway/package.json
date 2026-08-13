@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@fastify/helmet": "13.1.0",
+    "@fastify/multipart": "9.3.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "5.11.3",
     "jose": "6.2.8",
