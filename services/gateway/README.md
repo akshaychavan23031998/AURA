@@ -42,7 +42,7 @@ The service-local `.env.example` is the executable Gateway contract; the root ex
 | `TOOLS_SERVICE_TIMEOUT_MS`      | `3000`                  | 100-30000 ms                           |
 | `AGENT_SERVICE_URL`             | `http://localhost:8001` | trusted HTTP/HTTPS URL                 |
 | `AGENT_SERVICE_TOKEN`           | none                    | required, 32+ characters               |
-| `AGENT_SERVICE_TIMEOUT_MS`      | `5000`                  | 100-30000 ms                           |
+| `AGENT_SERVICE_TIMEOUT_MS`      | `5000`                  | 100-300000 ms; increase for local LLM  |
 | `AUTH_JWT_SECRET`               | none                    | required, 32-512 characters            |
 | `AUTH_JWT_ISSUER`               | `aura-gateway`          | non-empty, at most 128 characters      |
 | `AUTH_JWT_AUDIENCE`             | `aura-api`              | non-empty, at most 128 characters      |

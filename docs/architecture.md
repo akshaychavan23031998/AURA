@@ -14,10 +14,11 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 6 deterministic single-tool orchestration with Gateway-owned coordination, successful tool-result continuation, a hard loop limit, and explicit partial-failure semantics
 - Phase 7 HS256 authentication with strict claims, immutable principals, server-derived authorization context, and protected application routes
 - Phase 8 PostgreSQL-backed users, revocable sessions, transactional opaque refresh-token rotation, and per-request session enforcement
+- Phase 9 self-hosted llama.cpp/Qwen3 planning with explicit planner modes, constrained JSON generation, strict plan validation, multilingual text handling, and lifecycle-aware readiness
 
 ### Planned
 
-AI-backed reasoning, voice, knowledge, analytics, OAuth/account login, WebSockets, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+Voice, knowledge/RAG, memory, analytics, OAuth/account login, WebSockets, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
 
 ## 2. Architectural style
 
@@ -44,7 +45,7 @@ flowchart LR
 | Web       | User experience and client-side interaction state                                                                                                       | Authorization decisions and secrets                     |
 | Gateway   | Implemented HTTP lifecycle, identity/session persistence, correlation, errors, trusted clients, and single-tool orchestration; planned OAuth/WebSockets | AI inference, audio processing, integrations, retrieval |
 | Voice     | Realtime speech/audio transformation and short-lived processing state                                                                                   | Planning, permissions, and business workflows           |
-| Agent     | Implemented deterministic intent, planning, responses, and typed tool proposals; planned AI-backed reasoning                                            | Permissions, approvals, OAuth secrets, direct actions   |
+| Agent     | Implemented deterministic and self-hosted LLM planning with strictly validated response/tool proposals                                                  | Permissions, approvals, OAuth secrets, direct actions   |
 | Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency                               | Agent reasoning and voice processing                    |
 | Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                                                          | Privileged actions and broad credential access          |
 | Analytics | Derived metrics from asynchronous events                                                                                                                | Critical-path processing and transactional truth        |
@@ -93,6 +94,23 @@ The Agent Service will not directly access OAuth credentials, execute external a
 ## 7. Security, errors, and observability
 
 ### Agent orchestration boundary
+
+```mermaid
+flowchart LR
+  User[Authenticated user] --> Gateway
+  Gateway --> Agent[Agent Service]
+  Agent --> Planner[SelfHostedLlmPlanner]
+  Planner --> Runtime[Local llama.cpp and Qwen3]
+  Runtime --> Validation[Strict untrusted-output validation]
+  Validation --> Gateway
+  Gateway --> Tools[Tool Service]
+  Tools --> Gateway
+  Gateway --> Agent
+```
+
+The model receives only bounded planning input and safe tool-result data—never JWTs, session or refresh tokens, internal service tokens, database credentials, actors, permissions, risk, or approval state. The versioned system prompt and structured-output grammar reduce prompt-injection and format risk but do not claim immunity. User and tool-result content remain untrusted data. Unknown tools and extra privileged fields fail validation.
+
+**LLM proposes. Gateway orchestrates. Tool Service authorizes and executes.** The local inference process loads the model once and is consumed over loopback HTTP; Agent does not spawn it from request handlers. Deterministic mode remains the safe CI fallback only when explicitly configured, while selected LLM mode fails closed if its runtime is unavailable.
 
 ```mermaid
 sequenceDiagram

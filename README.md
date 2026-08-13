@@ -6,7 +6,7 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 8 — PostgreSQL-backed identity and session foundation.** Persisted users and revocable sessions now bind short-lived HS256 access tokens to `sub` and `sid`. Opaque refresh tokens rotate transactionally with replay detection; protected Gateway requests verify current session and user state. OAuth, passwords, frontend login, real AI inference, external integrations, messaging, and voice are not implemented yet.
+**Phase 9 — Self-hosted LLM inference foundation.** The Agent can explicitly select a local llama.cpp-backed Qwen3-4B planner while retaining deterministic CI. Model output is schema-constrained and strictly validated before Gateway orchestration; the LLM proposes, Gateway orchestrates, and Tool Service authorizes and executes. RAG, memory, hosted AI APIs, external integrations, and voice remain unimplemented.
 
 ## Planned architecture
 

@@ -13,32 +13,67 @@ from fastapi.responses import JSONResponse
 
 from aura_agent.config import Settings, get_settings
 from aura_agent.contracts import AgentRequest, AgentResponse
+from aura_agent.inference import InferenceClient, LlamaCppInferenceClient
 from aura_agent.logging import configure_logging
 from aura_agent.planner import (
     AgentPlanningError,
     AgentService,
     DeterministicDevelopmentPlanner,
     Planner,
+    SelfHostedLlmPlanner,
 )
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 logger = logging.getLogger("aura.agent")
 
 
-def create_app(settings: Settings, planner: Planner | None = None) -> FastAPI:
+def create_app(
+    settings: Settings,
+    planner: Planner | None = None,
+    inference_client: InferenceClient | None = None,
+) -> FastAPI:
     configure_logging(settings.log_level)
-    service = AgentService(planner or DeterministicDevelopmentPlanner())
+    managed_inference: InferenceClient | None = None
+    if planner is not None:
+        selected_planner = planner
+    elif settings.agent_planner_mode == "deterministic":
+        selected_planner = DeterministicDevelopmentPlanner()
+    else:
+        managed_inference = inference_client or _create_inference_client(settings)
+        selected_planner = SelfHostedLlmPlanner(
+            managed_inference, _required_model_name(settings)
+        )
+    service = AgentService(selected_planner)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI):
-        logger.info("Agent Service initialized")
-        yield
-        logger.info("Agent Service stopped")
+    async def lifespan(app: FastAPI):
+        started = time.perf_counter()
+        try:
+            if managed_inference is not None:
+                await managed_inference.initialize()
+            app.state.ready = True
+            logger.info(
+                "Agent Service initialized",
+                extra={
+                    "plannerMode": settings.agent_planner_mode,
+                    "modelRuntime": (
+                        "llama.cpp" if settings.agent_planner_mode == "llm" else None
+                    ),
+                    "modelName": settings.llm_model_name,
+                    "loadDurationMs": round((time.perf_counter() - started) * 1000, 3),
+                },
+            )
+            yield
+        finally:
+            app.state.ready = False
+            if managed_inference is not None:
+                await managed_inference.close()
+            logger.info("Agent Service stopped")
 
     app = FastAPI(
         title="AURA Agent Service", docs_url=None, redoc_url=None, lifespan=lifespan
     )
-    app.state.ready = True
+    app.state.ready = False
 
     @app.middleware("http")
     async def request_context(
@@ -91,7 +126,9 @@ def create_app(settings: Settings, planner: Planner | None = None) -> FastAPI:
         return {"status": "ok", "service": "agent"}
 
     @app.get("/ready")
-    async def ready() -> dict[str, str]:
+    async def ready(request: Request) -> dict[str, str]:
+        if not request.app.state.ready:
+            raise ServiceNotReadyError
         return {"status": "ready", "service": "agent"}
 
     @app.post(
@@ -108,6 +145,10 @@ def create_app(settings: Settings, planner: Planner | None = None) -> FastAPI:
 
 
 class InternalAuthenticationError(Exception):
+    pass
+
+
+class ServiceNotReadyError(Exception):
     pass
 
 
@@ -141,6 +182,14 @@ def register_error_handlers(app: FastAPI) -> None:
             400, "VALIDATION_ERROR", "Request validation failed", request_id(request)
         )
 
+    @app.exception_handler(ServiceNotReadyError)
+    async def not_ready_error(
+        request: Request, _: ServiceNotReadyError
+    ) -> JSONResponse:
+        return error_response(
+            503, "SERVICE_NOT_READY", "Service is not ready", request_id(request)
+        )
+
     @app.exception_handler(AgentPlanningError)
     async def planning_error(
         request: Request, error: AgentPlanningError
@@ -160,3 +209,21 @@ def register_error_handlers(app: FastAPI) -> None:
 
 def create_runtime_app() -> FastAPI:
     return create_app(get_settings())
+
+
+def _required_model_name(settings: Settings) -> str:
+    if settings.llm_model_name is None:
+        raise ValueError("LLM model name is required")
+    return settings.llm_model_name
+
+
+def _create_inference_client(settings: Settings) -> LlamaCppInferenceClient:
+    if settings.llm_base_url is None:
+        raise ValueError("LLM base URL is required")
+    return LlamaCppInferenceClient(
+        base_url=str(settings.llm_base_url),
+        model_name=_required_model_name(settings),
+        max_output_tokens=settings.llm_max_output_tokens,
+        temperature=settings.llm_temperature,
+        timeout_seconds=settings.llm_request_timeout_seconds,
+    )

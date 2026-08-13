@@ -24,7 +24,9 @@
     "db:generate": "pnpm --filter @aura/gateway db:generate",
     "db:migrate": "pnpm --filter @aura/gateway db:migrate",
     "identity:bootstrap-dev-user": "pnpm --filter @aura/gateway identity:bootstrap-dev-user",
-    "identity:dev-session": "pnpm --filter @aura/gateway identity:dev-session"
+    "identity:dev-session": "pnpm --filter @aura/gateway identity:dev-session",
+    "agent:model:setup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/setup-agent-model.ps1",
+    "agent:model:start": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-model.ps1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

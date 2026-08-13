@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "aura-agent"
 version = "0.1.0"
-description = "AURA deterministic agent planning service foundation"
+description = "AURA deterministic and self-hosted LLM planning service"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.116,<1",

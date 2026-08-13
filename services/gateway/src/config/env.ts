@@ -41,7 +41,7 @@ const environmentSchema = z.object({
     .url()
     .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
   AGENT_SERVICE_TOKEN: z.string().min(32),
-  AGENT_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000),
+  AGENT_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(300_000),
   ...authEnvironmentSchema.shape,
   ...databaseEnvironmentSchema.shape,
 });

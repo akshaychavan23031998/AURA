@@ -1,8 +1,13 @@
+from collections.abc import Sequence
+from typing import Any
+
+import pytest
 from fastapi.testclient import TestClient
 
 from aura_agent.app import create_app
 from aura_agent.config import Settings
 from aura_agent.contracts import AgentRequest, AgentResult
+from aura_agent.inference import ChatMessage
 
 
 def test_health_and_readiness_are_public(client: TestClient) -> None:
@@ -102,3 +107,65 @@ def test_authenticated_gateway_can_supply_tool_result(
     assert response.status_code == 200
     assert response.json()["response"] == "Echo completed successfully: AURA"
     assert response.json()["plan"] == {"type": "respond"}
+
+
+def test_llm_readiness_initializes_injected_runtime(settings: Settings) -> None:
+    class ReadyInference:
+        initialized = False
+        closed = False
+
+        async def initialize(self) -> None:
+            self.initialized = True
+
+        async def close(self) -> None:
+            self.closed = True
+
+        async def complete(
+            self,
+            messages: Sequence[ChatMessage],
+            response_schema: dict[str, Any],
+        ) -> str:
+            del messages, response_schema
+            return '{"intent":"respond","response":"ok","plan":{"type":"respond"}}'
+
+    inference = ReadyInference()
+    llm_settings = settings.model_copy(
+        update={
+            "agent_planner_mode": "llm",
+            "llm_base_url": "http://127.0.0.1:8080",
+            "llm_model_name": "test-model",
+        }
+    )
+    with TestClient(create_app(llm_settings, inference_client=inference)) as llm_client:
+        assert llm_client.get("/ready").status_code == 200
+        assert inference.initialized
+    assert inference.closed
+
+
+def test_llm_startup_fails_when_runtime_is_unavailable(settings: Settings) -> None:
+    class UnavailableInference:
+        async def initialize(self) -> None:
+            raise RuntimeError("runtime unavailable")
+
+        async def close(self) -> None: ...
+
+        async def complete(
+            self,
+            messages: Sequence[ChatMessage],
+            response_schema: dict[str, Any],
+        ) -> str:
+            del messages, response_schema
+            raise AssertionError("completion must not run")
+
+    llm_settings = settings.model_copy(
+        update={
+            "agent_planner_mode": "llm",
+            "llm_base_url": "http://127.0.0.1:8080",
+            "llm_model_name": "test-model",
+        }
+    )
+    with pytest.raises(RuntimeError, match="runtime unavailable"):
+        with TestClient(
+            create_app(llm_settings, inference_client=UnavailableInference())
+        ):
+            pass

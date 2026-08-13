@@ -194,7 +194,7 @@ async function reservePort(): Promise<number> {
 }
 
 async function waitUntilHealthy(url: string): Promise<void> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
       const response = await fetch(url);
       if (response.ok) return;

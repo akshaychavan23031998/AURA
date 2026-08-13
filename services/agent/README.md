@@ -1,47 +1,66 @@
 # Agent Service
 
-The Agent Service is AURA's internal intent and planning boundary. Phase 6 adds deterministic follow-up generation from a successful trusted tool result; it still does not use an LLM or perform actions.
+The Agent Service is AURA's internal planning boundary. Phase 9 preserves the deterministic planner and adds an explicitly selected self-hosted LLM planner backed by a local llama.cpp HTTP server. It proposes plans but never authorizes or executes actions.
 
-## Implemented
+## Planner modes
 
-- FastAPI application factory and centrally validated immutable settings
-- public liveness/readiness and authenticated internal planning endpoints
-- bounded, strict requests and stable errors
-- safe request correlation and JSON logs that omit message content and credentials
-- deterministic `echo <text>` tool proposals and a stable response fallback
-- deterministic `system.echo` success finalization with stable response text
-- Ruff, Pyright, and pytest coverage
+- `deterministic` is the safe default for tests and development without model weights.
+- `llm` uses `SelfHostedLlmPlanner` and fails startup if its configured local runtime is unavailable. It never silently falls back.
 
-## Endpoints
+Both modes return the existing strict `RespondPlan` or `ToolPlan` contract. Model output is untrusted: llama.cpp constrains JSON generation, then Pydantic rejects malformed structures, extra fields, privileged metadata, and every tool except `system.echo`.
 
-| Method | Path                | Access   | Purpose                                       |
-| ------ | ------------------- | -------- | --------------------------------------------- |
-| `GET`  | `/health`           | Public   | Process liveness                              |
-| `GET`  | `/ready`            | Public   | Successful initialization                     |
-| `POST` | `/v1/agent/respond` | Internal | Return a response plan or typed tool proposal |
+## Local model
 
-The internal request accepts `message`, optional `conversationId`, optional `locale`, and an optional `toolResult` supplied only by authenticated Gateway calls. The continuation contains only tool name, successful status, and safe result data. It cannot carry permissions, approval state, actor authority, or execution instructions.
+Phase 9 selects official `Qwen/Qwen3-4B-GGUF`, `Qwen3-4B-Q4_K_M.gguf`:
 
-## Development
+- 4.0B parameters, Q4_K_M quantization, approximately 2.50 GB on disk
+- 32K native context; AURA deliberately uses 4K for this planning workload
+- Apache License 2.0
+- 119 documented languages/dialects, including Hindi, Telugu, and Kannada
+- selected for compact CPU use, multilingual coverage, JSON instruction following, and agent/tool capability
 
-Python 3.12 or newer is required. From the repository root:
+Model quality varies by language and hardware; fake multilingual tests prove UTF-8 contract handling, not linguistic quality. The real model is local-only and no hosted API or API key is used.
 
-```bash
-python -m venv services/agent/.venv
-services/agent/.venv/Scripts/python -m pip install -e "services/agent[dev]"
-set AURA_INTERNAL_SERVICE_TOKEN=replace-with-at-least-32-characters
-services/agent/.venv/Scripts/python -m aura_agent.main
+## Windows setup
+
+```powershell
+winget install --exact --id ggml.llamacpp
+pnpm.cmd agent:model:setup
+pnpm.cmd agent:model:start
 ```
 
-On POSIX, use `services/agent/.venv/bin/python` and `export`. Copy `.env.example` into `services/agent/.env` only for service-local development. Settings are `APP_ENV`, `AGENT_HOST` (default `0.0.0.0`), `AGENT_PORT` (default `8001`), `LOG_LEVEL`, `AURA_INTERNAL_SERVICE_TOKEN` (required, 32+ characters), and `AURA_ALLOWED_SERVICE_ID` (fixed to `gateway`).
+The setup helper downloads from the official Qwen Hugging Face repository, resumes partial downloads, and verifies the Git LFS SHA-256. Weights are stored in ignored `services/agent/models/` and are never committed. The start helper binds llama.cpp to `127.0.0.1:8080`, loads the model once, uses one inference slot/four threads, and allocates a 4096-token context. Agent consumes this process; request handlers do not manage it.
 
-```bash
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
+In another PowerShell session:
+
+```powershell
+$env:AURA_INTERNAL_SERVICE_TOKEN = "replace-with-at-least-32-characters"
+$env:AGENT_PLANNER_MODE = "llm"
+$env:LLM_BASE_URL = "http://127.0.0.1:8080"
+$env:LLM_MODEL_NAME = "Qwen3-4B-Q4_K_M.gguf"
+services/agent/.venv/Scripts/python.exe -m aura_agent.main
 ```
 
-## Boundary
+`GET /health` is process liveness. `GET /ready` succeeds only after the selected planner initializes; LLM mode probes the already-loaded local runtime once during lifespan.
 
-The service interprets requests and proposes plans. It never decides permissions or risk, approves actions, executes tools, accesses OAuth credentials, or performs external side effects. Tool Service remains authoritative for tool validation, policy, approval, and execution. AI inference, model providers, persistence, databases, Kafka, voice, RAG, WebSockets, and external integrations remain unimplemented.
+## Configuration
+
+| Variable                      | Default         | Constraint                                             |
+| ----------------------------- | --------------- | ------------------------------------------------------ |
+| `AGENT_PLANNER_MODE`          | `deterministic` | `deterministic` or `llm`                               |
+| `LLM_BASE_URL`                | none            | required in LLM mode; normally `http://127.0.0.1:8080` |
+| `LLM_MODEL_NAME`              | none            | required in LLM mode                                   |
+| `LLM_CONTEXT_SIZE`            | `4096`          | 1024-32768; documents runtime allocation               |
+| `LLM_MAX_OUTPUT_TOKENS`       | `256`           | 64-1024                                                |
+| `LLM_TEMPERATURE`             | `0.1`           | 0-1                                                    |
+| `LLM_REQUEST_TIMEOUT_SECONDS` | `120`           | 1-600                                                  |
+
+Existing `APP_ENV`, `AGENT_HOST`, `AGENT_PORT`, `LOG_LEVEL`, `AURA_INTERNAL_SERVICE_TOKEN`, and fixed `AURA_ALLOWED_SERVICE_ID=gateway` remain unchanged.
+
+## Trust and observability
+
+The versioned system prompt treats user messages and tool results as untrusted data. Only the static Agent-facing `system.echo` catalog is described; permissions, risk, approval, identity, JWTs, sessions, service tokens, and database credentials are never sent to the model. Initial plans cannot claim completion, and continuations are constrained to a final response.
+
+Logs contain only metadata such as planner/runtime/model name, prompt/completion character counts, duration, plan type, and tool name. Raw prompts and completions are not logged. Inference is serialized with a one-slot semaphore, output and HTTP body sizes are bounded, and runtime/protocol failures map to the existing safe `AGENT_PLANNING_FAILED` response.
+
+This is a self-hosted LLM-backed planning foundation, not full autonomy, prompt-injection immunity, RAG, memory, or voice capability. Gateway still limits orchestration, and Tool Service remains authoritative for tool existence, input, permissions, approval, risk, and execution.
