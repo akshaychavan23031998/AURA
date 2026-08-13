@@ -37,6 +37,11 @@ describe("Gateway to Tool Service contract", () => {
       server: { host: "127.0.0.1", port: 0, bodyLimit: 65_536 },
       logging: { level: "silent" },
       toolsService: { url: address, token: sharedTestToken, timeoutMs: 1000 },
+      agentService: {
+        url: "http://127.0.0.1:8001",
+        token: sharedTestToken,
+        timeoutMs: 1000,
+      },
     };
     const gatewayApp = await createGatewayApp({
       config: gatewayConfig,

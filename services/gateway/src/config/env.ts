@@ -18,6 +18,11 @@ const environmentSchema = z.object({
     .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
   TOOLS_SERVICE_TOKEN: z.string().min(32),
   TOOLS_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000),
+  AGENT_SERVICE_URL: z
+    .url()
+    .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
+  AGENT_SERVICE_TOKEN: z.string().min(32),
+  AGENT_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000),
 });
 
 export type GatewayEnvironment = z.infer<typeof environmentSchema>;

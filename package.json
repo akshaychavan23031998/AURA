@@ -9,12 +9,18 @@
   },
   "scripts": {
     "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "build": "turbo run build && pnpm run agent:build",
+    "lint": "turbo run lint && pnpm run agent:lint",
+    "typecheck": "turbo run typecheck && pnpm run agent:typecheck",
+    "test": "turbo run test && pnpm run agent:test",
+    "format": "prettier --write . && pnpm run agent:format",
+    "format:check": "prettier --check . && pnpm run agent:format:check",
+    "agent:build": "node scripts/run-agent-python.mjs -m compileall -q services/agent/src",
+    "agent:lint": "node scripts/run-agent-python.mjs -m ruff check services/agent",
+    "agent:typecheck": "node scripts/run-agent-python.mjs -m pyright -p services/agent/pyproject.toml",
+    "agent:test": "node scripts/run-agent-python.mjs -m pytest services/agent",
+    "agent:format": "python -m ruff format services/agent",
+    "agent:format:check": "python -m ruff format --check services/agent"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -10,10 +10,11 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 2 Fastify Gateway runtime with validated configuration, operational endpoints, request correlation, structured logging, security headers, stable external errors, and graceful shutdown
 - Phase 3 Tool Service execution foundation with a trusted registry, typed contracts, input validation, permission enforcement, approval policy, and the local `system.echo` tool
 - Phase 4 trusted Gateway-to-Tool-Service communication with derived development context, service authentication, correlation propagation, bounded timeout, contract validation, and safe error translation
+- Phase 5 Python Agent planning foundation with deterministic intent handling, typed response/tool plans, internal authentication, and a strict Gateway-to-Agent boundary
 
 ### Planned
 
-Voice, agent reasoning, knowledge, analytics, authentication, WebSockets, databases, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+AI-backed reasoning, voice, knowledge, analytics, authentication, WebSockets, databases, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
 
 ## 2. Architectural style
 
@@ -40,7 +41,7 @@ flowchart LR
 | Web       | User experience and client-side interaction state                                                                         | Authorization decisions and secrets                     |
 | Gateway   | Implemented HTTP lifecycle, operations, correlation, errors; planned routing, sessions, WebSockets                        | AI inference, audio processing, integrations, retrieval |
 | Voice     | Realtime speech/audio transformation and short-lived processing state                                                     | Planning, permissions, and business workflows           |
-| Agent     | Reasoning, planning, intent, tool proposals, response generation                                                          | OAuth secrets, direct actions, unrestricted databases   |
+| Agent     | Implemented deterministic intent, planning, responses, and typed tool proposals; planned AI-backed reasoning              | Permissions, approvals, OAuth secrets, direct actions   |
 | Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency | Agent reasoning and voice processing                    |
 | Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                            | Privileged actions and broad credential access          |
 | Analytics | Derived metrics from asynchronous events                                                                                  | Critical-path processing and transactional truth        |
@@ -87,6 +88,18 @@ flowchart LR
 The Agent Service will not directly access OAuth credentials, execute external actions, or receive unrestricted transactional database access. The Tool Service controls sensitive integrations; the Knowledge Service controls graph and retrieval access. Exact table and dataset ownership will be decided with each implemented domain.
 
 ## 7. Security, errors, and observability
+
+### Agent planning boundary
+
+```mermaid
+flowchart LR
+  Client -->|strict message envelope| Gateway
+  Gateway -->|service identity + request ID| Agent
+  Agent -->|respond or tool proposal| Gateway
+  Gateway -. no automatic execution .-> Tools
+```
+
+Agent output is untrusted planning data. It cannot grant permissions, assign risk, approve work, or trigger Tool Service. Gateway exposes proposals so a later milestone can add authenticated user context and explicit policy coordination without weakening Tool Service authority.
 
 ### Tool execution boundary
 

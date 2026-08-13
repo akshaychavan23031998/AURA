@@ -13,6 +13,9 @@ describe("gateway configuration", () => {
       TOOLS_SERVICE_URL: "http://127.0.0.1:4001",
       TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
       TOOLS_SERVICE_TIMEOUT_MS: "2500",
+      AGENT_SERVICE_URL: "http://127.0.0.1:8001",
+      AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+      AGENT_SERVICE_TIMEOUT_MS: "4500",
     });
 
     expect(config).toEqual({
@@ -23,6 +26,11 @@ describe("gateway configuration", () => {
         url: "http://127.0.0.1:4001",
         token: "gateway-test-token-at-least-32-characters",
         timeoutMs: 2500,
+      },
+      agentService: {
+        url: "http://127.0.0.1:8001",
+        token: "agent-test-token-at-least-32-characters",
+        timeoutMs: 4500,
       },
     });
     expect(Object.isFrozen(config)).toBe(true);
@@ -72,5 +80,14 @@ describe("gateway configuration", () => {
         TOOLS_SERVICE_TIMEOUT_MS: "3000",
       }),
     ).toThrow(/TOOLS_SERVICE_TOKEN/);
+  });
+
+  it("requires a strong Agent Service token", () => {
+    expect(() =>
+      loadConfig({
+        TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
+        AGENT_SERVICE_TOKEN: "short",
+      }),
+    ).toThrow(/AGENT_SERVICE_TOKEN/);
   });
 });

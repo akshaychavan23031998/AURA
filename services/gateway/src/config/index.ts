@@ -7,6 +7,8 @@ const DEVELOPMENT_DEFAULTS = {
   LOG_LEVEL: "info",
   TOOLS_SERVICE_URL: "http://localhost:4001",
   TOOLS_SERVICE_TIMEOUT_MS: "3000",
+  AGENT_SERVICE_URL: "http://localhost:8001",
+  AGENT_SERVICE_TIMEOUT_MS: "5000",
 } as const;
 
 export interface GatewayConfig {
@@ -23,6 +25,11 @@ export interface GatewayConfig {
       "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
   };
   readonly toolsService: {
+    readonly url: string;
+    readonly token: string;
+    readonly timeoutMs: number;
+  };
+  readonly agentService: {
     readonly url: string;
     readonly token: string;
     readonly timeoutMs: number;
@@ -46,6 +53,11 @@ export function loadConfig(
       url: parsed.TOOLS_SERVICE_URL.replace(/\/$/, ""),
       token: parsed.TOOLS_SERVICE_TOKEN,
       timeoutMs: parsed.TOOLS_SERVICE_TIMEOUT_MS,
+    }),
+    agentService: Object.freeze({
+      url: parsed.AGENT_SERVICE_URL.replace(/\/$/, ""),
+      token: parsed.AGENT_SERVICE_TOKEN,
+      timeoutMs: parsed.AGENT_SERVICE_TIMEOUT_MS,
     }),
   });
 }

@@ -9,4 +9,9 @@ export const testConfig: GatewayConfig = {
     token: "gateway-test-token-at-least-32-characters",
     timeoutMs: 1000,
   },
+  agentService: {
+    url: "http://127.0.0.1:8001",
+    token: "agent-test-token-at-least-32-characters",
+    timeoutMs: 1000,
+  },
 };

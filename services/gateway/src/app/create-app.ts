@@ -5,6 +5,11 @@ import Fastify, {
 
 import type { GatewayConfig } from "../config/index.js";
 import {
+  createAgentServiceClient,
+  INTERNAL_SERVICE_TOKEN_HEADER,
+  type AgentServiceClient,
+} from "../clients/agent/agent-service-client.js";
+import {
   createToolServiceClient,
   TOOL_SERVICE_TOKEN_HEADER,
   type ToolServiceClient,
@@ -21,6 +26,7 @@ export interface CreateAppOptions {
   readonly config: GatewayConfig;
   readonly logger?: FastifyServerOptions["logger"];
   readonly toolClient?: ToolServiceClient;
+  readonly agentClient?: AgentServiceClient;
 }
 
 export async function createApp(
@@ -37,6 +43,7 @@ export async function createApp(
             "req.headers.authorization",
             "req.headers.cookie",
             `req.headers.${TOOL_SERVICE_TOKEN_HEADER}`,
+            `req.headers.${INTERNAL_SERVICE_TOKEN_HEADER}`,
           ],
           censor: "[REDACTED]",
         },
@@ -52,6 +59,8 @@ export async function createApp(
     app,
     options.toolClient ??
       createToolServiceClient(options.config, fetch, app.log),
+    options.agentClient ??
+      createAgentServiceClient(options.config, fetch, app.log),
   );
   registerErrorHandling(app);
 

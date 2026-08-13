@@ -6,7 +6,7 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 4 — Trusted Gateway-to-Tool-Service communication.** The Gateway now owns the versioned external tool endpoint, derives a constrained local-development actor context, authenticates internal Tool Service calls, propagates request IDs, validates downstream contracts, and applies bounded timeouts and safe error translation. Real user authentication, external integrations, databases, messaging, voice, and AI are not implemented yet.
+**Phase 5 — Agent planning foundation.** A Python/FastAPI Agent Service now provides deterministic intent planning and typed, non-executing tool proposals behind authenticated Gateway communication. The Gateway validates both contracts, propagates correlation IDs, and fails closed on upstream errors. Real AI inference, user authentication, external integrations, databases, messaging, and voice are not implemented yet.
 
 ## Planned architecture
 
@@ -40,6 +40,7 @@ docs/                     Architecture decisions and system direction
 
 - Node.js 22 LTS (see `.nvmrc`)
 - pnpm 11.13.0 (Corepack can provision the version declared in `package.json`)
+- Python 3.12 or newer with the Agent development extras installed in `.venv`
 
 ### Install and run
 
