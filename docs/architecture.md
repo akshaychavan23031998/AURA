@@ -1,0 +1,114 @@
+# AURA Architecture
+
+## 1. Goals
+
+AURA aims to become a self-hosted multilingual autonomous voice agent with natural mixed-language conversation, contextual memory, knowledge retrieval, and permission-aware action execution. The system must remain understandable, testable, secure by default, and independently evolvable. Phase 1 establishes boundaries and tooling only; it does not implement these capabilities.
+
+## 2. Architectural style
+
+AURA uses a pnpm/Turborepo monorepo containing a Next.js application, future Node.js and Python services, and narrowly scoped shared packages. The intended runtime architecture is service-oriented, but services are introduced only when a real deployable capability requires them. This preserves future independent deployment without paying distributed-systems costs prematurely.
+
+Service communication uses explicit, versionable, runtime-validated contracts. TypeScript boundaries will pair Zod schemas with types; Python boundaries will use Pydantic. Arbitrary unvalidated payloads are not valid service contracts.
+
+```mermaid
+flowchart LR
+  User --> Web[Next.js Web]
+  Web --> Gateway[API Gateway]
+  Gateway --> Voice[Voice Service]
+  Gateway --> Agent[Agent Service]
+  Agent --> Knowledge[Knowledge Service]
+  Agent --> Tools[Tool Service]
+  Services[Domain Services] --> Kafka[(Kafka)]
+  Kafka --> Analytics[Analytics Service]
+```
+
+## 3. Service boundaries
+
+| Boundary  | Owns                                                                    | Explicitly excludes                                     |
+| --------- | ----------------------------------------------------------------------- | ------------------------------------------------------- |
+| Web       | User experience and client-side interaction state                       | Authorization decisions and secrets                     |
+| Gateway   | External API, edge policy, routing, sessions, WebSockets                | AI inference, audio processing, integrations, retrieval |
+| Voice     | Realtime speech/audio transformation and short-lived processing state   | Planning, permissions, and business workflows           |
+| Agent     | Reasoning, planning, intent, tool proposals, response generation        | OAuth secrets, direct actions, unrestricted databases   |
+| Tools     | Integrations, credentials, permissions, approvals, idempotent execution | Agent reasoning and voice processing                    |
+| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access          | Privileged actions and broad credential access          |
+| Analytics | Derived metrics from asynchronous events                                | Critical-path processing and transactional truth        |
+
+Services do not receive unrestricted access to every datastore. Each service gains only the data access its responsibility requires, exposed through controlled APIs where another service owns that data.
+
+## 4. Realtime communication
+
+Realtime voice uses a direct, low-latency streaming path:
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant G as Gateway
+  participant V as Voice Service
+  B->>G: WebSocket audio stream
+  G->>V: Realtime stream
+  V-->>G: Audio/transcript stream
+  G-->>B: WebSocket response
+```
+
+**Realtime voice: Browser → WebSocket → Gateway → Voice.** Audio must not travel through Kafka. The Gateway owns the external connection lifecycle; Voice owns audio processing.
+
+## 5. Asynchronous communication
+
+Kafka is planned for durable asynchronous domain events such as `conversation.completed`, `tool.execution.requested`, `tool.execution.completed`, and `agent.error`. Events use stable names and versioned schemas. Producers publish facts or requests; independently scalable consumers handle analytics, auditing, and workers.
+
+```mermaid
+flowchart LR
+  Services[Services] -->|versioned events| Kafka[(Kafka)]
+  Kafka --> Analytics[Analytics]
+  Kafka --> Audit[Audit]
+  Kafka --> Workers[Workers]
+```
+
+**Async events: Services → Kafka → Consumers.** Kafka configuration and event implementations are deferred until concrete workflows exist.
+
+## 6. Datastore responsibilities
+
+- **PostgreSQL:** Transactional system of record, including future users, authentication metadata, integration metadata, permissions, action/audit metadata, and conversation metadata.
+- **CognoDB:** Graph-oriented context: people, projects, systems, relationships, memories, incidents, and knowledge links.
+- **Redis:** Transient sessions, cache, rate-limit state, short-lived voice state, and coordination.
+
+The Agent Service will not directly access OAuth credentials, execute external actions, or receive unrestricted transactional database access. The Tool Service controls sensitive integrations; the Knowledge Service controls graph and retrieval access. Exact table and dataset ownership will be decided with each implemented domain.
+
+## 7. Security, errors, and observability
+
+- **Least privilege:** Every integration and service receives only the permissions it requires.
+- **Explicit authorization:** Client state is never authority. Backend code enforces permissions and approval policy.
+- **Human approval:** High-risk actions require explicit confirmation before execution.
+- **Trust boundary:** LLM output proposes intent and tool calls; trusted code validates, authorizes, and executes them.
+- **Auditability:** Important actions will produce durable, tamper-resistant audit records.
+- **Secrets:** Keys, OAuth tokens, database credentials, private keys, and provider secrets never enter Git or logs.
+
+Backend services will use structured internal errors, centralized translation to stable external responses, diagnostic context, and correlation/request IDs. Stack traces and internal details must not leak to users.
+
+Structured logs are expected to support `timestamp`, `level`, `service`, `requestId`, `conversationId`, `event`, `duration`, and safe error metadata. Passwords, access tokens, OAuth secrets, and unnecessary sensitive user content must never be logged.
+
+## 8. Deployment model
+
+- **Web:** Next.js on Vercel.
+- **Node.js services:** Containers on a VM or managed container platform.
+- **Python AI services:** GPU-capable containers or VMs where needed.
+- **Datastores:** Managed offerings where their operational and security properties fit.
+- **Kafka:** Managed Kafka or dedicated infrastructure.
+- **Local development:** Docker Compose in a later milestone.
+- **Kubernetes:** Only after scale, availability, or operational requirements justify it.
+
+No container or Kubernetes configuration exists in Phase 1.
+
+## 9. Evolution and testing strategy
+
+Capabilities enter through small milestones: define the contract and ownership, implement the simplest viable path, test it, and then operationalize it. Shared packages stay narrow and are created around demonstrated reuse rather than speculation.
+
+Testing will use four layers:
+
+- **Unit:** Domain and business behavior.
+- **Integration:** Service-to-infrastructure boundaries.
+- **Contract:** API and event compatibility.
+- **End-to-end:** Critical user journeys.
+
+The first executable backend milestone should establish the Gateway's operational skeleton and explicit health/configuration contract without introducing AI, Kafka, databases, or integrations.
