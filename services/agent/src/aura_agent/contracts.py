@@ -7,6 +7,14 @@ Message = Annotated[
 ]
 
 
+class ToolExecutionResultContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool: str
+    status: Literal["success"]
+    data: dict[str, JsonValue]
+
+
 class AgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -23,6 +31,9 @@ class AgentRequest(BaseModel):
         ]
         | None
     ) = None
+    tool_result: ToolExecutionResultContext | None = Field(
+        default=None, alias="toolResult"
+    )
 
 
 class ToolProposal(BaseModel):

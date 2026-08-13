@@ -11,6 +11,7 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 3 Tool Service execution foundation with a trusted registry, typed contracts, input validation, permission enforcement, approval policy, and the local `system.echo` tool
 - Phase 4 trusted Gateway-to-Tool-Service communication with derived development context, service authentication, correlation propagation, bounded timeout, contract validation, and safe error translation
 - Phase 5 Python Agent planning foundation with deterministic intent handling, typed response/tool plans, internal authentication, and a strict Gateway-to-Agent boundary
+- Phase 6 deterministic single-tool orchestration with Gateway-owned coordination, successful tool-result continuation, a hard loop limit, and explicit partial-failure semantics
 
 ### Planned
 
@@ -28,23 +29,23 @@ flowchart LR
   Web --> Gateway[API Gateway]
   Gateway --> Voice[Voice Service]
   Gateway --> Agent[Agent Service]
+  Gateway --> Tools[Tool Service]
   Agent --> Knowledge[Knowledge Service]
-  Agent --> Tools[Tool Service]
   Services[Domain Services] --> Kafka[(Kafka)]
   Kafka --> Analytics[Analytics Service]
 ```
 
 ## 3. Service boundaries
 
-| Boundary  | Owns                                                                                                                      | Explicitly excludes                                     |
-| --------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Web       | User experience and client-side interaction state                                                                         | Authorization decisions and secrets                     |
-| Gateway   | Implemented HTTP lifecycle, operations, correlation, errors; planned routing, sessions, WebSockets                        | AI inference, audio processing, integrations, retrieval |
-| Voice     | Realtime speech/audio transformation and short-lived processing state                                                     | Planning, permissions, and business workflows           |
-| Agent     | Implemented deterministic intent, planning, responses, and typed tool proposals; planned AI-backed reasoning              | Permissions, approvals, OAuth secrets, direct actions   |
-| Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency | Agent reasoning and voice processing                    |
-| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                            | Privileged actions and broad credential access          |
-| Analytics | Derived metrics from asynchronous events                                                                                  | Critical-path processing and transactional truth        |
+| Boundary  | Owns                                                                                                                         | Explicitly excludes                                     |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Web       | User experience and client-side interaction state                                                                            | Authorization decisions and secrets                     |
+| Gateway   | Implemented HTTP lifecycle, correlation, errors, trusted clients, and single-tool orchestration; planned sessions/WebSockets | AI inference, audio processing, integrations, retrieval |
+| Voice     | Realtime speech/audio transformation and short-lived processing state                                                        | Planning, permissions, and business workflows           |
+| Agent     | Implemented deterministic intent, planning, responses, and typed tool proposals; planned AI-backed reasoning                 | Permissions, approvals, OAuth secrets, direct actions   |
+| Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency    | Agent reasoning and voice processing                    |
+| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                               | Privileged actions and broad credential access          |
+| Analytics | Derived metrics from asynchronous events                                                                                     | Critical-path processing and transactional truth        |
 
 Services do not receive unrestricted access to every datastore. Each service gains only the data access its responsibility requires, exposed through controlled APIs where another service owns that data.
 
@@ -89,17 +90,27 @@ The Agent Service will not directly access OAuth credentials, execute external a
 
 ## 7. Security, errors, and observability
 
-### Agent planning boundary
+### Agent orchestration boundary
 
 ```mermaid
-flowchart LR
-  Client -->|strict message envelope| Gateway
-  Gateway -->|service identity + request ID| Agent
-  Agent -->|respond or tool proposal| Gateway
-  Gateway -. no automatic execution .-> Tools
+sequenceDiagram
+  participant C as Client
+  participant G as Gateway Orchestrator
+  participant A as Agent
+  participant T as Tool Service
+  C->>G: strict message envelope
+  G->>A: initial plan
+  A-->>G: response or untrusted tool proposal
+  G->>T: proposal + trusted actor context
+  T-->>G: validated successful result
+  G->>A: safe tool-result continuation
+  A-->>G: required final response
+  G-->>C: final response
 ```
 
-Agent output is untrusted planning data. It cannot grant permissions, assign risk, approve work, or trigger Tool Service. Gateway exposes proposals so a later milestone can add authenticated user context and explicit policy coordination without weakening Tool Service authority.
+Agent output is untrusted planning data. It cannot grant permissions, assign risk, approve work, or call Tool Service. Gateway owns orchestration and uses its server-derived development actor; Tool Service remains authoritative for existence, input, permissions, risk, approval, and execution. TypeScript/Zod and Python/Pydantic independently validate the cross-language contract, backed by a real cross-service contract test.
+
+Phase 6 permits exactly one tool execution. A second tool proposal fails closed because multi-step workflows require explicit iteration budgets, approval state, dependency tracking, idempotency, recovery, and loop detection. State exists only for the request lifetime. There are no retries: if a tool succeeds and final Agent generation fails, Gateway reports that the action may have completed and does not execute it again. Future state-changing workflows require durable idempotency before retry behavior can be considered.
 
 ### Tool execution boundary
 

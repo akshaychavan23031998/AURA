@@ -21,6 +21,8 @@ import {
 } from "../plugins/request-context.js";
 import { registerSecurity } from "../plugins/security.js";
 import { registerRoutes } from "../routes/index.js";
+import { deriveDevelopmentActorContext } from "../context/development-actor.js";
+import { AgentToolOrchestrator } from "../orchestration/agent-tool-orchestrator.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -52,15 +54,25 @@ export async function createApp(
     bodyLimit: options.config.server.bodyLimit,
   };
   const app = Fastify(serverOptions);
+  const toolClient =
+    options.toolClient ??
+    createToolServiceClient(options.config, fetch, app.log);
+  const agentClient =
+    options.agentClient ??
+    createAgentServiceClient(options.config, fetch, app.log);
 
   await registerSecurity(app);
   registerRequestContext(app);
   registerRoutes(
     app,
-    options.toolClient ??
-      createToolServiceClient(options.config, fetch, app.log),
-    options.agentClient ??
-      createAgentServiceClient(options.config, fetch, app.log),
+    toolClient,
+    agentClient,
+    new AgentToolOrchestrator({
+      agentClient,
+      toolClient,
+      actorContextProvider: deriveDevelopmentActorContext,
+      logger: app.log,
+    }),
   );
   registerErrorHandling(app);
 

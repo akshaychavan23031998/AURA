@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/app/create-app.js";
 import type { AgentServiceClient } from "../src/clients/agent/agent-service-client.js";
+import type { ToolServiceClient } from "../src/clients/tools/tool-service-client.js";
 import { testConfig } from "./test-config.js";
 
 function createClient(): {
@@ -57,6 +58,68 @@ describe("POST /api/v1/agent/respond", () => {
       error: { code: "VALIDATION_ERROR" },
     });
     expect(respond).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
+
+describe("POST /api/v1/agent/run", () => {
+  it("returns a direct user-oriented response with request correlation", async () => {
+    const { client: agentClient, respond } = createClient();
+    const execute = vi.fn<ToolServiceClient["execute"]>();
+    const toolClient: ToolServiceClient = { execute };
+    const app = await createApp({
+      config: testConfig,
+      agentClient,
+      toolClient,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/agent/run",
+      headers: { "x-request-id": "orchestration-route-1" },
+      payload: { message: "hello" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-request-id"]).toBe("orchestration-route-1");
+    expect(response.json<unknown>()).toEqual({
+      status: "completed",
+      response: { text: "Agent planning foundation is active." },
+      steps: 1,
+    });
+    expect(respond).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it.each([
+    [{ message: "" }],
+    [{ message: "hello", actorId: "attacker" }],
+    [{ message: "hello", grantedPermissions: ["system.echo"] }],
+    [
+      {
+        message: "hello",
+        toolResult: { tool: "system.echo", status: "success", data: {} },
+      },
+    ],
+    [{ message: "hello", orchestrationState: { step: 2 } }],
+  ])("rejects an invalid or privileged public body", async (payload) => {
+    const { client: agentClient, respond } = createClient();
+    const execute = vi.fn<ToolServiceClient["execute"]>();
+    const app = await createApp({
+      config: testConfig,
+      agentClient,
+      toolClient: { execute },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/agent/run",
+      payload,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json<unknown>()).toMatchObject({
+      error: { code: "VALIDATION_ERROR" },
+    });
+    expect(respond).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
     await app.close();
   });
 });

@@ -1,6 +1,6 @@
 # Agent Service
 
-The Agent Service is AURA's internal intent and planning boundary. Phase 5 provides a deterministic, replaceable planner; it does not use an LLM or perform actions.
+The Agent Service is AURA's internal intent and planning boundary. Phase 6 adds deterministic follow-up generation from a successful trusted tool result; it still does not use an LLM or perform actions.
 
 ## Implemented
 
@@ -9,6 +9,7 @@ The Agent Service is AURA's internal intent and planning boundary. Phase 5 provi
 - bounded, strict requests and stable errors
 - safe request correlation and JSON logs that omit message content and credentials
 - deterministic `echo <text>` tool proposals and a stable response fallback
+- deterministic `system.echo` success finalization with stable response text
 - Ruff, Pyright, and pytest coverage
 
 ## Endpoints
@@ -19,26 +20,26 @@ The Agent Service is AURA's internal intent and planning boundary. Phase 5 provi
 | `GET`  | `/ready`            | Public   | Successful initialization                     |
 | `POST` | `/v1/agent/respond` | Internal | Return a response plan or typed tool proposal |
 
-The planning request accepts `message`, optional `conversationId`, and optional `locale`. It cannot carry permissions, approval state, actor authority, or execution instructions.
+The internal request accepts `message`, optional `conversationId`, optional `locale`, and an optional `toolResult` supplied only by authenticated Gateway calls. The continuation contains only tool name, successful status, and safe result data. It cannot carry permissions, approval state, actor authority, or execution instructions.
 
 ## Development
 
 Python 3.12 or newer is required. From the repository root:
 
 ```bash
-python -m venv .venv
-.venv/Scripts/python -m pip install -e "services/agent[dev]"
+python -m venv services/agent/.venv
+services/agent/.venv/Scripts/python -m pip install -e "services/agent[dev]"
 set AURA_INTERNAL_SERVICE_TOKEN=replace-with-at-least-32-characters
-.venv/Scripts/python -m aura_agent.main
+services/agent/.venv/Scripts/python -m aura_agent.main
 ```
 
-On POSIX, use `.venv/bin/python` and `export`. Copy `.env.example` into `services/agent/.env` only for service-local development. Settings are `APP_ENV`, `AGENT_HOST` (default `0.0.0.0`), `AGENT_PORT` (default `8001`), `LOG_LEVEL`, `AURA_INTERNAL_SERVICE_TOKEN` (required, 32+ characters), and `AURA_ALLOWED_SERVICE_ID` (fixed to `gateway`).
+On POSIX, use `services/agent/.venv/bin/python` and `export`. Copy `.env.example` into `services/agent/.env` only for service-local development. Settings are `APP_ENV`, `AGENT_HOST` (default `0.0.0.0`), `AGENT_PORT` (default `8001`), `LOG_LEVEL`, `AURA_INTERNAL_SERVICE_TOKEN` (required, 32+ characters), and `AURA_ALLOWED_SERVICE_ID` (fixed to `gateway`).
 
 ```bash
-python -m ruff format --check services/agent
-python -m ruff check services/agent
-python -m pyright services/agent
-python -m pytest services/agent
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
 ```
 
 ## Boundary

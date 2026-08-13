@@ -82,3 +82,23 @@ def test_planner_failure_returns_safe_error(settings: Settings) -> None:
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "AGENT_PLANNING_FAILED"
     assert "private planner detail" not in response.text
+
+
+def test_authenticated_gateway_can_supply_tool_result(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        "/v1/agent/respond",
+        headers=auth_headers,
+        json={
+            "message": "echo AURA",
+            "toolResult": {
+                "tool": "system.echo",
+                "status": "success",
+                "data": {"message": "AURA"},
+            },
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["response"] == "Echo completed successfully: AURA"
+    assert response.json()["plan"] == {"type": "respond"}

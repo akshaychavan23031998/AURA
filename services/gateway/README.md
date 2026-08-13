@@ -1,6 +1,6 @@
 # Gateway Service
 
-The Gateway is AURA's external HTTP entry point. Phase 5 adds a trusted Agent Service client and strict planning route while real user authentication remains deferred.
+The Gateway is AURA's external HTTP entry point. Phase 6 adds a trusted, request-scoped single-tool orchestration loop while real user authentication remains deferred.
 
 ## Implemented
 
@@ -18,6 +18,8 @@ The Gateway is AURA's external HTTP entry point. Phase 5 adds a trusted Agent Se
 - strict public tool-execution envelope and server-derived development context
 - authenticated Tool Service client with timeout, contract validation, and error translation
 - authenticated Agent Service client with correlation, timeout, contract validation, and safe error translation
+- transport-independent Agent/Tool orchestrator with a hard one-tool execution limit
+- explicit partial-failure handling when execution succeeds but Agent finalization fails
 
 ## Endpoints
 
@@ -27,6 +29,7 @@ The Gateway is AURA's external HTTP entry point. Phase 5 adds a trusted Agent Se
 | `GET`  | `/ready`                | Successful Gateway initialization | `{ "status": "ready", "service": "gateway" }` |
 | `POST` | `/api/v1/tools/execute` | External tool envelope            | Validated Tool Service result                 |
 | `POST` | `/api/v1/agent/respond` | External planning envelope        | Response plan or unexecuted tool proposal     |
+| `POST` | `/api/v1/agent/run`     | Deterministic orchestration       | Final user-oriented response and step count   |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
@@ -86,4 +89,8 @@ Gateway readiness reports its own initialization and does not synchronously prob
 
 ## Trusted Agent path
 
-The public Agent route accepts only `message`, optional `conversationId`, and optional `locale`. Gateway rejects caller-supplied permissions, actors, approvals, credentials, and execution directives, authenticates to Agent Service, and propagates the request ID. Returned tool plans are proposals only: Gateway does not route them to Tool Service or execute them. Agent readiness is deliberately not folded into Gateway readiness.
+Both public Agent routes accept only `message`, optional `conversationId`, and optional `locale`. Gateway rejects caller-supplied permissions, actors, approvals, credentials, tool results, orchestration state, and execution directives. `/respond` preserves the planning-only Phase 5 behavior.
+
+`/run` calls Agent, returns immediately for a response plan, or sends one proposed tool to the existing authenticated Tool Service client using the trusted development actor. Only a successful tool result is sent back to Agent for finalization. The same request ID is used throughout. A follow-up tool proposal fails closed with `ORCHESTRATION_STEP_LIMIT_EXCEEDED`; no second tool executes.
+
+Tool policy errors remain authoritative and do not return to Agent for reinterpretation. If a tool succeeds but Agent finalization fails, Gateway returns `AGENT_FINALIZATION_FAILED` and states that the action may have completed. It never retries execution. Individual downstream timeouts bound each call; cumulative orchestration latency is the sum of up to two Agent calls and one Tool call.

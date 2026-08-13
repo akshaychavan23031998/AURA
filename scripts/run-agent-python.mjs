@@ -25,10 +25,14 @@ if (!existsSync(interpreter)) {
   });
 
   if (result.error) {
-    console.error(`Unable to run the Agent Python interpreter: ${result.error.message}`);
+    console.error(
+      `Unable to run the Agent Python interpreter: ${result.error.message}`,
+    );
     process.exitCode = 1;
   } else if (result.signal !== null) {
-    console.error(`Agent Python process terminated by signal ${result.signal}.`);
+    console.error(
+      `Agent Python process terminated by signal ${result.signal}.`,
+    );
     process.exitCode = 1;
   } else {
     process.exitCode = result.status ?? 1;

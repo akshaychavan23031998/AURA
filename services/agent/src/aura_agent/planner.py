@@ -15,6 +15,19 @@ class Planner(Protocol):
 
 class DeterministicDevelopmentPlanner:
     async def plan(self, request: AgentRequest) -> AgentResult:
+        if request.tool_result is not None:
+            result = request.tool_result
+            if result.tool != "system.echo":
+                raise ValueError("Unsupported tool result")
+            message = result.data.get("message")
+            if not isinstance(message, str):
+                raise ValueError("Invalid echo result")
+            return AgentResult(
+                intent="respond",
+                response=f"Echo completed successfully: {message}",
+                plan=RespondPlan(),
+            )
+
         command, separator, content = request.message.partition(" ")
         if command.casefold() == "echo" and separator and content.strip():
             return AgentResult(

@@ -39,6 +39,13 @@ export interface AgentRequest {
   readonly message: string;
   readonly conversationId?: string;
   readonly locale?: string;
+  readonly toolResult?: ToolExecutionResultContext;
+}
+
+export interface ToolExecutionResultContext {
+  readonly tool: string;
+  readonly status: "success";
+  readonly data: unknown;
 }
 
 export type AgentResult = z.infer<typeof agentResponseSchema>;
