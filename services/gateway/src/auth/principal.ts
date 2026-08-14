@@ -3,6 +3,7 @@ export const allowedPermissions = [
   "utility.calculator",
   "utility.datetime",
   "calendar.events.read",
+  "calendar.events.write",
 ] as const;
 export type AllowedPermission = (typeof allowedPermissions)[number];
 

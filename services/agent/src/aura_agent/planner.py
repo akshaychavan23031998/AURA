@@ -1,7 +1,9 @@
 import json
 import logging
+import re
 import time
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Literal, Protocol, cast
 
 from pydantic import (
@@ -48,7 +50,7 @@ class DeterministicDevelopmentPlanner:
                 if not isinstance(value, int | float):
                     raise ValueError("Invalid calculator result")
                 response = f"The result is {value}."
-            else:
+            elif result.tool == "utility.datetime":
                 timezone = result.data.get("timezone")
                 date = result.data.get("date")
                 current_time = result.data.get("time")
@@ -59,6 +61,15 @@ class DeterministicDevelopmentPlanner:
                 response = (
                     f"In {timezone}, the date is {date} and the time is {current_time}."
                 )
+            elif result.tool == "calendar.events.create":
+                event = result.data.get("event")
+                if not isinstance(event, dict) or not isinstance(
+                    event.get("title"), str
+                ):
+                    raise ValueError("Invalid calendar create result")
+                response = f"Done, {event['title']} has been created on your calendar."
+            else:
+                response = "Your calendar request completed successfully."
             return AgentResult(
                 intent="respond",
                 response=response,
@@ -111,6 +122,27 @@ class DeterministicDevelopmentPlanner:
                     ),
                 )
 
+        calendar_create = _parse_deterministic_calendar_create(normalized)
+        if calendar_create is not None:
+            return AgentResult(
+                intent="propose_tool",
+                response="I can create that event after your explicit approval.",
+                plan=ToolPlan(
+                    tool=ToolProposal(
+                        name="calendar.events.create", input=calendar_create
+                    )
+                ),
+            )
+        if lowered.startswith(("create a calendar event", "schedule ")):
+            return AgentResult(
+                intent="respond",
+                response=(
+                    "Please provide the event title, date, start time, end time, "
+                    "and an explicit IANA timezone."
+                ),
+                plan=RespondPlan(),
+            )
+
         return AgentResult(
             intent="respond",
             response="Agent planning foundation is active.",
@@ -133,6 +165,7 @@ class _CatalogTool(BaseModel):
         "utility.datetime",
         "calendar.events.list",
         "calendar.events.get",
+        "calendar.events.create",
     ]
     input: dict[str, JsonValue]
 
@@ -174,12 +207,32 @@ class _CatalogTool(BaseModel):
                 and not isinstance(max_results, bool)
                 and 1 <= max_results <= 50
             )
-        else:
+        elif self.name == "calendar.events.get":
             event_id = self.input.get("eventId")
             valid = (
                 set(self.input) == {"eventId"}
                 and isinstance(event_id, str)
                 and 1 <= len(event_id) <= 1024
+            )
+        else:
+            summary = self.input.get("summary")
+            start = self.input.get("start")
+            end = self.input.get("end")
+            timezone = self.input.get("timezone")
+            location = self.input.get("location")
+            valid = (
+                set(self.input).issubset(
+                    {"summary", "start", "end", "timezone", "location"}
+                )
+                and set(self.input).issuperset({"summary", "start", "end", "timezone"})
+                and isinstance(summary, str)
+                and 1 <= len(summary.strip()) <= 200
+                and isinstance(start, str)
+                and isinstance(end, str)
+                and isinstance(timezone, str)
+                and 1 <= len(timezone) <= 64
+                and (location is None or isinstance(location, str))
+                and (location is None or 1 <= len(location.strip()) <= 500)
             )
         if not valid:
             raise ValueError("Tool input does not match the trusted catalog")
@@ -382,3 +435,38 @@ class AgentService:
             return await self._planner.plan(request)
         except Exception as error:
             raise AgentPlanningError from error
+
+
+def _parse_deterministic_calendar_create(message: str) -> dict[str, JsonValue] | None:
+    match = re.fullmatch(
+        r"schedule (?P<summary>.+?) on (?P<date>\d{4}-\d{2}-\d{2}) "
+        r"from (?P<start>\d{2}:\d{2}) to (?P<end>\d{2}:\d{2}) "
+        r"in (?P<timezone>[A-Za-z_]+(?:/[A-Za-z_+-]+)+)",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    try:
+        zone_name = match.group("timezone")
+        supported_zones = {
+            "Asia/Kolkata": timezone(timedelta(hours=5, minutes=30)),
+            "UTC": UTC,
+        }
+        zone = supported_zones[zone_name]
+        start = datetime.fromisoformat(
+            f"{match.group('date')}T{match.group('start')}:00"
+        ).replace(tzinfo=zone)
+        end = datetime.fromisoformat(
+            f"{match.group('date')}T{match.group('end')}:00"
+        ).replace(tzinfo=zone)
+    except (KeyError, ValueError):
+        return None
+    if end <= start:
+        return None
+    return {
+        "summary": match.group("summary").strip(),
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "timezone": match.group("timezone"),
+    }

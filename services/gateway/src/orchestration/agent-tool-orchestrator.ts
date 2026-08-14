@@ -110,6 +110,7 @@ export class AgentToolOrchestrator {
     control.signal?.throwIfAborted();
     const preparation = await this.dependencies.toolClient.prepare?.(
       { tool: proposal.name, input: proposal.input },
+      context,
       requestId,
     );
     if (preparation?.approvalPolicy === "REQUIRED")

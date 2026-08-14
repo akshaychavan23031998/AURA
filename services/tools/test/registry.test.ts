@@ -24,12 +24,13 @@ const testTool: ToolDefinition<{ value: string }, { value: string }> = {
 };
 
 describe("ToolRegistry", () => {
-  it("registers exactly the three production tools in deterministic order", () => {
+  it("registers exactly the production tools in deterministic order", () => {
     expect(
       createToolRegistry()
         .listMetadata()
         .map((tool) => tool.name),
     ).toEqual([
+      "calendar.events.create",
       "calendar.events.get",
       "calendar.events.list",
       "system.echo",

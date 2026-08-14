@@ -38,7 +38,7 @@ describe("Tool Service client", () => {
       },
       "calendar-request-1",
     );
-    expect(getAccessToken).toHaveBeenCalledWith("trusted-actor");
+    expect(getAccessToken).toHaveBeenCalledWith("trusted-actor", undefined);
     const rawBody = fetchMock.mock.calls[0]?.[1]?.body;
     expect(typeof rawBody).toBe("string");
     const body = JSON.parse(typeof rawBody === "string" ? rawBody : "{}") as {
@@ -49,6 +49,32 @@ describe("Tool Service client", () => {
       "short-lived-google-access-token",
     );
     expect(body.input).not.toHaveProperty("providerAccessToken");
+  });
+
+  it("requires the Calendar event-write provider scope for event creation", async () => {
+    const getAccessToken = vi.fn().mockResolvedValue("provider-access-token");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status: "success",
+        tool: "calendar.events.create",
+        version: 1,
+        data: { event: { eventId: "event-1" } },
+      }),
+    );
+    await createToolServiceClient(testConfig, fetchMock, undefined, {
+      getAccessToken,
+    }).execute(
+      { tool: "calendar.events.create", input: {} },
+      {
+        actorId: "trusted-actor",
+        grantedPermissions: ["calendar.events.write"],
+      },
+      "calendar-create-1",
+    );
+    expect(getAccessToken).toHaveBeenCalledWith(
+      "trusted-actor",
+      "https://www.googleapis.com/auth/calendar.events",
+    );
   });
 
   it("authenticates, propagates correlation, and validates success", async () => {

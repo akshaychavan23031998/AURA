@@ -17,6 +17,7 @@ def test_safe_catalog_contains_exactly_three_capabilities() -> None:
         "utility.datetime",
         "calendar.events.list",
         "calendar.events.get",
+        "calendar.events.create",
     ]
     assert all(
         set(item) == {"name", "description", "category", "inputSchema"}
@@ -107,6 +108,45 @@ async def test_utility_results_produce_final_responses() -> None:
     )
     assert isinstance(datetime.plan, RespondPlan)
     assert "UTC" in datetime.response
+
+
+@pytest.mark.asyncio
+async def test_calendar_create_requires_complete_explicit_time_data() -> None:
+    result = await DeterministicDevelopmentPlanner().plan(
+        AgentRequest(
+            message=(
+                "schedule Team sync on 2026-08-20 from 10:00 to 10:30 in Asia/Kolkata"
+            )
+        )
+    )
+    assert isinstance(result.plan, ToolPlan)
+    assert result.plan.tool.name == "calendar.events.create"
+    assert result.plan.tool.input == {
+        "summary": "Team sync",
+        "start": "2026-08-20T10:00:00+05:30",
+        "end": "2026-08-20T10:30:00+05:30",
+        "timezone": "Asia/Kolkata",
+    }
+    incomplete = await DeterministicDevelopmentPlanner().plan(
+        AgentRequest(message="schedule Team sync tomorrow")
+    )
+    assert isinstance(incomplete.plan, RespondPlan)
+
+
+@pytest.mark.asyncio
+async def test_calendar_create_result_produces_final_response() -> None:
+    result = await DeterministicDevelopmentPlanner().plan(
+        AgentRequest(
+            message="schedule Team sync",
+            toolResult=ToolExecutionResultContext(
+                tool="calendar.events.create",
+                status="success",
+                data={"event": {"title": "Team sync"}},
+            ),
+        )
+    )
+    assert isinstance(result.plan, RespondPlan)
+    assert result.response == "Done, Team sync has been created on your calendar."
 
 
 @pytest.mark.asyncio

@@ -39,7 +39,12 @@ export function registerToolExecutionRoute(
       }
 
       const principal = requirePrincipal(request);
-      const preparation = await toolClient.prepare?.(parsed.data, request.id);
+      const authorizationContext = deriveAuthorizationContext(principal);
+      const preparation = await toolClient.prepare?.(
+        parsed.data,
+        authorizationContext,
+        request.id,
+      );
       if (preparation?.approvalPolicy === "REQUIRED") {
         if (approvals === undefined)
           throw new AppError({
@@ -71,11 +76,7 @@ export function registerToolExecutionRoute(
           },
         };
       }
-      return toolClient.execute(
-        parsed.data,
-        deriveAuthorizationContext(principal),
-        request.id,
-      );
+      return toolClient.execute(parsed.data, authorizationContext, request.id);
     },
   );
 }

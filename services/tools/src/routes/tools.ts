@@ -39,11 +39,17 @@ const executionRequestSchema = z
   })
   .strict();
 
-const prepareRequestSchema = executionRequestSchema.pick({
-  tool: true,
-  version: true,
-  input: true,
-});
+const prepareRequestSchema = executionRequestSchema
+  .pick({ tool: true, version: true, input: true })
+  .extend({
+    context: z
+      .object({
+        actorId: z.string().min(1).max(128),
+        grantedPermissions: z.array(z.string().min(1).max(128)).max(100),
+      })
+      .strict(),
+  })
+  .strict();
 
 export interface ToolRouteDependencies {
   readonly registry: ToolRegistry;
@@ -81,6 +87,7 @@ export function registerToolRoutes(
         parsed.data.tool,
         parsed.data.version,
         parsed.data.input,
+        parsed.data.context,
       );
     },
   );

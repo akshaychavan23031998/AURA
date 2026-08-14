@@ -40,6 +40,7 @@ describe("Tool Service HTTP contract", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json<{ tools: Record<string, unknown>[] }>();
     expect(body.tools.map((tool) => tool.name)).toEqual([
+      "calendar.events.create",
       "calendar.events.get",
       "calendar.events.list",
       "system.echo",
@@ -75,6 +76,7 @@ describe("Tool Service HTTP contract", () => {
     });
     const tools = response.json<{ tools: Record<string, unknown>[] }>().tools;
     expect(tools.map((tool) => tool.name)).toEqual([
+      "calendar.events.create",
       "calendar.events.get",
       "calendar.events.list",
       "system.echo",

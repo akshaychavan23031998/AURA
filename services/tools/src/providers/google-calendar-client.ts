@@ -47,11 +47,28 @@ export interface GoogleCalendarClient {
     eventId: string,
     requestId: string,
   ): Promise<CalendarEvent>;
+  create(
+    accessToken: string,
+    input: CalendarCreateInput,
+    requestId: string,
+  ): Promise<CalendarEvent>;
+}
+export interface CalendarCreateInput {
+  readonly summary: string;
+  readonly start: string;
+  readonly end: string;
+  readonly timezone: string;
+  readonly location?: string | undefined;
 }
 export function createGoogleCalendarClient(
   fetcher: typeof fetch = fetch,
 ): GoogleCalendarClient {
-  const request = async (url: URL, token: string, requestId: string) => {
+  const request = async (
+    url: URL,
+    token: string,
+    requestId: string,
+    init: Pick<RequestInit, "method" | "body"> = {},
+  ) => {
     if (url.origin !== GOOGLE_CALENDAR_ORIGIN)
       throw new Error("Invalid Calendar origin");
     let response: Response;
@@ -60,7 +77,11 @@ export function createGoogleCalendarClient(
         headers: {
           authorization: `Bearer ${token}`,
           "x-request-id": requestId,
+          ...(init.body === undefined
+            ? {}
+            : { "content-type": "application/json" }),
         },
+        ...init,
         signal: AbortSignal.timeout(10_000),
       });
     } catch (error) {
@@ -71,7 +92,7 @@ export function createGoogleCalendarClient(
         { cause: error },
       );
     }
-    if (response.status === 401)
+    if (response.status === 401 || response.status === 403)
       throw new ToolError(
         "PROVIDER_REAUTH_REQUIRED",
         409,
@@ -118,6 +139,31 @@ export function createGoogleCalendarClient(
       );
       const parsed = eventSchema.safeParse(
         await request(url, token, requestId),
+      );
+      if (!parsed.success)
+        throw new ToolError(
+          "CALENDAR_REQUEST_FAILED",
+          502,
+          "Calendar returned invalid data",
+        );
+      return normalizeEvent(parsed.data);
+    },
+    async create(token, input, requestId) {
+      const url = new URL(
+        "/calendar/v3/calendars/primary/events",
+        GOOGLE_CALENDAR_ORIGIN,
+      );
+      const payload = {
+        summary: input.summary,
+        start: { dateTime: input.start, timeZone: input.timezone },
+        end: { dateTime: input.end, timeZone: input.timezone },
+        ...(input.location === undefined ? {} : { location: input.location }),
+      };
+      const parsed = eventSchema.safeParse(
+        await request(url, token, requestId, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
       );
       if (!parsed.success)
         throw new ToolError(

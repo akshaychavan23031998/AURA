@@ -41,7 +41,7 @@ describe("OpenID-certified Google adapter", () => {
     expect(url.searchParams.has("access_type")).toBe(false);
     expect(url.searchParams.toString()).not.toMatch(/gmail|calendar|drive/i);
   });
-  it("requests only the deliberate Calendar read scope when enabled", async () => {
+  it("requests only the deliberate Calendar read and event-write scopes when enabled", async () => {
     const configuration = new Configuration(
       {
         issuer: "https://accounts.google.com",
@@ -62,11 +62,12 @@ describe("OpenID-certified Google adapter", () => {
       "email",
       "profile",
       "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/calendar.events",
     ]);
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("prompt")).toBe("consent");
     expect(url.searchParams.toString()).not.toMatch(
-      /calendar\.events|gmail|drive/i,
+      /gmail|drive|calendar\.acl/i,
     );
   });
 });

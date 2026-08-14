@@ -12,6 +12,7 @@ export async function issueAccessToken(
     "utility.calculator",
     "utility.datetime",
     "calendar.events.read",
+    "calendar.events.write",
   ],
   now = Math.floor(Date.now() / 1000),
 ): Promise<string> {

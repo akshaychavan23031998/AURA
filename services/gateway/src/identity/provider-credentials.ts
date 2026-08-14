@@ -7,6 +7,8 @@ import { AppError } from "../errors/app-error.js";
 
 export const GOOGLE_CALENDAR_READ_SCOPE =
   "https://www.googleapis.com/auth/calendar.readonly";
+export const GOOGLE_CALENDAR_WRITE_SCOPE =
+  "https://www.googleapis.com/auth/calendar.events";
 const tokenSchema = z
   .object({ access_token: z.string().min(16).max(4096) })
   .passthrough();
@@ -86,12 +88,12 @@ export class GoogleProviderAccessTokenService {
     private readonly clientSecret: string,
     private readonly fetcher: typeof fetch = fetch,
   ) {}
-  public async getAccessToken(actorId: string): Promise<string> {
+  public async getAccessToken(
+    actorId: string,
+    requiredScope = GOOGLE_CALENDAR_READ_SCOPE,
+  ): Promise<string> {
     const credential = await this.credentials.getGoogle(actorId);
-    if (
-      credential === undefined ||
-      !credential.scopes.includes(GOOGLE_CALENDAR_READ_SCOPE)
-    )
+    if (credential === undefined || !credential.scopes.includes(requiredScope))
       throw reauth();
     let response: Response;
     try {

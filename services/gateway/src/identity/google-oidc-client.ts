@@ -57,7 +57,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
       redirect_uri: this.config.redirectUri,
       response_type: "code",
       scope: this.calendarEnabled
-        ? "openid email profile https://www.googleapis.com/auth/calendar.readonly"
+        ? "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events"
         : "openid email profile",
       ...(this.calendarEnabled
         ? { access_type: "offline", prompt: "consent" }
@@ -108,6 +108,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
       refreshToken,
       grantedScopes: Object.freeze([
         "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar.events",
       ]),
     });
   }

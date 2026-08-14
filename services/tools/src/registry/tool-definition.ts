@@ -18,6 +18,7 @@ export interface ToolDefinition<Input, Output> {
   readonly idempotency: "IDEMPOTENT" | "NON_IDEMPOTENT";
   readonly timeoutMs: number;
   readonly enabled: boolean;
+  readonly approvalPreview?: (input: unknown) => string;
   execute(input: Input, context: ExecutionContext): Promise<Output>;
 }
 

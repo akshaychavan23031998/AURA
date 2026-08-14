@@ -4,14 +4,14 @@ The Agent Service is AURA's internal planning boundary. Phase 9 preserves the de
 
 Phase 18 centralizes the planner's tool knowledge in a sanitized capability catalog containing only name, description, category, and input schema. Security policy and execution authority are absent. Tool Service remains authoritative, Gateway orchestrates, and the Agent proposes at most one tool.
 
-The Phase 19 catalog permits exactly `system.echo`, `utility.calculator`, and `utility.datetime`. The deterministic planner recognizes explicit arithmetic and explicit `Asia/Kolkata` or `UTC` date/time requests; it does not invent city-to-timezone mappings. All successful tool calls still return through Agent continuation before producing conversational output.
+The catalog permits `system.echo`, `utility.calculator`, `utility.datetime`, `calendar.events.list`, `calendar.events.get`, and `calendar.events.create`. Calendar creation exposes only its strict capability schema—not permission, Google scope, risk, approval, credentials, or actor state. The deterministic planner recognizes one deliberately narrow schedule form with an explicit date, start/end time, and supported IANA timezone; incomplete requests produce clarification rather than invented time data. All successful calls still return through Agent continuation.
 
 ## Planner modes
 
 - `deterministic` is the safe default for tests and development without model weights.
 - `llm` uses `SelfHostedLlmPlanner` and fails startup if its configured local runtime is unavailable. It never silently falls back.
 
-Both modes return the existing strict `RespondPlan` or `ToolPlan` contract. Model output is untrusted: llama.cpp constrains JSON generation, then Pydantic rejects malformed structures, extra fields, privileged metadata, and every tool except `system.echo`.
+Both modes return the existing strict `RespondPlan` or `ToolPlan` contract. Model output is untrusted: llama.cpp constrains JSON generation, then Pydantic rejects malformed structures, extra fields, privileged metadata, and tools outside the sanitized catalog.
 
 ## Local model
 
@@ -65,7 +65,7 @@ Existing `APP_ENV`, `AGENT_HOST`, `AGENT_PORT`, `LOG_LEVEL`, `AURA_INTERNAL_SERV
 
 ## Trust and observability
 
-The versioned system prompt treats user messages and tool results as untrusted data. Only the static Agent-facing `system.echo` catalog is described; permissions, risk, approval, identity, JWTs, sessions, service tokens, and database credentials are never sent to the model. Initial plans cannot claim completion, and continuations are constrained to a final response.
+The versioned system prompt treats user messages and tool results as untrusted data. Only the static sanitized capability catalog is described; permissions, OAuth scopes, risk, approval, identity, JWTs, sessions, provider tokens, service tokens, and database credentials are never sent to the model. Initial plans cannot claim completion, and continuations are constrained to a final response.
 
 Logs contain only metadata such as planner/runtime/model name, prompt/completion character counts, duration, plan type, and tool name. Raw prompts and completions are not logged. Inference is serialized with a one-slot semaphore, output and HTTP body sizes are bounded, and runtime/protocol failures map to the existing safe `AGENT_PLANNING_FAILED` response.
 

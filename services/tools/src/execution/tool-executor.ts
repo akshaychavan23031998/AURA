@@ -76,12 +76,24 @@ export class ToolExecutor {
     }
   }
 
-  public prepare(toolName: string, version: number, input: unknown) {
+  public prepare(
+    toolName: string,
+    version: number,
+    input: unknown,
+    context: Pick<ExecutionContext, "actorId" | "grantedPermissions">,
+  ) {
     const tool = this.registry.resolve(toolName, version);
     const parsed = tool.inputSchema.safeParse(input);
     if (!parsed.success) {
       throw new ToolError("TOOL_INPUT_INVALID", 400, "Tool input is invalid");
     }
+    const granted = new Set(context.grantedPermissions);
+    if (tool.requiredPermissions.some((permission) => !granted.has(permission)))
+      throw new ToolError(
+        "PERMISSION_DENIED",
+        403,
+        "Required tool permission is missing",
+      );
     return {
       tool: tool.name,
       version: tool.version,
@@ -91,7 +103,7 @@ export class ToolExecutor {
         : ("NONE" as const),
       input: parsed.data,
       inputDigest: actionDigest(tool.name, tool.version, parsed.data),
-      preview: tool.title,
+      preview: tool.approvalPreview?.(parsed.data) ?? tool.title,
     };
   }
 }

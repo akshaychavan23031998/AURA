@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   GOOGLE_CALENDAR_READ_SCOPE,
+  GOOGLE_CALENDAR_WRITE_SCOPE,
   GoogleProviderAccessTokenService,
 } from "../src/identity/provider-credentials.js";
 
@@ -60,5 +61,8 @@ describe("GoogleProviderAccessTokenService", () => {
       code: "PROVIDER_REAUTH_REQUIRED",
       message: "Google Calendar connection is required",
     });
+    await expect(
+      revoked.getAccessToken("actor-1", GOOGLE_CALENDAR_WRITE_SCOPE),
+    ).rejects.toMatchObject({ code: "PROVIDER_REAUTH_REQUIRED" });
   });
 });

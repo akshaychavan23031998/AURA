@@ -109,6 +109,7 @@ describe("access-token verification", () => {
         "utility.calculator",
         "utility.datetime",
         "calendar.events.read",
+        "calendar.events.write",
       ],
       tokenExpiresAt: now + 900,
     });

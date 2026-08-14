@@ -73,6 +73,7 @@ export interface ToolExecutionResult {
 export interface ToolServiceClient {
   prepare?(
     request: PublicToolExecutionRequest,
+    context: Pick<TrustedToolContext, "actorId" | "grantedPermissions">,
     requestId: string,
   ): Promise<ToolPreparation>;
   execute(
@@ -91,10 +92,12 @@ export function createToolServiceClient(
   config: GatewayConfig,
   fetchImplementation: typeof fetch = fetch,
   logger?: ToolClientLogger,
-  providerTokens?: { getAccessToken(actorId: string): Promise<string> },
+  providerTokens?: {
+    getAccessToken(actorId: string, requiredScope?: string): Promise<string>;
+  },
 ): ToolServiceClient {
   return {
-    async prepare(request, requestId) {
+    async prepare(request, context, requestId) {
       const response = await fetchImplementation(
         `${config.toolsService.url}/tools/prepare`,
         {
@@ -109,12 +112,14 @@ export function createToolServiceClient(
             tool: request.tool,
             version: 1,
             input: request.input,
+            context,
           }),
           signal: AbortSignal.timeout(config.toolsService.timeoutMs),
         },
       );
-      if (!response.ok) throw protocolError();
-      const parsed = preparationSchema.safeParse(await response.json());
+      const body = await readJson(response);
+      if (!response.ok) throw mappedToolError(response, body);
+      const parsed = preparationSchema.safeParse(body);
       if (!parsed.success) throw protocolError();
       return parsed.data;
     },
@@ -122,7 +127,12 @@ export function createToolServiceClient(
       const startedAt = performance.now();
       try {
         const providerAccessToken = request.tool.startsWith("calendar.")
-          ? await providerTokens?.getAccessToken(context.actorId)
+          ? await providerTokens?.getAccessToken(
+              context.actorId,
+              request.tool === "calendar.events.create"
+                ? "https://www.googleapis.com/auth/calendar.events"
+                : undefined,
+            )
           : undefined;
         const response = await fetchImplementation(
           `${config.toolsService.url}/tools/execute`,
@@ -221,6 +231,32 @@ function protocolError(): AppError {
     code: "UPSTREAM_PROTOCOL_ERROR",
     httpStatus: 502,
     message: "Tool Service returned an invalid response",
+  });
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  if (
+    !(response.headers.get("content-type") ?? "").includes("application/json")
+  )
+    throw protocolError();
+  try {
+    return await response.json();
+  } catch {
+    throw protocolError();
+  }
+}
+
+function mappedToolError(response: Response, body: unknown): AppError {
+  const parsed = errorSchema.safeParse(body);
+  if (
+    !parsed.success ||
+    ![400, 403, 404, 409, 429, 500, 504].includes(response.status)
+  )
+    throw protocolError();
+  return new AppError({
+    code: parsed.data.error.code,
+    httpStatus: response.status,
+    message: clientSafeToolMessage(parsed.data.error.code),
   });
 }
 

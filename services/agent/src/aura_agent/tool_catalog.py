@@ -79,4 +79,24 @@ AGENT_TOOL_CATALOG: Final = (
             "required": ["eventId"],
         },
     },
+    {
+        "name": "calendar.events.create",
+        "description": (
+            "Creates one event on the authenticated user's primary Google Calendar. "
+            "Requires an explicit summary, start, end, and IANA timezone."
+        ),
+        "category": "productivity",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "summary": {"type": "string", "minLength": 1, "maxLength": 200},
+                "start": {"type": "string", "format": "date-time"},
+                "end": {"type": "string", "format": "date-time"},
+                "timezone": {"type": "string", "minLength": 1, "maxLength": 64},
+                "location": {"type": "string", "minLength": 1, "maxLength": 500},
+            },
+            "required": ["summary", "start", "end", "timezone"],
+        },
+    },
 )
