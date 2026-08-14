@@ -119,7 +119,7 @@ For browsers, `/refresh` reads and rotates `aura_refresh` from an HttpOnly cooki
 
 ## Google OIDC
 
-Gateway uses the OpenID-certified `openid-client` v6 library for Google discovery, authorization construction, code exchange, ID-token signature/issuer/audience/expiry validation, and nonce/state/PKCE checks. Only `openid email profile` is requested. No Google offline access, refresh token, or Gmail/Calendar/Drive permission is requested or stored.
+Gateway uses the OpenID-certified `openid-client` v6 library for Google discovery, code exchange, and OIDC validation. Identity-only deployments request `openid email profile`. Calendar and Gmail scopes/offline access are added only when their explicit feature flags are enabled; Drive and unrelated permissions are never requested.
 
 The OAuth transaction is AES-256-GCM encrypted into a ten-minute `HttpOnly`, `SameSite=Lax` callback-scoped cookie. `Lax` permits Google's top-level cross-site redirect; the AURA refresh cookie remains `SameSite=Strict`. Callback redirects are built solely from `WEB_APP_ORIGIN`, never `returnTo`. Success creates a new persisted AURA session and refresh cookie, while provider tokens are discarded.
 
@@ -178,3 +178,5 @@ Phase 20 persists approval requests in PostgreSQL with owner, expiry, exact-acti
 Realtime sessions emit `approval.required`, enter `AWAITING_APPROVAL`, and reject microphone frames with `VOICE_APPROVAL_PENDING` until an explicit HTTP decision. Approval resumes Agent-completed text through TTS on the still-connected socket; rejection settles the turn without execution. Disconnect removes only the ephemeral notification listener and never executes or replays the durable approval.
 
 Google Calendar access is opt-in through `GOOGLE_CALENDAR_ENABLED`. Authorization Code + PKCE requests `calendar.readonly` for reads and `calendar.events` for create/update/delete, plus offline access. AURA independently requires exact `calendar.events.read` or `calendar.events.write`; old read-only credentials return `PROVIDER_REAUTH_REQUIRED` before mutation. A 32-byte base64 key protects refresh credentials bound to the stable Google subject. Gateway refreshes bounded access tokens and forwards them only over the internal Tool channel. Every Calendar mutation suspends through exact-action approval; one consumed approval permits at most one dispatch and no ambiguous mutation is retried.
+
+Gmail read access is separately gated by `GOOGLE_GMAIL_ENABLED`. It adds only `gmail.readonly` to Google consent and requires exact AURA permission `gmail.messages.read`. Existing credentials missing that scope fail with `PROVIDER_REAUTH_REQUIRED` before Tool Service is called. The same encrypted provider credential and fixed token endpoint are reused; Gmail tokens remain internal and ephemeral.

@@ -13,6 +13,7 @@ export async function issueAccessToken(
     "utility.datetime",
     "calendar.events.read",
     "calendar.events.write",
+    "gmail.messages.read",
   ],
   now = Math.floor(Date.now() / 1000),
 ): Promise<string> {

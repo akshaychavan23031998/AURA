@@ -100,6 +100,9 @@ const environmentSchema = z
     GOOGLE_CALENDAR_ENABLED: z
       .enum(["true", "false"])
       .transform((value) => value === "true"),
+    GOOGLE_GMAIL_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
     GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z
@@ -141,6 +144,12 @@ const environmentSchema = z
         path: ["GOOGLE_CALENDAR_ENABLED"],
         message: "Google Calendar requires Google OIDC",
       });
+    if (value.GOOGLE_GMAIL_ENABLED && !value.GOOGLE_OIDC_ENABLED)
+      context.addIssue({
+        code: "custom",
+        path: ["GOOGLE_GMAIL_ENABLED"],
+        message: "Google Gmail requires Google OIDC",
+      });
     if (!value.GOOGLE_OIDC_ENABLED) return;
     for (const key of [
       "GOOGLE_OIDC_CLIENT_ID",
@@ -164,13 +173,14 @@ const environmentSchema = z
         message: "Google OIDC redirect URI must use HTTP or HTTPS",
       });
     if (
-      value.GOOGLE_CALENDAR_ENABLED &&
+      (value.GOOGLE_CALENDAR_ENABLED || value.GOOGLE_GMAIL_ENABLED) &&
       value.GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY === undefined
     )
       context.addIssue({
         code: "custom",
         path: ["GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY"],
-        message: "A 32-byte base64 encryption key is required for Calendar",
+        message:
+          "A 32-byte base64 encryption key is required for Google integrations",
       });
     if (
       value.NODE_ENV === "production" &&

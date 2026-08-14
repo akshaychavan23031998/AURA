@@ -145,6 +145,9 @@ def test_system_prompt_contains_only_safe_catalog_and_boundaries() -> None:
     assert "calendar.events.create" in SYSTEM_PROMPT
     assert "calendar.events.update" in SYSTEM_PROMPT
     assert "calendar.events.delete" in SYSTEM_PROMPT
+    assert "gmail.messages.list" in SYSTEM_PROMPT
+    assert "gmail.messages.get" in SYSTEM_PROMPT
+    assert "gmail.readonly" not in SYSTEM_PROMPT
     assert "calendar.readonly" not in SYSTEM_PROMPT
     assert "providerAccessToken" not in SYSTEM_PROMPT
     assert "shell.execute" not in SYSTEM_PROMPT

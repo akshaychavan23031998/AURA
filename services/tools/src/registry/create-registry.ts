@@ -4,6 +4,8 @@ import { datetimeTool } from "../tools/utility/datetime.tool.js";
 import { ToolRegistry } from "./tool-registry.js";
 import { createGoogleCalendarClient } from "../providers/google-calendar-client.js";
 import { createCalendarTools } from "../tools/calendar/events.tool.js";
+import { createGoogleGmailClient } from "../providers/google-gmail-client.js";
+import { createGmailTools } from "../tools/gmail/messages.tool.js";
 
 export function createToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -11,6 +13,8 @@ export function createToolRegistry(): ToolRegistry {
   registry.register(calculatorTool);
   registry.register(datetimeTool);
   for (const tool of createCalendarTools(createGoogleCalendarClient()))
+    registry.register(tool);
+  for (const tool of createGmailTools(createGoogleGmailClient()))
     registry.register(tool);
   registry.seal();
   return registry;

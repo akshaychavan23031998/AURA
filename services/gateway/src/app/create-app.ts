@@ -100,10 +100,13 @@ export async function createApp(
   const database = options.database ?? createDatabaseClient(options.config);
   const identityRepository = new IdentityRepository(database);
   const approvalRepository = new ApprovalRepository(database);
-  const providerCredentials = options.config.googleCalendar.enabled
+  const googleIntegration = options.config.googleCalendar.enabled
+    ? options.config.googleCalendar
+    : options.config.googleGmail;
+  const providerCredentials = googleIntegration.enabled
     ? new ProviderCredentialRepository(
         database,
-        Buffer.from(options.config.googleCalendar.tokenEncryptionKey, "base64"),
+        Buffer.from(googleIntegration.tokenEncryptionKey, "base64"),
       )
     : undefined;
   const realtimeApprovals = new ApprovalRealtimeRegistry();
@@ -117,6 +120,7 @@ export async function createApp(
           options.config.googleOidc,
           undefined,
           options.config.googleCalendar.enabled,
+          options.config.googleGmail.enabled,
         )
       : undefined);
   const providerTokens =

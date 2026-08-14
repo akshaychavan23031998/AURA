@@ -136,4 +136,36 @@ AGENT_TOOL_CATALOG: Final = (
             "required": ["eventId"],
         },
     },
+    {
+        "name": "gmail.messages.list",
+        "description": (
+            "Lists bounded metadata for recent messages in the authenticated user's "
+            "Gmail account, optionally filtered by plain search terms."
+        ),
+        "category": "communication",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "maxResults": {"type": "integer", "minimum": 1, "maximum": 20},
+                "query": {"type": "string", "minLength": 1, "maxLength": 200},
+            },
+        },
+    },
+    {
+        "name": "gmail.messages.get",
+        "description": (
+            "Gets bounded metadata and a snippet for one Gmail message by its "
+            "explicit message identifier."
+        ),
+        "category": "communication",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "messageId": {"type": "string", "minLength": 1, "maxLength": 256}
+            },
+            "required": ["messageId"],
+        },
+    },
 )

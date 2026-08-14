@@ -88,6 +88,7 @@ describe("gateway configuration", () => {
       },
       googleOidc: { enabled: false },
       googleCalendar: { enabled: false },
+      googleGmail: { enabled: false },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
         poolMax: 8,
@@ -155,6 +156,19 @@ describe("gateway configuration", () => {
         GOOGLE_CALENDAR_ENABLED: "true",
       }),
     ).toThrow(/Google Calendar requires Google OIDC/);
+  });
+
+  it("requires Google OIDC and provider encryption for Gmail", () => {
+    expect(() =>
+      loadConfig({
+        TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
+        AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+        VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
+        AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
+        DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+        GOOGLE_GMAIL_ENABLED: "true",
+      }),
+    ).toThrow(/Google Gmail requires Google OIDC/);
   });
 
   it("requires a strong Agent Service token", () => {

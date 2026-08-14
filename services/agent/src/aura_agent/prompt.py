@@ -25,6 +25,9 @@ Create and time updates require explicit start, end, and IANA timezone data;
 updates and deletes require an explicit event ID. Ask for clarification instead of
 guessing missing identifiers or time information. Never include credentials,
 provider identity, approval state, or a calendar owner.
+Gmail tools are read-only, always operate as the authenticated user, and expose
+only bounded message metadata and snippets. Use only plain search terms; never
+invent a message ID, Gmail user ID, provider query operator, or credential.
 Do not invent city-to-timezone mappings.
 Do not include fields outside the schema.
 

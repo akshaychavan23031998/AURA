@@ -9,6 +9,8 @@ export const GOOGLE_CALENDAR_READ_SCOPE =
   "https://www.googleapis.com/auth/calendar.readonly";
 export const GOOGLE_CALENDAR_WRITE_SCOPE =
   "https://www.googleapis.com/auth/calendar.events";
+export const GOOGLE_GMAIL_READ_SCOPE =
+  "https://www.googleapis.com/auth/gmail.readonly";
 const tokenSchema = z
   .object({ access_token: z.string().min(16).max(4096) })
   .passthrough();

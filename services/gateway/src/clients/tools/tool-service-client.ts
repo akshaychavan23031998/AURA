@@ -126,14 +126,14 @@ export function createToolServiceClient(
     async execute(request, context, requestId) {
       const startedAt = performance.now();
       try {
-        const providerAccessToken = request.tool.startsWith("calendar.")
-          ? await providerTokens?.getAccessToken(
-              context.actorId,
-              isCalendarWrite(request.tool)
-                ? "https://www.googleapis.com/auth/calendar.events"
-                : undefined,
-            )
-          : undefined;
+        const providerAccessToken =
+          request.tool.startsWith("calendar.") ||
+          request.tool.startsWith("gmail.")
+            ? await providerTokens?.getAccessToken(
+                context.actorId,
+                requiredGoogleScope(request.tool),
+              )
+            : undefined;
         const response = await fetchImplementation(
           `${config.toolsService.url}/tools/execute`,
           {
@@ -226,12 +226,16 @@ export function createToolServiceClient(
   };
 }
 
-function isCalendarWrite(toolName: string): boolean {
+function requiredGoogleScope(toolName: string): string | undefined {
+  if (toolName.startsWith("gmail."))
+    return "https://www.googleapis.com/auth/gmail.readonly";
   return new Set([
     "calendar.events.create",
     "calendar.events.update",
     "calendar.events.delete",
-  ]).has(toolName);
+  ]).has(toolName)
+    ? "https://www.googleapis.com/auth/calendar.events"
+    : undefined;
 }
 
 function protocolError(): AppError {
@@ -283,6 +287,8 @@ function clientSafeToolMessage(code: string): string {
     PROVIDER_REAUTH_REQUIRED: "Google Calendar connection is required",
     CALENDAR_REQUEST_FAILED: "Google Calendar request failed",
     CALENDAR_RATE_LIMITED: "Google Calendar rate limit reached",
+    GMAIL_REQUEST_FAILED: "Google Gmail request failed",
+    GMAIL_RATE_LIMITED: "Google Gmail rate limit reached",
   };
   return messages[code] ?? "Tool request failed";
 }

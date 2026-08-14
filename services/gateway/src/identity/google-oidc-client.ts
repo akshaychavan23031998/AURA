@@ -44,6 +44,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
     >,
     configuration?: oidc.Configuration,
     private readonly calendarEnabled = false,
+    private readonly gmailEnabled = false,
   ) {
     if (configuration !== undefined)
       this.configuration = Promise.resolve(configuration);
@@ -56,10 +57,21 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
     return oidc.buildAuthorizationUrl(configuration, {
       redirect_uri: this.config.redirectUri,
       response_type: "code",
-      scope: this.calendarEnabled
-        ? "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events"
-        : "openid email profile",
-      ...(this.calendarEnabled
+      scope: [
+        "openid",
+        "email",
+        "profile",
+        ...(this.calendarEnabled
+          ? [
+              "https://www.googleapis.com/auth/calendar.readonly",
+              "https://www.googleapis.com/auth/calendar.events",
+            ]
+          : []),
+        ...(this.gmailEnabled
+          ? ["https://www.googleapis.com/auth/gmail.readonly"]
+          : []),
+      ].join(" "),
+      ...(this.calendarEnabled || this.gmailEnabled
         ? { access_type: "offline", prompt: "consent" }
         : {}),
       state: transaction.state,
@@ -99,7 +111,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
         ? {}
         : { displayName: parsed.data.name }),
     });
-    if (!this.calendarEnabled) return identity;
+    if (!this.calendarEnabled && !this.gmailEnabled) return identity;
     const refreshToken = tokens.refreshToken;
     if (typeof refreshToken !== "string" || refreshToken.length < 16)
       throw new Error("Google did not return an offline credential");
@@ -107,8 +119,15 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
       identity,
       refreshToken,
       grantedScopes: Object.freeze([
-        "https://www.googleapis.com/auth/calendar.readonly",
-        "https://www.googleapis.com/auth/calendar.events",
+        ...(this.calendarEnabled
+          ? [
+              "https://www.googleapis.com/auth/calendar.readonly",
+              "https://www.googleapis.com/auth/calendar.events",
+            ]
+          : []),
+        ...(this.gmailEnabled
+          ? ["https://www.googleapis.com/auth/gmail.readonly"]
+          : []),
       ]),
     });
   }

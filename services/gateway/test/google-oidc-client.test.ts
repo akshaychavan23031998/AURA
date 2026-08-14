@@ -70,4 +70,32 @@ describe("OpenID-certified Google adapter", () => {
       /gmail|drive|calendar\.acl/i,
     );
   });
+  it("adds only Gmail read-only scope when Gmail is enabled", async () => {
+    const configuration = new Configuration(
+      {
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+      },
+      providerConfig.clientId,
+      providerConfig.clientSecret,
+    );
+    const url = await new OpenIdClientGoogleProvider(
+      providerConfig,
+      configuration,
+      false,
+      true,
+    ).createAuthorizationUrl(createOidcTransaction());
+    expect(url.searchParams.get("scope")?.split(" ")).toEqual([
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/gmail.readonly",
+    ]);
+    expect(url.searchParams.get("access_type")).toBe("offline");
+    expect(url.searchParams.toString()).not.toMatch(
+      /gmail\.modify|gmail\.send|mail\.google|drive|calendar/i,
+    );
+  });
 });

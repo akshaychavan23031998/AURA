@@ -81,6 +81,18 @@ class DeterministicDevelopmentPlanner:
                 if not isinstance(event_id, str) or deleted is not True:
                     raise ValueError("Invalid calendar delete result")
                 response = "Done, the calendar event has been deleted."
+            elif result.tool == "gmail.messages.list":
+                messages = result.data.get("messages")
+                if not isinstance(messages, list):
+                    raise ValueError("Invalid Gmail list result")
+                response = f"I found {len(messages)} email messages."
+            elif result.tool == "gmail.messages.get":
+                message = result.data.get("message")
+                if not isinstance(message, dict) or not isinstance(
+                    message.get("subject"), str
+                ):
+                    raise ValueError("Invalid Gmail message result")
+                response = f"The email subject is: {message['subject']}"
             else:
                 response = "Your calendar request completed successfully."
             return AgentResult(
@@ -182,6 +194,21 @@ class DeterministicDevelopmentPlanner:
                 plan=RespondPlan(),
             )
 
+        gmail = _parse_deterministic_gmail(normalized)
+        if gmail is not None:
+            tool_name, tool_input = gmail
+            return AgentResult(
+                intent="propose_tool",
+                response="I can read that Gmail information.",
+                plan=ToolPlan(tool=ToolProposal(name=tool_name, input=tool_input)),
+            )
+        if lowered in {"read email", "get email"}:
+            return AgentResult(
+                intent="respond",
+                response="Please provide the exact Gmail message ID.",
+                plan=RespondPlan(),
+            )
+
         return AgentResult(
             intent="respond",
             response="Agent planning foundation is active.",
@@ -207,6 +234,8 @@ class _CatalogTool(BaseModel):
         "calendar.events.create",
         "calendar.events.update",
         "calendar.events.delete",
+        "gmail.messages.list",
+        "gmail.messages.get",
     ]
     input: dict[str, JsonValue]
 
@@ -300,12 +329,31 @@ class _CatalogTool(BaseModel):
                     for field in changes.intersection(time_fields)
                 )
             )
-        else:
+        elif self.name == "calendar.events.delete":
             event_id = self.input.get("eventId")
             valid = (
                 set(self.input) == {"eventId"}
                 and isinstance(event_id, str)
                 and 1 <= len(event_id.strip()) <= 1024
+            )
+        elif self.name == "gmail.messages.list":
+            max_results = self.input.get("maxResults", 10)
+            query = self.input.get("query")
+            valid = (
+                set(self.input).issubset({"maxResults", "query"})
+                and isinstance(max_results, int)
+                and not isinstance(max_results, bool)
+                and 1 <= max_results <= 20
+                and (query is None or isinstance(query, str))
+                and (query is None or 1 <= len(query.strip()) <= 200)
+                and (query is None or ":" not in query)
+            )
+        else:
+            message_id = self.input.get("messageId")
+            valid = (
+                set(self.input) == {"messageId"}
+                and isinstance(message_id, str)
+                and 1 <= len(message_id.strip()) <= 256
             )
         if not valid:
             raise ValueError("Tool input does not match the trusted catalog")
@@ -618,3 +666,37 @@ def _explicit_local_interval(match: re.Match[str]) -> tuple[str, str] | None:
     except (KeyError, ValueError):
         return None
     return None if end <= start else (start.isoformat(), end.isoformat())
+
+
+def _parse_deterministic_gmail(
+    message: str,
+) -> (
+    tuple[Literal["gmail.messages.list", "gmail.messages.get"], dict[str, JsonValue]]
+    | None
+):
+    lowered = message.casefold()
+    if lowered == "show my latest emails":
+        return "gmail.messages.list", {"maxResults": 10}
+    count_match = re.fullmatch(
+        r"list my last (?P<count>\d{1,2}) emails", message, flags=re.IGNORECASE
+    )
+    if count_match is not None:
+        count = int(count_match.group("count"))
+        return (
+            ("gmail.messages.list", {"maxResults": count}) if 1 <= count <= 20 else None
+        )
+    query_match = re.fullmatch(
+        r"find emails about (?P<query>.+)", message, flags=re.IGNORECASE
+    )
+    if query_match is not None:
+        query = query_match.group("query").strip()
+        if 1 <= len(query) <= 200 and ":" not in query:
+            return "gmail.messages.list", {"maxResults": 10, "query": query}
+    get_match = re.fullmatch(
+        r"(?:read|get) email (?P<message_id>[A-Za-z0-9_-]{1,256})",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if get_match is not None:
+        return "gmail.messages.get", {"messageId": get_match.group("message_id")}
+    return None

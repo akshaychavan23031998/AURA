@@ -115,6 +115,29 @@ describe("Tool Service client", () => {
     });
   });
 
+  it("resolves Gmail tokens with the exact read-only provider scope", async () => {
+    const getAccessToken = vi.fn().mockResolvedValue("gmail-access-token");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status: "success",
+        tool: "gmail.messages.list",
+        version: 1,
+        data: { messages: [] },
+      }),
+    );
+    await createToolServiceClient(testConfig, fetchMock, undefined, {
+      getAccessToken,
+    }).execute(
+      { tool: "gmail.messages.list", input: { maxResults: 10 } },
+      { actorId: "trusted-actor", grantedPermissions: ["gmail.messages.read"] },
+      "gmail-request-1",
+    );
+    expect(getAccessToken).toHaveBeenCalledWith(
+      "trusted-actor",
+      "https://www.googleapis.com/auth/gmail.readonly",
+    );
+  });
+
   it("maps trusted Tool errors without raw downstream messages", async () => {
     const fetchMock = vi.fn<typeof fetch>(() =>
       Promise.resolve(

@@ -4,6 +4,7 @@ export const allowedPermissions = [
   "utility.datetime",
   "calendar.events.read",
   "calendar.events.write",
+  "gmail.messages.read",
 ] as const;
 export type AllowedPermission = (typeof allowedPermissions)[number];
 

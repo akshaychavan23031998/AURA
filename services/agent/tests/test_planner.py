@@ -20,6 +20,8 @@ def test_safe_catalog_contains_exactly_three_capabilities() -> None:
         "calendar.events.create",
         "calendar.events.update",
         "calendar.events.delete",
+        "gmail.messages.list",
+        "gmail.messages.get",
     ]
     assert all(
         set(item) == {"name", "description", "category", "inputSchema"}
@@ -209,6 +211,53 @@ async def test_calendar_mutation_results_produce_final_responses() -> None:
     )
     assert isinstance(deleted.plan, RespondPlan)
     assert "deleted" in deleted.response
+
+
+@pytest.mark.asyncio
+async def test_gmail_read_plans_are_narrow_and_require_message_ids() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    latest = await planner.plan(AgentRequest(message="show my latest emails"))
+    assert isinstance(latest.plan, ToolPlan)
+    assert latest.plan.tool.name == "gmail.messages.list"
+    assert latest.plan.tool.input == {"maxResults": 10}
+    searched = await planner.plan(AgentRequest(message="find emails about interview"))
+    assert isinstance(searched.plan, ToolPlan)
+    assert searched.plan.tool.input == {"maxResults": 10, "query": "interview"}
+    message = await planner.plan(AgentRequest(message="read email abc123"))
+    assert isinstance(message.plan, ToolPlan)
+    assert message.plan.tool.name == "gmail.messages.get"
+    assert message.plan.tool.input == {"messageId": "abc123"}
+    ambiguous = await planner.plan(AgentRequest(message="read email"))
+    assert isinstance(ambiguous.plan, RespondPlan)
+
+
+@pytest.mark.asyncio
+async def test_gmail_results_continue_to_final_response() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    listed = await planner.plan(
+        AgentRequest(
+            message="show my latest emails",
+            toolResult=ToolExecutionResultContext(
+                tool="gmail.messages.list",
+                status="success",
+                data={"messages": []},
+            ),
+        )
+    )
+    assert isinstance(listed.plan, RespondPlan)
+    assert listed.response == "I found 0 email messages."
+    fetched = await planner.plan(
+        AgentRequest(
+            message="read email abc123",
+            toolResult=ToolExecutionResultContext(
+                tool="gmail.messages.get",
+                status="success",
+                data={"message": {"subject": "Interview"}},
+            ),
+        )
+    )
+    assert isinstance(fetched.plan, RespondPlan)
+    assert fetched.response == "The email subject is: Interview"
 
 
 @pytest.mark.asyncio
