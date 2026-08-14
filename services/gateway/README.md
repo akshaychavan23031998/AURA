@@ -113,9 +113,9 @@ The internal TTS request uses a normalized locale. Current capability is English
 
 ## Realtime voice session
 
-Connect to `GET /api/v1/voice/session` with the normal bearer credential and optional validated `x-request-id`. Send `{"protocol":"aura.voice.v1","type":"session.start"}`, then binary 20 ms frames of 16 kHz, mono, signed 16-bit little-endian PCM (exactly 640 bytes). JSON server events describe readiness, speech boundaries, transcript, Agent/TTS lifecycle, completion, and stable errors; binary messages contain bounded chunks of one completed WAV result.
+Non-browser clients connect to `GET /api/v1/voice/session` with the normal bearer credential. Browser clients offer `aura.voice.v1` and `aura.jwt.<access-token>` WebSocket subprotocols; Gateway negotiates only `aura.voice.v1`, redacts the credential header, and invokes the existing JWT/session verifier. After connecting, send `{"protocol":"aura.voice.v1","type":"session.start"}`, then binary 20 ms frames of 16 kHz, mono, signed 16-bit little-endian PCM (exactly 640 bytes).
 
-The state path is `CONNECTED → READY → LISTENING → PROCESSING → SPEAKING → READY`, with `CLOSED` terminal. Only one turn may be active. Frames during processing/speaking return `VOICE_BUSY`; invalid or oversized frames, utterances, buffers, and idle sessions fail closed without orchestration retries. Audio/text content is not logged. Request IDs are rooted in the upgrade request and each turn derives a correlated child ID.
+The normal state path is `CONNECTED → READY → LISTENING → PROCESSING → SPEAKING → READY`; validated barge-in adds `INTERRUPTING`, and `CLOSED` is terminal. During processing/speaking, frames are analyzed only for bounded authoritative barge-in. Invalid or oversized frames, utterances, buffers, and idle sessions fail closed without orchestration retries. Audio/text content is not logged. Request IDs are rooted in the upgrade request and each turn derives a correlated child ID.
 
 Current VAD is a deterministic in-process PCM energy detector. It is dependency-light and testable, but less robust than neural VAD in noise. STT and TTS remain whole-turn Voice Service calls; completed WAV bytes are chunked only for transport. Partial transcripts, native browser capture, streamed STT/TTS, multi-turn persistence, and Redis coordination are not implemented.
 

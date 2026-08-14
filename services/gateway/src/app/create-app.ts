@@ -66,6 +66,7 @@ export async function createApp(
           paths: [
             "req.headers.authorization",
             "req.headers.cookie",
+            "req.headers.sec-websocket-protocol",
             `req.headers.${TOOL_SERVICE_TOKEN_HEADER}`,
             `req.headers.${INTERNAL_SERVICE_TOKEN_HEADER}`,
             `req.headers.${VOICE_SERVICE_TOKEN_HEADER}`,
@@ -93,7 +94,11 @@ export async function createApp(
 
   await registerSecurity(app);
   await app.register(websocket, {
-    options: { maxPayload: options.config.voiceService.maxAudioBytes },
+    options: {
+      maxPayload: options.config.voiceService.maxAudioBytes,
+      handleProtocols: (protocols) =>
+        protocols.has("aura.voice.v1") ? "aura.voice.v1" : false,
+    },
   });
   await app.register(multipart, {
     limits: {

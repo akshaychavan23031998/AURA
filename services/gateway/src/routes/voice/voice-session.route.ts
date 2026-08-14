@@ -7,15 +7,42 @@ import type { VoiceTurnService } from "../../orchestration/voice-turn-service.js
 import { clientEventSchema, VOICE_PROTOCOL } from "../../voice/protocol.js";
 import { VoiceSessionCoordinator } from "../../voice/session-coordinator.js";
 
+const AUTH_PROTOCOL_PREFIX = "aura.jwt.";
+
+export function extractWebSocketBearerProtocol(
+  header: string | string[] | undefined,
+): string | undefined {
+  if (typeof header !== "string" || header.length > 8_192) return undefined;
+  const credentials = header
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.startsWith(AUTH_PROTOCOL_PREFIX));
+  if (credentials.length !== 1) return undefined;
+  const token = credentials[0]?.slice(AUTH_PROTOCOL_PREFIX.length);
+  return token === undefined ? undefined : `Bearer ${token}`;
+}
+
 export function registerVoiceSessionRoute(
   app: FastifyInstance,
   turns: VoiceTurnService,
   authenticate: preHandlerHookHandler,
   config: GatewayConfig,
 ): void {
+  const authenticateUpgrade: preHandlerHookHandler = function (
+    request,
+    reply,
+    done,
+  ) {
+    if (request.headers.authorization === undefined) {
+      request.headers.authorization = extractWebSocketBearerProtocol(
+        request.headers["sec-websocket-protocol"],
+      );
+    }
+    authenticate.call(this, request, reply, done);
+  };
   app.get(
     "/api/v1/voice/session",
-    { websocket: true, preHandler: authenticate },
+    { websocket: true, preHandler: authenticateUpgrade },
     (socket: WebSocket, request) => {
       const sendError = () =>
         socket.send(

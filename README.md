@@ -6,7 +6,7 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 13 — interruption, barge-in, and safe cancellation.** Authenticated realtime sessions now detect validated speech during processing or playback, supersede stale conversational work, abort STT/Agent/TTS where safe, and stop unsent audio. Dispatched Tool calls are never cancelled or retried; replacement turns wait for committed actions to settle. Streaming STT/TTS, partial transcripts, WebRTC, RAG, memory, and external integrations remain unimplemented.
+**Phase 14 — production realtime voice experience.** The responsive browser client now captures microphone audio through AudioWorklet, sends exact 16 kHz PCM frames over an authenticated Gateway WebSocket, renders protocol-driven conversation state, plays ordered WAV output, and stops stale playback on authoritative interruption events. Streaming STT/TTS, WebRTC, login/account UI, RAG, memory, and external integrations remain unimplemented.
 
 ## Planned architecture
 

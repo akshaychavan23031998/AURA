@@ -1,11 +1,13 @@
 import { configureStore } from "@reduxjs/toolkit";
 
 import { appReducer } from "./slices/app.slice";
+import { voiceReducer } from "./slices/voice.slice";
 
 export const makeStore = () =>
   configureStore({
     reducer: {
       app: appReducer,
+      voice: voiceReducer,
     },
   });
 

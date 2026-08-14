@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 import WebSocket from "ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app/create-app.js";
+import { extractWebSocketBearerProtocol } from "../src/routes/voice/voice-session.route.js";
 import type { AgentServiceClient } from "../src/clients/agent/agent-service-client.js";
 import {
   testAuthorizationHeader,
@@ -72,6 +73,32 @@ function connect(url: string, authorized = true): WebSocket {
 }
 
 describe("voice WebSocket transport", () => {
+  it("extracts exactly one bounded browser credential protocol", () => {
+    expect(
+      extractWebSocketBearerProtocol("aura.voice.v1, aura.jwt.one.two.three"),
+    ).toBe("Bearer one.two.three");
+    expect(
+      extractWebSocketBearerProtocol(
+        "aura.jwt.one.two.three, aura.jwt.four.five.six",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("authenticates a browser-compatible subprotocol upgrade", async () => {
+    const { app, url } = await fixture();
+    const socket = new WebSocket(url, [
+      "aura.voice.v1",
+      "aura.jwt.test.header.signature",
+    ]);
+    opened.push(socket);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    expect(socket.protocol).toBe("aura.voice.v1");
+    socket.close();
+    await app.close();
+  });
   it("rejects an unauthenticated upgrade", async () => {
     const { app, url } = await fixture();
     const status = await new Promise<number>((resolve) =>
