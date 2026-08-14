@@ -6,7 +6,7 @@ AURA is a personal, production-minded platform for natural multilingual voice in
 
 ## Current status
 
-**Phase 15 — production browser session experience.** The web app now bootstraps persisted sessions through a rotating HttpOnly refresh cookie, keeps access JWTs only in memory, coordinates single-flight refresh, performs replay-aware authenticated fetches, supports server-controlled local development sessions, and tears down voice resources on logout or expiry. Passwords, OAuth, account management, RAG, memory, and external integrations remain unimplemented.
+**Phase 16 — Google OIDC account entry.** AURA now authenticates people with Google OpenID Connect Authorization Code + PKCE, binds the verified provider `sub` to a persisted AURA user, and issues an independent AURA session. Access JWTs remain memory-only and rotating refresh cookies remain HttpOnly. Passwords, additional providers, Google API access, account management, RAG, memory, and external integrations remain unimplemented.
 
 ## Planned architecture
 

@@ -13,6 +13,9 @@ import type { VoiceTurnService } from "../orchestration/voice-turn-service.js";
 import { registerVoiceRunRoute } from "./voice/voice-run.route.js";
 import { registerVoiceSessionRoute } from "./voice/voice-session.route.js";
 import type { GatewayConfig } from "../config/index.js";
+import type { GoogleOidcProvider } from "../identity/google-oidc-client.js";
+import type { ExternalIdentityResolver } from "./auth/google-oidc.route.js";
+import { registerGoogleOidcRoutes } from "./auth/google-oidc.route.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -24,10 +27,20 @@ export function registerRoutes(
   checkDatabase: () => Promise<void>,
   voiceTurns: VoiceTurnService,
   config?: GatewayConfig,
+  googleOidcProvider?: GoogleOidcProvider,
+  identities?: ExternalIdentityResolver,
 ): void {
   registerHealthRoutes(app, checkDatabase);
   if (config !== undefined)
     registerAuthRoutes(app, sessions, authenticate, config);
+  if (config !== undefined && identities !== undefined)
+    registerGoogleOidcRoutes(
+      app,
+      config,
+      googleOidcProvider,
+      identities,
+      sessions,
+    );
   registerToolExecutionRoute(app, toolClient, authenticate);
   registerAgentResponseRoute(app, agentClient, authenticate);
   registerAgentRunRoute(app, orchestrator, authenticate);

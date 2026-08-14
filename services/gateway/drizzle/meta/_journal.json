@@ -8,6 +8,13 @@
       "when": 1786625000000,
       "tag": "0000_identity_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786684032191,
+      "tag": "0001_fluffy_whirlwind",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,9 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const userStatus = pgEnum("user_status", ["ACTIVE", "DISABLED"]);
+export const externalIdentityProvider = pgEnum("external_identity_provider", [
+  "google",
+]);
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -61,5 +64,31 @@ export const refreshTokens = pgTable(
   (table) => [
     uniqueIndex("refresh_tokens_hash_uidx").on(table.tokenHash),
     index("refresh_tokens_session_id_idx").on(table.sessionId),
+  ],
+);
+
+export const externalIdentities = pgTable(
+  "external_identities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: externalIdentityProvider("provider").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    emailAtLinkTime: text("email_at_link_time"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("external_identities_provider_subject_uidx").on(
+      table.provider,
+      table.providerSubject,
+    ),
+    index("external_identities_user_id_idx").on(table.userId),
   ],
 );

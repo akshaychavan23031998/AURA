@@ -76,6 +76,24 @@ button {
 .development-label {
   color: var(--muted);
 }
+.google-login-button {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 14px;
+  background: #fff;
+  color: #18202a;
+  font-weight: 700;
+  cursor: pointer;
+}
+.google-login-button:hover,
+.google-login-button:focus-visible {
+  box-shadow: 0 0 0 3px rgb(110 231 194 / 25%);
+}
+.configuration-note {
+  color: var(--muted);
+  font-size: 13px;
+}
 .auth-copy {
   min-height: 48px;
   line-height: 1.6;

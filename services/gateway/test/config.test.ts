@@ -75,6 +75,7 @@ describe("gateway configuration", () => {
         secureCookies: true,
         developmentSessionEnabled: false,
       },
+      googleOidc: { enabled: false },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
       },
@@ -156,5 +157,36 @@ describe("gateway configuration", () => {
         AUTH_ACCESS_TOKEN_TTL_SECONDS: "86400",
       }),
     ).toThrow(/AUTH_ACCESS_TOKEN_TTL_SECONDS/);
+  });
+
+  it("requires a complete Google OIDC configuration only when enabled", () => {
+    expect(() =>
+      loadConfig({
+        TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
+        AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+        VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
+        AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
+        DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+        GOOGLE_OIDC_ENABLED: "true",
+      }),
+    ).toThrow(/GOOGLE_OIDC_CLIENT_ID/);
+
+    const config = loadConfig({
+      TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
+      AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+      VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
+      AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
+      DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+      GOOGLE_OIDC_ENABLED: "true",
+      GOOGLE_OIDC_CLIENT_ID: "client.apps.googleusercontent.com",
+      GOOGLE_OIDC_CLIENT_SECRET: "provider-secret",
+      GOOGLE_OIDC_REDIRECT_URI:
+        "http://localhost:4000/api/v1/auth/google/callback",
+    });
+    expect(config.googleOidc).toMatchObject({
+      enabled: true,
+      clientId: "client.apps.googleusercontent.com",
+      transactionTtlSeconds: 600,
+    });
   });
 });

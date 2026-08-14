@@ -22,60 +22,109 @@ const databaseEnvironmentSchema = z.object({
   }, "DATABASE_URL must be a PostgreSQL URL"),
 });
 
-const environmentSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]),
-  GATEWAY_HOST: z.string().trim().min(1, "GATEWAY_HOST is required"),
-  GATEWAY_PORT: z.coerce.number().int().min(1).max(65_535),
-  LOG_LEVEL: z.enum([
-    "fatal",
-    "error",
-    "warn",
-    "info",
-    "debug",
-    "trace",
-    "silent",
-  ]),
-  TOOLS_SERVICE_URL: z
-    .url()
-    .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
-  TOOLS_SERVICE_TOKEN: z.string().min(32),
-  TOOLS_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000),
-  AGENT_SERVICE_URL: z
-    .url()
-    .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
-  AGENT_SERVICE_TOKEN: z.string().min(32),
-  AGENT_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(300_000),
-  VOICE_SERVICE_URL: z
-    .url()
-    .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
-  VOICE_SERVICE_TOKEN: z.string().min(32),
-  VOICE_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(600_000),
-  VOICE_MAX_AUDIO_BYTES: z.coerce
-    .number()
-    .int()
-    .min(1024)
-    .max(20 * 1024 * 1024),
-  VOICE_STREAM_MAX_FRAME_BYTES: z.coerce.number().int().min(640).max(65_536),
-  VOICE_VAD_THRESHOLD: z.coerce.number().int().min(1).max(32_767),
-  VOICE_VAD_END_SILENCE_MS: z.coerce.number().int().min(100).max(5_000),
-  VOICE_VAD_MIN_SPEECH_MS: z.coerce.number().int().min(20).max(2_000),
-  VOICE_SESSION_IDLE_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .min(1_000)
-    .max(3_600_000),
-  VOICE_BARGE_IN_ENABLED: z
-    .enum(["true", "false"])
-    .transform((value) => value === "true"),
-  VOICE_BARGE_IN_MIN_SPEECH_MS: z.coerce.number().int().min(20).max(2_000),
-  VOICE_INTERRUPT_SETTLE_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .min(100)
-    .max(30_000),
-  ...authEnvironmentSchema.shape,
-  ...databaseEnvironmentSchema.shape,
-});
+const optionalCredential = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().trim().min(1).max(512).optional(),
+);
+
+const environmentSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]),
+    GATEWAY_HOST: z.string().trim().min(1, "GATEWAY_HOST is required"),
+    GATEWAY_PORT: z.coerce.number().int().min(1).max(65_535),
+    LOG_LEVEL: z.enum([
+      "fatal",
+      "error",
+      "warn",
+      "info",
+      "debug",
+      "trace",
+      "silent",
+    ]),
+    TOOLS_SERVICE_URL: z
+      .url()
+      .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
+    TOOLS_SERVICE_TOKEN: z.string().min(32),
+    TOOLS_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000),
+    AGENT_SERVICE_URL: z
+      .url()
+      .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
+    AGENT_SERVICE_TOKEN: z.string().min(32),
+    AGENT_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(300_000),
+    VOICE_SERVICE_URL: z
+      .url()
+      .refine((url) => url.startsWith("http://") || url.startsWith("https://")),
+    VOICE_SERVICE_TOKEN: z.string().min(32),
+    VOICE_SERVICE_TIMEOUT_MS: z.coerce.number().int().min(100).max(600_000),
+    VOICE_MAX_AUDIO_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1024)
+      .max(20 * 1024 * 1024),
+    VOICE_STREAM_MAX_FRAME_BYTES: z.coerce.number().int().min(640).max(65_536),
+    VOICE_VAD_THRESHOLD: z.coerce.number().int().min(1).max(32_767),
+    VOICE_VAD_END_SILENCE_MS: z.coerce.number().int().min(100).max(5_000),
+    VOICE_VAD_MIN_SPEECH_MS: z.coerce.number().int().min(20).max(2_000),
+    VOICE_SESSION_IDLE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(3_600_000),
+    VOICE_BARGE_IN_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    VOICE_BARGE_IN_MIN_SPEECH_MS: z.coerce.number().int().min(20).max(2_000),
+    VOICE_INTERRUPT_SETTLE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(30_000),
+    GOOGLE_OIDC_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    GOOGLE_OIDC_CLIENT_ID: optionalCredential,
+    GOOGLE_OIDC_CLIENT_SECRET: optionalCredential,
+    GOOGLE_OIDC_REDIRECT_URI: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.url().optional(),
+    ),
+    ...authEnvironmentSchema.shape,
+    ...databaseEnvironmentSchema.shape,
+  })
+  .superRefine((value, context) => {
+    if (!value.GOOGLE_OIDC_ENABLED) return;
+    for (const key of [
+      "GOOGLE_OIDC_CLIENT_ID",
+      "GOOGLE_OIDC_CLIENT_SECRET",
+      "GOOGLE_OIDC_REDIRECT_URI",
+    ] as const)
+      if (value[key] === undefined)
+        context.addIssue({
+          code: "custom",
+          path: [key],
+          message: `${key} is required when Google OIDC is enabled`,
+        });
+    if (
+      value.GOOGLE_OIDC_REDIRECT_URI !== undefined &&
+      !value.GOOGLE_OIDC_REDIRECT_URI.startsWith("http://") &&
+      !value.GOOGLE_OIDC_REDIRECT_URI.startsWith("https://")
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["GOOGLE_OIDC_REDIRECT_URI"],
+        message: "Google OIDC redirect URI must use HTTP or HTTPS",
+      });
+    if (
+      value.NODE_ENV === "production" &&
+      value.GOOGLE_OIDC_REDIRECT_URI !== undefined &&
+      !value.GOOGLE_OIDC_REDIRECT_URI.startsWith("https://")
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["GOOGLE_OIDC_REDIRECT_URI"],
+        message: "Google OIDC redirect URI must use HTTPS in production",
+      });
+  });
 
 export type GatewayEnvironment = z.infer<typeof environmentSchema>;
 

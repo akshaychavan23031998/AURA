@@ -29,6 +29,7 @@ const DEVELOPMENT_DEFAULTS = {
   AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
   AUTH_SESSION_TTL_SECONDS: "604800",
   WEB_APP_ORIGIN: "http://localhost:3000",
+  GOOGLE_OIDC_ENABLED: "false",
 } as const;
 
 export interface AuthConfig {
@@ -89,6 +90,15 @@ export interface GatewayConfig {
     readonly secureCookies: boolean;
     readonly developmentSessionEnabled: boolean;
   };
+  readonly googleOidc:
+    | { readonly enabled: false }
+    | {
+        readonly enabled: true;
+        readonly clientId: string;
+        readonly clientSecret: string;
+        readonly redirectUri: string;
+        readonly transactionTtlSeconds: 600;
+      };
   readonly database: { readonly url: string };
 }
 
@@ -175,6 +185,15 @@ export function loadConfig(
       secureCookies: parsed.NODE_ENV === "production",
       developmentSessionEnabled: parsed.NODE_ENV === "development",
     }),
+    googleOidc: parsed.GOOGLE_OIDC_ENABLED
+      ? Object.freeze({
+          enabled: true as const,
+          clientId: parsed.GOOGLE_OIDC_CLIENT_ID!,
+          clientSecret: parsed.GOOGLE_OIDC_CLIENT_SECRET!,
+          redirectUri: parsed.GOOGLE_OIDC_REDIRECT_URI!,
+          transactionTtlSeconds: 600 as const,
+        })
+      : Object.freeze({ enabled: false as const }),
     database: Object.freeze({ url: parsed.DATABASE_URL }),
   });
 }

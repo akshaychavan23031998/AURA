@@ -67,6 +67,19 @@ describe("AuthExperience", () => {
       false,
     );
   });
+
+  it("shows Google account entry only when explicitly configured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_OIDC_ENABLED", "true");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+    );
+    renderExperience();
+    expect(
+      await screen.findByRole("button", { name: "Continue with Google" }),
+    ).toBeVisible();
+    vi.unstubAllEnvs();
+  });
 });
 
 function renderExperience() {

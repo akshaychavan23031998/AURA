@@ -1,7 +1,20 @@
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 import type { DatabaseClient } from "../db/client.js";
-import { refreshTokens, sessions, users } from "../db/schema.js";
+import {
+  externalIdentities,
+  refreshTokens,
+  sessions,
+  users,
+} from "../db/schema.js";
+
+export interface AuthenticatedExternalIdentity {
+  readonly provider: "google";
+  readonly subject: string;
+  readonly email?: string;
+  readonly emailVerified: boolean;
+  readonly displayName?: string;
+}
 
 export class IdentityRepository {
   public constructor(private readonly database: DatabaseClient) {}
@@ -26,6 +39,66 @@ export class IdentityRepository {
       .where(and(eq(users.id, userId), eq(users.status, "ACTIVE")))
       .limit(1);
     return user;
+  }
+
+  public async resolveExternalIdentity(
+    identity: AuthenticatedExternalIdentity,
+  ): Promise<string> {
+    const existing = await this.findExternalIdentity(
+      identity.provider,
+      identity.subject,
+    );
+    if (existing !== undefined) return existing;
+    try {
+      return await this.database.db.transaction(async (tx) => {
+        const [user] = await tx
+          .insert(users)
+          .values({})
+          .returning({ id: users.id });
+        if (!user) throw new Error("Unable to create external user");
+        const [binding] = await tx
+          .insert(externalIdentities)
+          .values({
+            userId: user.id,
+            provider: identity.provider,
+            providerSubject: identity.subject,
+            emailAtLinkTime:
+              identity.emailVerified && identity.email !== undefined
+                ? identity.email
+                : null,
+          })
+          .returning({ userId: externalIdentities.userId });
+        if (!binding) throw new Error("Unable to bind external identity");
+        return binding.userId;
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const raced = await this.findExternalIdentity(
+        identity.provider,
+        identity.subject,
+      );
+      if (raced === undefined) throw error;
+      return raced;
+    }
+  }
+
+  private async findExternalIdentity(
+    provider: "google",
+    subject: string,
+  ): Promise<string | undefined> {
+    const [binding] = await this.database.db
+      .select({ userId: externalIdentities.userId })
+      .from(externalIdentities)
+      .innerJoin(users, eq(users.id, externalIdentities.userId))
+      .where(
+        and(
+          eq(externalIdentities.provider, provider),
+          eq(externalIdentities.providerSubject, subject),
+          eq(users.status, "ACTIVE"),
+        ),
+      )
+      .limit(1);
+    return binding?.userId;
   }
 
   public async createSession(
@@ -153,4 +226,14 @@ export class IdentityRepository {
       };
     });
   }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (typeof current !== "object" || current === null) return false;
+    if ("code" in current && current.code === "23505") return true;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return false;
 }

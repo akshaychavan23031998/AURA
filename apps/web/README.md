@@ -1,6 +1,6 @@
 # AURA Web
 
-The Phase 15 web application provides browser session bootstrap and the authenticated `aura.voice.v1` experience without owning identity, orchestration, or authorization decisions.
+The Phase 16 web application provides Google account entry, browser session bootstrap, and the authenticated `aura.voice.v1` experience without owning identity, orchestration, or authorization decisions.
 
 ## Authentication and session lifecycle
 
@@ -8,7 +8,9 @@ On initial load the application remains in `bootstrapping` while it calls the Ga
 
 The native authenticated-fetch wrapper attaches the latest JWT and may refresh and retry a safe `GET`, `HEAD`, or `OPTIONS` request once. It never automatically retries POST actions. A new voice WebSocket reads the latest in-memory token; an open socket is never mutated or silently reconnected. Logout revokes the persisted session, clears memory, and unmounts voice capture and playback.
 
-There is deliberately no fake production credential form. A local bootstrap button is built only when both `NODE_ENV=development` and `NEXT_PUBLIC_ENABLE_DEV_SESSION=true`; Gateway independently requires its development runtime and always chooses the fixed server-side development identity. The browser cannot select users or permissions.
+Production account entry is an ordinary navigation to the Gateway's fixed `/api/v1/auth/google/start` endpoint. OAuth codes and provider tokens never enter frontend JavaScript or URLs controlled by the frontend. After Gateway finishes the callback and returns to the trusted web origin, the existing refresh bootstrap obtains a new memory-only AURA access JWT.
+
+A local bootstrap button remains separate and is built only when both `NODE_ENV=development` and `NEXT_PUBLIC_ENABLE_DEV_SESSION=true`; Gateway independently requires its development runtime and always chooses the fixed server-side development identity. The browser cannot select users or permissions.
 
 Browser WebSocket APIs cannot set `Authorization`. The client therefore offers `aura.voice.v1` plus `aura.jwt.<access-token>` as WebSocket subprotocols. Gateway selects only `aura.voice.v1`, invokes its existing JWT/session verifier, and redacts the credential-bearing header. Use HTTPS/WSS in production.
 
@@ -22,6 +24,7 @@ Gateway events are runtime validated as untrusted input. Redux stores only front
 
 ```env
 NEXT_PUBLIC_GATEWAY_URL=https://gateway.example.com
+NEXT_PUBLIC_GOOGLE_OIDC_ENABLED=true
 # Development builds only:
 NEXT_PUBLIC_ENABLE_DEV_SESSION=true
 ```

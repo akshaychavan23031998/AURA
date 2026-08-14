@@ -5,7 +5,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createAccessTokenVerifier } from "../src/auth/token-verifier.js";
 import { createDatabaseClient, type DatabaseClient } from "../src/db/client.js";
-import { refreshTokens, users } from "../src/db/schema.js";
+import { externalIdentities, refreshTokens, users } from "../src/db/schema.js";
 import { IdentityRepository } from "../src/identity/repositories.js";
 import {
   InvalidSessionError,
@@ -147,5 +147,55 @@ describe.sequential("PostgreSQL identity persistence", () => {
     await expect(sessions.create(userId)).rejects.toBeInstanceOf(
       InvalidSessionError,
     );
+  });
+
+  it("binds Google subject rather than email and returns the same user", async () => {
+    const verified = {
+      provider: "google" as const,
+      subject: "google-stable-subject",
+      email: "verified@example.com",
+      emailVerified: true,
+    };
+    const first = await repository.resolveExternalIdentity(verified);
+    const second = await repository.resolveExternalIdentity({
+      ...verified,
+      email: "changed@example.com",
+    });
+    expect(second).toBe(first);
+    expect(await database.db.select().from(users)).toHaveLength(1);
+    expect(await database.db.select().from(externalIdentities)).toEqual([
+      expect.objectContaining({
+        userId: first,
+        provider: "google",
+        providerSubject: "google-stable-subject",
+        emailAtLinkTime: "verified@example.com",
+      }),
+    ]);
+  });
+
+  it("does not persist an unverified provider email", async () => {
+    await repository.resolveExternalIdentity({
+      provider: "google",
+      subject: "unverified-email-subject",
+      email: "untrusted@example.com",
+      emailVerified: false,
+    });
+    const [binding] = await database.db.select().from(externalIdentities);
+    expect(binding?.emailAtLinkTime).toBeNull();
+  });
+
+  it("resolves concurrent first login and rolls back the losing partial user", async () => {
+    const identity = {
+      provider: "google" as const,
+      subject: "concurrent-google-subject",
+      emailVerified: false,
+    };
+    const [first, second] = await Promise.all([
+      repository.resolveExternalIdentity(identity),
+      repository.resolveExternalIdentity(identity),
+    ]);
+    expect(second).toBe(first);
+    expect(await database.db.select().from(users)).toHaveLength(1);
+    expect(await database.db.select().from(externalIdentities)).toHaveLength(1);
   });
 });

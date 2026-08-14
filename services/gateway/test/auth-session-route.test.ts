@@ -89,9 +89,13 @@ describe("identity session routes", () => {
     expect(response.json<unknown>()).toEqual({
       accessToken: "new.access.token",
     });
-    expect(response.headers["set-cookie"]).toContain("HttpOnly");
-    expect(response.headers["set-cookie"]).toContain("SameSite=Strict");
-    expect(response.headers["set-cookie"]).not.toContain("Secure");
+    expect(cookieHeaders(response.headers["set-cookie"])).toContain("HttpOnly");
+    expect(cookieHeaders(response.headers["set-cookie"])).toContain(
+      "SameSite=Strict",
+    );
+    expect(cookieHeaders(response.headers["set-cookie"])).not.toContain(
+      "Secure",
+    );
     await app.close();
   });
 
@@ -161,7 +165,7 @@ describe("identity session routes", () => {
       accessToken: "dev.access.token",
     });
     expect(sessions.createDevelopmentSession).toHaveBeenCalledWith();
-    expect(response.headers["set-cookie"]).toContain("HttpOnly");
+    expect(cookieHeaders(response.headers["set-cookie"])).toContain("HttpOnly");
     await app.close();
   });
 
@@ -183,7 +187,13 @@ describe("identity session routes", () => {
       "00000000-0000-4000-8000-000000000001",
       "local-user-001",
     );
-    expect(response.headers["set-cookie"]).toContain("Max-Age=0");
+    expect(cookieHeaders(response.headers["set-cookie"])).toContain(
+      "Max-Age=0",
+    );
     await app.close();
   });
 });
+
+function cookieHeaders(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value.join("\n") : (value ?? "");
+}

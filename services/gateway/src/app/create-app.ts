@@ -1,5 +1,6 @@
 import Fastify, {
   type FastifyInstance,
+  type FastifyRequest,
   type FastifyServerOptions,
 } from "fastify";
 import multipart from "@fastify/multipart";
@@ -41,6 +42,11 @@ import {
   type VoiceServiceClient,
 } from "../clients/voice/voice-service-client.js";
 import { VoiceTurnService } from "../orchestration/voice-turn-service.js";
+import {
+  OpenIdClientGoogleProvider,
+  type GoogleOidcProvider,
+} from "../identity/google-oidc-client.js";
+import type { ExternalIdentityResolver } from "../routes/auth/google-oidc.route.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -51,6 +57,8 @@ export interface CreateAppOptions {
   readonly database?: DatabaseClient;
   readonly sessionService?: SessionManager;
   readonly voiceClient?: VoiceServiceClient;
+  readonly googleOidcProvider?: GoogleOidcProvider;
+  readonly externalIdentityResolver?: ExternalIdentityResolver;
 }
 
 export async function createApp(
@@ -73,15 +81,22 @@ export async function createApp(
           ],
           censor: "[REDACTED]",
         },
+        serializers: { req: serializeRequest },
       } satisfies FastifyServerOptions["logger"]),
     genReqId: resolveRequestId,
     bodyLimit: options.config.server.bodyLimit,
   };
   const app = Fastify(serverOptions);
   const database = options.database ?? createDatabaseClient(options.config);
+  const identityRepository = new IdentityRepository(database);
   const sessions =
     options.sessionService ??
-    new SessionService(new IdentityRepository(database), options.config.auth);
+    new SessionService(identityRepository, options.config.auth);
+  const googleOidcProvider =
+    options.googleOidcProvider ??
+    (options.config.googleOidc.enabled
+      ? new OpenIdClientGoogleProvider(options.config.googleOidc)
+      : undefined);
   const toolClient =
     options.toolClient ??
     createToolServiceClient(options.config, fetch, app.log);
@@ -131,9 +146,23 @@ export async function createApp(
       app.log,
     ),
     options.config,
+    googleOidcProvider,
+    options.externalIdentityResolver ?? identityRepository,
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);
 
   return app;
+}
+
+function serializeRequest(request: FastifyRequest) {
+  return {
+    method: request.method,
+    url: sanitizeRequestUrl(request.url),
+    remoteAddress: request.ip,
+  };
+}
+
+export function sanitizeRequestUrl(url: string): string {
+  return url.split("?", 1)[0] ?? "/";
 }

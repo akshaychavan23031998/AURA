@@ -21,10 +21,11 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 13 VAD-driven barge-in with typed execution phases, request-scoped STT/Agent/TTS cancellation, superseded-turn suppression, cancellable audio delivery, and non-retriable Tool settlement sequencing
 - Phase 14 browser voice client with AudioWorklet capture, deterministic 16 kHz PCM framing, validated WebSocket events, in-memory transcript state, ordered WAV playback, and authoritative interruption handling
 - Phase 15 browser identity lifecycle with HttpOnly refresh cookies, memory-only access tokens, single-flight rotation, conservative authenticated retries, server-controlled development bootstrap, and coordinated voice teardown
+- Phase 16 Google OIDC Authorization Code + PKCE account entry with encrypted transient state, nonce validation, durable provider-subject binding, and AURA-owned session issuance
 
 ### Planned
 
-True streaming STT/TTS, partial transcripts, full-duplex overlap, knowledge/RAG, memory, analytics, OAuth/account login, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+True streaming STT/TTS, partial transcripts, full-duplex overlap, knowledge/RAG, memory, analytics, additional credential providers, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
 
 ### Safe interruption boundary
 
@@ -39,6 +40,14 @@ The web client owns microphone permission UX, local resampling/framing, connecti
 Because browser WebSocket APIs cannot set `Authorization`, the existing access JWT is carried in a bounded `aura.jwt.*` WebSocket subprotocol while `aura.voice.v1` is the only negotiated protocol. Gateway extracts it into the existing verifier and redacts the credential-bearing header. Production deployments require TLS/WSS. This compatibility mechanism does not change normal HTTP bearer authentication.
 
 Browser refresh tokens are rotating opaque credentials stored only in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/auth`; production cookies are also `Secure`. The web application keeps the current access JWT in process memory and bootstraps by refreshing once before rendering authenticated UI. Cookie-backed mutations require the exact configured web `Origin`, and credentialed CORS allows only that origin. Concurrent refresh demand shares one request. Only safe HTTP methods may be retried once after refresh; action POSTs are never automatically replayed. Logout revokes the persisted session, expires the cookie, clears memory, and unmounts the voice runtime.
+
+### Production account entry
+
+Google authenticates the person, but Google credentials never become AURA application credentials. Gateway uses `openid-client` discovery and Authorization Code + S256 PKCE with `state`, `nonce`, exact client/redirect configuration, and only `openid email profile`. It consumes the validated ID-token claims at a narrow adapter boundary and discards provider access tokens; offline access is not requested.
+
+The PKCE verifier, state, nonce, and issue time live for at most ten minutes in an AES-256-GCM encrypted `HttpOnly`, `SameSite=Lax` transaction cookie scoped to the callback. `Lax` is required for Google's cross-site top-level callback; the normal AURA refresh cookie remains `Strict`. Callback completion clears the transaction cookie on success and failure and redirects only to `WEB_APP_ORIGIN` with an allowlisted non-sensitive result.
+
+`external_identities(provider, provider_subject)` is unique and binds Google `sub` to one AURA user. Email is stored only as optional verified link-time metadata and is never an account key or implicit linking mechanism. First login creates the user and binding in one transaction; unique-conflict recovery resolves concurrent first login without duplicate identities or orphaned users. A fresh normal AURA session is then created through `SessionService`.
 
 ## 2. Architectural style
 
@@ -60,15 +69,15 @@ flowchart LR
 
 ## 3. Service boundaries
 
-| Boundary  | Owns                                                                                                                                                    | Explicitly excludes                                     |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Web       | User experience and client-side interaction state                                                                                                       | Authorization decisions and secrets                     |
-| Gateway   | Implemented HTTP lifecycle, identity/session persistence, correlation, errors, trusted clients, and single-tool orchestration; planned OAuth/WebSockets | AI inference, audio processing, integrations, retrieval |
-| Voice     | Realtime speech/audio transformation and short-lived processing state                                                                                   | Planning, permissions, and business workflows           |
-| Agent     | Implemented deterministic and self-hosted LLM planning with strictly validated response/tool proposals                                                  | Permissions, approvals, OAuth secrets, direct actions   |
-| Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency                               | Agent reasoning and voice processing                    |
-| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                                                          | Privileged actions and broad credential access          |
-| Analytics | Derived metrics from asynchronous events                                                                                                                | Critical-path processing and transactional truth        |
+| Boundary  | Owns                                                                                                                                              | Explicitly excludes                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Web       | User experience and client-side interaction state                                                                                                 | Authorization decisions and secrets                     |
+| Gateway   | Implemented HTTP lifecycle, OIDC account entry, identity/session persistence, correlation, errors, trusted clients, and single-tool orchestration | AI inference, audio processing, integrations, retrieval |
+| Voice     | Realtime speech/audio transformation and short-lived processing state                                                                             | Planning, permissions, and business workflows           |
+| Agent     | Implemented deterministic and self-hosted LLM planning with strictly validated response/tool proposals                                            | Permissions, approvals, OAuth secrets, direct actions   |
+| Tools     | Implemented trusted registry and execution policy; planned integrations, credentials, persisted approvals and idempotency                         | Agent reasoning and voice processing                    |
+| Knowledge | Ingestion, retrieval, embeddings, graph context, memory access                                                                                    | Privileged actions and broad credential access          |
+| Analytics | Derived metrics from asynchronous events                                                                                                          | Critical-path processing and transactional truth        |
 
 Services do not receive unrestricted access to every datastore. Each service gains only the data access its responsibility requires, exposed through controlled APIs where another service owns that data.
 

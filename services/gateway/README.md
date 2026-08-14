@@ -1,6 +1,6 @@
 # Gateway Service
 
-The Gateway is AURA's external HTTP and WebSocket entry point. Phase 12 adds an authenticated, bounded realtime voice-session transport while reusing the existing STT, Agent/Tool orchestration, and TTS pipeline.
+The Gateway is AURA's external HTTP and WebSocket entry point. Phase 16 adds Google OIDC account entry while preserving AURA-owned users, sessions, tokens, permissions, and voice transport.
 
 ## Implemented
 
@@ -12,23 +12,26 @@ The Gateway is AURA's external HTTP and WebSocket entry point. Phase 12 adds an 
 - immediate active-session and active-user enforcement on protected requests
 - transactional refresh rotation, replay-family revocation, and idempotent logout
 - browser refresh-cookie transport with exact-Origin CSRF checks and narrowly scoped credentialed CORS
+- Google OpenID Connect Authorization Code + PKCE with encrypted transient state and durable subject binding
 - idempotent development-user bootstrap and development-session CLIs
 - authenticated `aura.voice.v1` WebSocket sessions with fixed PCM framing, server-side energy VAD, explicit turn states, correlation, heartbeat/idle cleanup, and chunked completed-WAV output
 
 ## Endpoints
 
-| Method | Path                               | Authentication      | Purpose                                     |
-| ------ | ---------------------------------- | ------------------- | ------------------------------------------- |
-| `GET`  | `/health`                          | None                | Process liveness                            |
-| `GET`  | `/ready`                           | None                | Gateway and PostgreSQL readiness            |
-| `POST` | `/api/v1/auth/refresh`             | Refresh cookie/body | Rotate refresh token and issue access token |
-| `POST` | `/api/v1/auth/logout`              | Bearer              | Revoke the caller's current session         |
-| `POST` | `/api/v1/auth/development-session` | Development only    | Create the fixed local development identity |
-| `POST` | `/api/v1/tools/execute`            | Bearer              | Execute a validated Tool Service request    |
-| `POST` | `/api/v1/agent/respond`            | Bearer              | Produce an unexecuted planning response     |
-| `POST` | `/api/v1/agent/run`                | Bearer              | Run deterministic orchestration             |
-| `POST` | `/api/v1/voice/run`                | Bearer              | Run one multipart voice turn                |
-| `GET`  | `/api/v1/voice/session`            | Bearer upgrade      | Open an `aura.voice.v1` WebSocket session   |
+| Method | Path                               | Authentication      | Purpose                                          |
+| ------ | ---------------------------------- | ------------------- | ------------------------------------------------ |
+| `GET`  | `/health`                          | None                | Process liveness                                 |
+| `GET`  | `/ready`                           | None                | Gateway and PostgreSQL readiness                 |
+| `POST` | `/api/v1/auth/refresh`             | Refresh cookie/body | Rotate refresh token and issue access token      |
+| `POST` | `/api/v1/auth/logout`              | Bearer              | Revoke the caller's current session              |
+| `POST` | `/api/v1/auth/development-session` | Development only    | Create the fixed local development identity      |
+| `GET`  | `/api/v1/auth/google/start`        | None                | Start Google OIDC with state, nonce, and PKCE    |
+| `GET`  | `/api/v1/auth/google/callback`     | Transaction cookie  | Validate Google identity and create AURA session |
+| `POST` | `/api/v1/tools/execute`            | Bearer              | Execute a validated Tool Service request         |
+| `POST` | `/api/v1/agent/respond`            | Bearer              | Produce an unexecuted planning response          |
+| `POST` | `/api/v1/agent/run`                | Bearer              | Run deterministic orchestration                  |
+| `POST` | `/api/v1/voice/run`                | Bearer              | Run one multipart voice turn                     |
+| `GET`  | `/api/v1/voice/session`            | Bearer upgrade      | Open an `aura.voice.v1` WebSocket session        |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
@@ -54,6 +57,10 @@ The service-local `.env.example` is the executable Gateway contract; the root ex
 | `AUTH_ACCESS_TOKEN_TTL_SECONDS`     | `900`                   | 60-3600 seconds                        |
 | `AUTH_SESSION_TTL_SECONDS`          | `604800`                | 3600-2592000 seconds                   |
 | `WEB_APP_ORIGIN`                    | `http://localhost:3000` | exact trusted browser origin           |
+| `GOOGLE_OIDC_ENABLED`               | `false`                 | enables both Google routes             |
+| `GOOGLE_OIDC_CLIENT_ID`             | none                    | required when enabled                  |
+| `GOOGLE_OIDC_CLIENT_SECRET`         | none                    | required when enabled; never logged    |
+| `GOOGLE_OIDC_REDIRECT_URI`          | none                    | exact registered callback URI          |
 | `DATABASE_URL`                      | none                    | required PostgreSQL URL                |
 | `VOICE_STREAM_MAX_FRAME_BYTES`      | `640`                   | maximum inbound binary frame           |
 | `VOICE_VAD_THRESHOLD`               | `500`                   | absolute PCM energy threshold          |
@@ -100,7 +107,22 @@ Refresh tokens contain 32 cryptographically random bytes encoded as base64url. O
 
 For browsers, `/refresh` reads and rotates `aura_refresh` from an HttpOnly cookie and returns only the short-lived access token. The replacement cookie is `SameSite=Strict`, scoped to `/api/v1/auth`, and `Secure` in production. Cookie-backed refresh/logout requests must carry the exact configured `WEB_APP_ORIGIN`; credentialed CORS is restricted to that same origin. The legacy `{ "refreshToken": "..." }` request and access/refresh response remain available for non-browser development tooling and compatibility.
 
-`/logout` requires a current access token, revokes its persisted session, clears the browser cookie, and returns 204. `/development-session` exists only when Gateway runs with `NODE_ENV=development`; it accepts no user or permission selection and always bootstraps the repository's fixed development identity. Production responds with 404. There are no login, signup, password, OAuth, or public user-creation endpoints.
+`/logout` requires a current access token, revokes its persisted session, clears the browser cookie, and returns 204. `/development-session` exists only when Gateway runs with `NODE_ENV=development`; it accepts no user or permission selection and always bootstraps the repository's fixed development identity. Production responds with 404. There are no password, signup, or public user-selection endpoints.
+
+## Google OIDC
+
+Gateway uses the OpenID-certified `openid-client` v6 library for Google discovery, authorization construction, code exchange, ID-token signature/issuer/audience/expiry validation, and nonce/state/PKCE checks. Only `openid email profile` is requested. No Google offline access, refresh token, or Gmail/Calendar/Drive permission is requested or stored.
+
+The OAuth transaction is AES-256-GCM encrypted into a ten-minute `HttpOnly`, `SameSite=Lax` callback-scoped cookie. `Lax` permits Google's top-level cross-site redirect; the AURA refresh cookie remains `SameSite=Strict`. Callback redirects are built solely from `WEB_APP_ORIGIN`, never `returnTo`. Success creates a new persisted AURA session and refresh cookie, while provider tokens are discarded.
+
+The `external_identities` table uniquely keys `google + sub`. Existing subjects reuse the same AURA user; new subjects create one ACTIVE user and binding atomically. Verified email can be retained as link-time metadata but email never links accounts.
+
+Google Cloud Console setup:
+
+1. Configure the OAuth consent/branding screen with the AURA name, support contact, and only `openid`, `email`, and `profile` identity scopes.
+2. Create an OAuth client of type **Web application**.
+3. Register the exact redirect URI, locally `http://localhost:4000/api/v1/auth/google/callback`.
+4. Set `GOOGLE_OIDC_ENABLED=true`, the issued client ID and secret, the exact redirect URI, and `WEB_APP_ORIGIN` locally. Use HTTPS for production origins and callbacks.
 
 The fixed Phase 8 permission is `system.echo`; persistent RBAC is not implemented. Identity persistence establishes who the caller is and whether the session is active. Tool Service remains authoritative for tool-specific permission, risk, approval, and execution policy. External JWTs are never forwarded to Agent or Tool Service.
 

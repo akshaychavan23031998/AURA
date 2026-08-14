@@ -1,6 +1,5 @@
 import type {
   FastifyInstance,
-  FastifyReply,
   FastifyRequest,
   preHandlerHookHandler,
 } from "fastify";
@@ -13,9 +12,11 @@ import {
   InvalidSessionError,
   type SessionManager,
 } from "../../identity/session-service.js";
-
-const REFRESH_COOKIE = "aura_refresh";
-const COOKIE_PATH = "/api/v1/auth";
+import {
+  clearRefreshCookie,
+  readRefreshCookie,
+  setRefreshCookie,
+} from "./cookies.js";
 const refreshSchema = z
   .object({ refreshToken: z.string().min(40).max(256) })
   .strict();
@@ -27,7 +28,7 @@ export function registerAuthRoutes(
   config: GatewayConfig,
 ): void {
   app.post("/api/v1/auth/refresh", async (request, reply) => {
-    const cookieToken = readCookie(request.headers.cookie, REFRESH_COOKIE);
+    const cookieToken = readRefreshCookie(request.headers.cookie);
     const body = refreshSchema.safeParse(request.body);
     const refreshToken =
       cookieToken ?? (body.success ? body.data.refreshToken : undefined);
@@ -49,7 +50,7 @@ export function registerAuthRoutes(
     "/api/v1/auth/logout",
     { preHandler: authenticate },
     async (request, reply) => {
-      if (readCookie(request.headers.cookie, REFRESH_COOKIE) !== undefined)
+      if (readRefreshCookie(request.headers.cookie) !== undefined)
         requireBrowserOrigin(request, config);
       const principal = requirePrincipal(request);
       await sessions.revoke(principal.sessionId, principal.actorId);
@@ -77,40 +78,6 @@ function requireBrowserOrigin(
       httpStatus: 403,
       message: "Request origin is not allowed",
     });
-}
-
-function readCookie(
-  header: string | undefined,
-  name: string,
-): string | undefined {
-  if (header === undefined || header.length > 8_192) return undefined;
-  for (const part of header.split(";")) {
-    const separator = part.indexOf("=");
-    if (separator === -1 || part.slice(0, separator).trim() !== name) continue;
-    const value = part.slice(separator + 1).trim();
-    return /^[A-Za-z0-9_-]{40,256}$/.test(value) ? value : undefined;
-  }
-  return undefined;
-}
-
-function setRefreshCookie(
-  reply: FastifyReply,
-  token: string,
-  config: GatewayConfig,
-): void {
-  reply.header(
-    "set-cookie",
-    `${REFRESH_COOKIE}=${token}; Path=${COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age=${config.auth.sessionTtlSeconds}${config.browser.secureCookies ? "; Secure" : ""}`,
-  );
-  reply.header("cache-control", "no-store");
-}
-
-function clearRefreshCookie(reply: FastifyReply, config: GatewayConfig): void {
-  reply.header(
-    "set-cookie",
-    `${REFRESH_COOKIE}=; Path=${COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age=0${config.browser.secureCookies ? "; Secure" : ""}`,
-  );
-  reply.header("cache-control", "no-store");
 }
 
 function unauthenticated(): AppError {

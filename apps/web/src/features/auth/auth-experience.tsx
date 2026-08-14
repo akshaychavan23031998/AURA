@@ -7,11 +7,23 @@ import { AuthApi, AuthFailure } from "./auth-api";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { setAuthError, setAuthStatus } from "@/store/slices/auth.slice";
 import { resetVoiceSession } from "@/store/slices/voice.slice";
+import {
+  isGoogleLoginEnabled,
+  loginResultMessage,
+  resolveGoogleLoginUrl,
+} from "./google-login";
 
 export function AuthExperience() {
   const dispatch = useAppDispatch();
   const auth = useAppSelector((state) => state.auth);
   const api = useMemo(() => new AuthApi(accessTokenStore), []);
+  const loginResult = useMemo(
+    () =>
+      typeof window === "undefined"
+        ? undefined
+        : loginResultMessage(window.location.search),
+    [],
+  );
 
   const expireSession = useCallback(() => {
     accessTokenStore.clear();
@@ -38,6 +50,14 @@ export function AuthExperience() {
       active = false;
     };
   }, [api, dispatch]);
+
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.location.search.includes("login=")
+    )
+      window.history.replaceState({}, "", window.location.pathname);
+  }, []);
 
   const createDevelopmentSession = async () => {
     dispatch(setAuthStatus("authenticating"));
@@ -83,7 +103,12 @@ export function AuthExperience() {
   return (
     <AuthPanel
       status={auth.status}
-      error={auth.error}
+      error={auth.error ?? loginResult}
+      onGoogleLogin={
+        isGoogleLoginEnabled()
+          ? () => window.location.assign(resolveGoogleLoginUrl())
+          : undefined
+      }
       onDevelopmentSession={
         isDevelopmentSessionEnabled()
           ? () => void createDevelopmentSession()
@@ -105,10 +130,12 @@ export function isDevelopmentSessionEnabled(
 function AuthPanel({
   status,
   error,
+  onGoogleLogin,
   onDevelopmentSession,
 }: Readonly<{
   status: string;
   error?: string;
+  onGoogleLogin?: () => void;
   onDevelopmentSession?: () => void;
 }>) {
   const waiting = [
@@ -138,6 +165,20 @@ function AuthPanel({
               ? "Your session is no longer valid. Authenticate again to continue."
               : (error ?? "No authenticated browser session is available.")}
         </p>
+        {onGoogleLogin !== undefined && !waiting && (
+          <button
+            className="google-login-button"
+            type="button"
+            onClick={onGoogleLogin}
+          >
+            Continue with Google
+          </button>
+        )}
+        {onGoogleLogin === undefined && !waiting && (
+          <p className="configuration-note">
+            Production sign-in is not configured.
+          </p>
+        )}
         {onDevelopmentSession !== undefined && !waiting && (
           <button
             className="voice-button"
