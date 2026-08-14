@@ -34,10 +34,33 @@ export interface PublicToolExecutionRequest {
   readonly input: unknown;
 }
 
+export interface TrustedApprovalProof {
+  readonly status: "approved";
+  readonly approvalId: string;
+  readonly approvedActorId: string;
+  readonly approvedTool: string;
+  readonly approvedToolVersion: number;
+  readonly inputDigest: string;
+}
+
 export interface TrustedToolContext {
   readonly actorId: string;
   readonly grantedPermissions: readonly string[];
+  readonly approval?: TrustedApprovalProof;
 }
+
+const preparationSchema = z
+  .object({
+    tool: z.string(),
+    version: z.number().int().positive(),
+    title: z.string(),
+    approvalPolicy: z.enum(["NONE", "REQUIRED"]),
+    input: z.unknown(),
+    inputDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    preview: z.string(),
+  })
+  .strict();
+export type ToolPreparation = z.infer<typeof preparationSchema>;
 
 export interface ToolExecutionResult {
   readonly status: "success";
@@ -47,6 +70,10 @@ export interface ToolExecutionResult {
 }
 
 export interface ToolServiceClient {
+  prepare?(
+    request: PublicToolExecutionRequest,
+    requestId: string,
+  ): Promise<ToolPreparation>;
   execute(
     request: PublicToolExecutionRequest,
     context: TrustedToolContext,
@@ -65,6 +92,30 @@ export function createToolServiceClient(
   logger?: ToolClientLogger,
 ): ToolServiceClient {
   return {
+    async prepare(request, requestId) {
+      const response = await fetchImplementation(
+        `${config.toolsService.url}/tools/prepare`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-request-id": requestId,
+            [TOOL_SERVICE_ID_HEADER]: "gateway",
+            [TOOL_SERVICE_TOKEN_HEADER]: config.toolsService.token,
+          },
+          body: JSON.stringify({
+            tool: request.tool,
+            version: 1,
+            input: request.input,
+          }),
+          signal: AbortSignal.timeout(config.toolsService.timeoutMs),
+        },
+      );
+      if (!response.ok) throw protocolError();
+      const parsed = preparationSchema.safeParse(await response.json());
+      if (!parsed.success) throw protocolError();
+      return parsed.data;
+    },
     async execute(request, context, requestId) {
       const startedAt = performance.now();
       try {

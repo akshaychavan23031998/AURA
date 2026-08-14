@@ -15,6 +15,25 @@ export interface VoiceTurnObserver {
   onToolDispatched?(): void;
   onToolCompleted?(): void;
 }
+export type VoiceTurnResult =
+  | {
+      transcript: string;
+      detectedLanguage: string;
+      responseText: string;
+      audioBase64: string;
+      audioMimeType: "audio/wav";
+    }
+  | {
+      status: "approval_required";
+      transcript: string;
+      detectedLanguage: string;
+      approval: {
+        approvalId: string;
+        title: string;
+        preview: string;
+        expiresAt: string;
+      };
+    };
 export class VoiceTurnService {
   public constructor(
     private readonly voice: VoiceServiceClient,
@@ -32,7 +51,7 @@ export class VoiceTurnService {
     context: TrustedToolContext,
     observer?: VoiceTurnObserver,
     signal?: AbortSignal,
-  ) {
+  ): Promise<VoiceTurnResult> {
     const startedAt = performance.now();
     const sttAt = performance.now();
     observer?.onPhaseChange?.("STT");
@@ -81,6 +100,13 @@ export class VoiceTurnService {
           : { onToolCompleted: () => observer.onToolCompleted?.() }),
       },
     );
+    if (result.status === "approval_required")
+      return {
+        status: "approval_required",
+        transcript: transcript.text,
+        detectedLanguage: transcript.detectedLanguage,
+        approval: result.approval,
+      };
     observer?.onAgentCompleted?.(result.response.text);
     const agentDurationMs = performance.now() - agentAt;
     const ttsAt = performance.now();
@@ -120,5 +146,16 @@ export class VoiceTurnService {
       audioBase64: audio.toString("base64"),
       audioMimeType: "audio/wav" as const,
     };
+  }
+
+  public async synthesizeApprovedResponse(
+    text: string,
+    locale: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    return signal === undefined
+      ? this.voice.synthesize(text, locale, requestId)
+      : this.voice.synthesize(text, locale, requestId, signal);
   }
 }

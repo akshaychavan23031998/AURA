@@ -16,6 +16,9 @@ import type { GatewayConfig } from "../config/index.js";
 import type { GoogleOidcProvider } from "../identity/google-oidc-client.js";
 import type { ExternalIdentityResolver } from "./auth/google-oidc.route.js";
 import { registerGoogleOidcRoutes } from "./auth/google-oidc.route.js";
+import type { ApprovalRepository } from "../approvals/approval-repository.js";
+import { registerApprovalRoutes } from "./approvals/approval.route.js";
+import type { ApprovalRealtimeRegistry } from "../approvals/approval-realtime-registry.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -29,6 +32,9 @@ export function registerRoutes(
   config?: GatewayConfig,
   googleOidcProvider?: GoogleOidcProvider,
   identities?: ExternalIdentityResolver,
+  approvals?: ApprovalRepository,
+  approvalTtlSeconds = 300,
+  realtimeApprovals?: ApprovalRealtimeRegistry,
 ): void {
   registerHealthRoutes(app, checkDatabase);
   if (config !== undefined)
@@ -41,10 +47,31 @@ export function registerRoutes(
       identities,
       sessions,
     );
-  registerToolExecutionRoute(app, toolClient, authenticate);
+  registerToolExecutionRoute(
+    app,
+    toolClient,
+    authenticate,
+    approvals,
+    approvalTtlSeconds,
+  );
+  if (approvals !== undefined)
+    registerApprovalRoutes(
+      app,
+      approvals,
+      toolClient,
+      authenticate,
+      orchestrator,
+      realtimeApprovals,
+    );
   registerAgentResponseRoute(app, agentClient, authenticate);
   registerAgentRunRoute(app, orchestrator, authenticate);
   registerVoiceRunRoute(app, voiceTurns, authenticate);
   if (config !== undefined)
-    registerVoiceSessionRoute(app, voiceTurns, authenticate, config);
+    registerVoiceSessionRoute(
+      app,
+      voiceTurns,
+      authenticate,
+      config,
+      realtimeApprovals,
+    );
 }

@@ -9,6 +9,7 @@ export const voiceStatusSchema = z.enum([
   "processing",
   "speaking",
   "interrupting",
+  "awaiting-approval",
   "error",
 ]);
 export type VoiceStatus = z.infer<typeof voiceStatusSchema>;
@@ -39,6 +40,10 @@ const allowedTypes = new Set([
   "turn.interrupted",
   "turn.superseded",
   "turn.action_completed_after_interrupt",
+  "approval.required",
+  "approval.approved",
+  "approval.rejected",
+  "approval.expired",
   "error",
 ]);
 
@@ -88,6 +93,14 @@ export function transitionForEvent(event: VoiceServerEvent): VoiceUiTransition {
       };
     case "tts.started":
       return { status: "processing", ...turn };
+    case "approval.required":
+      return { status: "awaiting-approval", ...turn };
+    case "approval.approved":
+      return { status: "processing", ...turn };
+    case "approval.rejected":
+      return { status: "ready", ...turn };
+    case "approval.expired":
+      return { status: "ready", ...turn };
     case "audio.started":
       return { status: "speaking", ...turn };
     case "turn.interrupting":

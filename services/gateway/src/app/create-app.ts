@@ -47,6 +47,8 @@ import {
   type GoogleOidcProvider,
 } from "../identity/google-oidc-client.js";
 import type { ExternalIdentityResolver } from "../routes/auth/google-oidc.route.js";
+import { ApprovalRepository } from "../approvals/approval-repository.js";
+import { ApprovalRealtimeRegistry } from "../approvals/approval-realtime-registry.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -93,6 +95,8 @@ export async function createApp(
   const app = Fastify(serverOptions);
   const database = options.database ?? createDatabaseClient(options.config);
   const identityRepository = new IdentityRepository(database);
+  const approvalRepository = new ApprovalRepository(database);
+  const realtimeApprovals = new ApprovalRealtimeRegistry();
   const sessions =
     options.sessionService ??
     new SessionService(identityRepository, options.config.auth);
@@ -132,26 +136,28 @@ export async function createApp(
     options.tokenVerifier ??
       createAccessTokenVerifier(options.config, sessions),
   );
+  const orchestrator = new AgentToolOrchestrator({
+    agentClient,
+    toolClient,
+    approvals: approvalRepository,
+    approvalTtlSeconds: options.config.approvals?.ttlSeconds ?? 300,
+    logger: app.log,
+  });
   registerRoutes(
     app,
     toolClient,
     agentClient,
-    new AgentToolOrchestrator({
-      agentClient,
-      toolClient,
-      logger: app.log,
-    }),
+    orchestrator,
     authenticate,
     sessions,
     () => database.check(),
-    new VoiceTurnService(
-      voiceClient,
-      new AgentToolOrchestrator({ agentClient, toolClient, logger: app.log }),
-      app.log,
-    ),
+    new VoiceTurnService(voiceClient, orchestrator, app.log),
     options.config,
     googleOidcProvider,
     options.externalIdentityResolver ?? identityRepository,
+    approvalRepository,
+    options.config.approvals?.ttlSeconds ?? 300,
+    realtimeApprovals,
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);

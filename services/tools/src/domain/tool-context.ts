@@ -1,9 +1,10 @@
 export interface ApprovalAssertion {
   readonly status: "approved";
   readonly approvalId: string;
-  readonly approvedBy: string;
   readonly approvedActorId: string;
   readonly approvedTool: string;
+  readonly approvedToolVersion: number;
+  readonly inputDigest: string;
 }
 
 export interface ExecutionContext {

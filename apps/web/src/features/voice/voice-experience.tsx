@@ -1,10 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveVoiceWebSocketUrl } from "./gateway-url";
-import { VoiceSessionClient } from "./voice-session-client";
+import {
+  VoiceSessionClient,
+  type VoiceSessionCallbacks,
+} from "./voice-session-client";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { applyTransition } from "@/store/slices/voice.slice";
+import { ApprovalCard, type ApprovalView } from "../approvals/approval-card";
+import { ApprovalApi } from "../approvals/approval-api";
+import { AuthApi } from "../auth/auth-api";
+import { AuthenticatedFetch, ApiFailure } from "../auth/authenticated-fetch";
+import { accessTokenStore } from "../auth/access-token";
+import { resolveGatewayHttpUrl } from "./gateway-url";
 
 const labels = {
   disconnected: "Offline",
@@ -14,19 +23,37 @@ const labels = {
   processing: "Thinking",
   speaking: "Speaking",
   interrupting: "Interrupting",
+  "awaiting-approval": "Approval needed",
   error: "Needs attention",
 } as const;
 
 export function VoiceExperience({
   getAccessToken,
   onSessionExpired,
+  createSessionClient = (url, token, callbacks) =>
+    new VoiceSessionClient(url, token, callbacks),
 }: Readonly<{
   getAccessToken(): string | undefined;
   onSessionExpired(): void;
+  createSessionClient?(
+    url: string,
+    token: string,
+    callbacks: VoiceSessionCallbacks,
+  ): VoiceSessionClient;
 }>) {
   const dispatch = useAppDispatch();
   const voice = useAppSelector((state) => state.voice);
   const clientRef = useRef<VoiceSessionClient | undefined>(undefined);
+  const [approval, setApproval] = useState<ApprovalView>();
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalError, setApprovalError] = useState<string>();
+  const approvalApi = useMemo(() => {
+    const auth = new AuthApi(accessTokenStore);
+    return new ApprovalApi(
+      new AuthenticatedFetch(accessTokenStore, auth),
+      resolveGatewayHttpUrl(),
+    );
+  }, []);
 
   const disconnect = useCallback(async () => {
     const client = clientRef.current;
@@ -49,11 +76,30 @@ export function VoiceExperience({
         onSessionExpired();
         return;
       }
-      const client = new VoiceSessionClient(
+      const client = createSessionClient(
         resolveVoiceWebSocketUrl(),
         accessToken,
         {
           onTransition: (transition) => dispatch(applyTransition(transition)),
+          onEvent: (event) => {
+            if (event.type !== "approval.required") return;
+            const payload = event.payload;
+            if (
+              typeof payload?.approvalId !== "string" ||
+              typeof payload.title !== "string" ||
+              typeof payload.preview !== "string" ||
+              typeof payload.expiresAt !== "string"
+            )
+              return;
+            setApproval({
+              approvalId: payload.approvalId,
+              title: payload.title,
+              preview: payload.preview,
+              status: "PENDING",
+              expiresAt: payload.expiresAt,
+            });
+            setApprovalError(undefined);
+          },
           onSessionExpired,
         },
       );
@@ -72,6 +118,24 @@ export function VoiceExperience({
 
   const connected = !["disconnected", "error"].includes(voice.status);
   const busy = voice.status === "connecting";
+  const decideApproval = async (decision: "approve" | "reject", id: string) => {
+    setApprovalBusy(true);
+    setApprovalError(undefined);
+    try {
+      const response = await approvalApi[decision](id);
+      setApproval((current) =>
+        current?.approvalId === id
+          ? { ...current, status: response.approval.status }
+          : current,
+      );
+    } catch (error) {
+      if (error instanceof ApiFailure && error.status === 401)
+        onSessionExpired();
+      else setApprovalError("The approval decision could not be completed.");
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
   return (
     <main className="voice-shell">
       <header className="brand-bar">
@@ -138,6 +202,15 @@ export function VoiceExperience({
             <span>{voice.error}</span>
           </div>
         )}
+        {approval !== undefined && (
+          <ApprovalCard
+            approval={approval}
+            busy={approvalBusy}
+            error={approvalError}
+            onApprove={(id) => decideApproval("approve", id)}
+            onReject={(id) => decideApproval("reject", id)}
+          />
+        )}
       </section>
 
       <footer className="control-dock">
@@ -186,6 +259,7 @@ function stateHeadline(status: keyof typeof labels): string {
     processing: "Working on it",
     speaking: "AURA is speaking",
     interrupting: "Switching turns",
+    "awaiting-approval": "Your confirmation is required",
     error: "Let’s fix the connection",
   }[status];
 }
@@ -196,6 +270,8 @@ function stateGuidance(status: keyof typeof labels): string {
     return "You can speak at any time. The server will safely decide when to interrupt.";
   if (status === "listening")
     return "Speak naturally. Silence marks the end of your turn.";
+  if (status === "awaiting-approval")
+    return "Review the exact action below. Speech cannot approve it.";
   if (status === "error")
     return "Review the message below, then reconnect manually.";
   return "Session state follows the authenticated Gateway in real time.";

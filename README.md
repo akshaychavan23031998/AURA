@@ -69,3 +69,5 @@ pnpm build
 V1 currently registers `system.echo`, `utility.calculator`, and `utility.datetime` through the sealed, versioned Tool Registry and centralized policy/validation pipeline. Calendar, Gmail, Contacts, and external SaaS integrations remain unimplemented.
 
 Redis, Kafka, CognoDB, Kubernetes, and cloud-specific deployment SDKs are not introduced. See [docs/architecture.md](docs/architecture.md) for ownership and evolution constraints.
+
+Phase 20 adds persistent, owner-bound, expiring, single-use approval records for future risky tools. Exact actions are SHA-256 bound to canonical tool name, version, and validated input. Agent orchestration suspends before execution, an explicit authenticated browser decision consumes the stored action once, and the Tool result returns through Agent continuation. Realtime sessions emit `approval.required`, wait in `AWAITING_APPROVAL`, and resume TTS only after an HTTP approval; voice transcripts and Agent output cannot approve. All three current production tools remain approval-free.

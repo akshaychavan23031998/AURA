@@ -67,7 +67,7 @@ pnpm --filter @aura/tools start
 
 Permissions are stable namespaced strings such as `system.echo` or future `gmail.send`. `system.echo` requires `system.echo` explicitly and only returns a validated message unchanged.
 
-Approval assertions bind an approval identifier and reviewer to an actor and tool. They are an intentionally incomplete in-memory contract: future trusted approval records must additionally bind the exact action, arguments, expiry, and authenticated approving principal.
+Approval proofs are accepted only on the authenticated Gateway channel and bind approval ID, approved actor, tool name, version, and the server-computed exact-action digest. Tool Service recomputes that digest from its strictly validated input and independently enforces the registered REQUIRED policy. Approval records and expiration remain Gateway-owned PostgreSQL state.
 
 ## Current trust limitation
 
@@ -103,4 +103,6 @@ Phase 19 registers exactly three version 1 tools:
 
 Calculator uses a local explicit arithmetic parser—never `eval`, dynamic JavaScript, a subprocess, or a network service. Datetime accepts an explicit validated IANA timezone and uses the platform timezone database; it does not infer locations. It is classified `NON_IDEMPOTENT` because current time changes between calls, despite being read-only and safe to repeat.
 
-Calendar, Gmail, Contacts, external SaaS integrations, approval persistence, durable idempotency, and multi-tool planning remain future work.
+Calendar, Gmail, Contacts, external SaaS integrations, durable idempotency, and multi-tool planning remain future work.
+
+Phase 20 strengthens REQUIRED-policy enforcement with an exact-action proof containing approval ID, actor, tool, version, and a server-computed canonical input digest. `/tools/prepare` validates input and returns authoritative policy metadata over the internal authenticated channel. The production registry still contains only the three approval-free tools; required approval is exercised only by test registries.

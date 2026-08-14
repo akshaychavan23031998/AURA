@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ExecutionContext } from "../src/domain/tool-context.js";
 import { ToolExecutor } from "../src/execution/tool-executor.js";
+import { actionDigest } from "../src/execution/action-digest.js";
 import type { ToolDefinition } from "../src/registry/tool-definition.js";
 import { ToolRegistry } from "../src/registry/tool-registry.js";
 
@@ -41,6 +42,19 @@ function createExecutor(tool = createWriteTool()) {
 }
 
 describe("ToolExecutor", () => {
+  it("canonicalizes equivalent actions and rejects mutated approval input", async () => {
+    expect(actionDigest("test.write", 1, { b: 2, a: 1 })).toBe(
+      actionDigest("test.write", 1, { a: 1, b: 2 }),
+    );
+    const { executor } = createExecutor();
+    await expect(
+      executor.execute({
+        tool: "test.write",
+        input: { value: "mutated" },
+        context: { ...baseContext, approval: approved() },
+      }),
+    ).rejects.toMatchObject({ code: "TOOL_APPROVAL_REQUIRED" });
+  });
   it("executes validated input when policy permits", async () => {
     const execute = vi.fn((input: { value: string }) => Promise.resolve(input));
     const tool = createWriteTool(execute);
@@ -53,9 +67,10 @@ describe("ToolExecutor", () => {
         approval: {
           status: "approved",
           approvalId: "approval-1",
-          approvedBy: "reviewer-1",
           approvedActorId: "actor-1",
           approvedTool: "test.write",
+          approvedToolVersion: 1,
+          inputDigest: actionDigest("test.write", 1, { value: "safe" }),
         },
       },
     });
@@ -130,9 +145,10 @@ describe("ToolExecutor", () => {
           approval: {
             status: "approved",
             approvalId: "approval-1",
-            approvedBy: "reviewer-1",
             approvedActorId: "another-actor",
             approvedTool: "test.write",
+            approvedToolVersion: 1,
+            inputDigest: actionDigest("test.write", 1, { value: "safe" }),
           },
         },
       }),
@@ -153,9 +169,10 @@ describe("ToolExecutor", () => {
           approval: {
             status: "approved",
             approvalId: "approval-1",
-            approvedBy: "reviewer-1",
             approvedActorId: "actor-1",
             approvedTool: "test.write",
+            approvedToolVersion: 1,
+            inputDigest: actionDigest("test.write", 1, { value: "safe" }),
           },
         },
       }),
@@ -223,8 +240,9 @@ function approved() {
   return {
     status: "approved" as const,
     approvalId: "approval-1",
-    approvedBy: "reviewer-1",
     approvedActorId: "actor-1",
     approvedTool: "test.write",
+    approvedToolVersion: 1,
+    inputDigest: actionDigest("test.write", 1, { value: "safe" }),
   };
 }

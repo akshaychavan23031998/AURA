@@ -6,6 +6,7 @@ import {
   type SessionSink,
 } from "../src/voice/session-coordinator.js";
 import { EnergyVad } from "../src/voice/vad.js";
+import { ApprovalRealtimeRegistry } from "../src/approvals/approval-realtime-registry.js";
 
 const limits: SessionLimits = {
   frameBytes: 640,
@@ -90,6 +91,104 @@ describe("EnergyVad", () => {
 });
 
 describe("VoiceSessionCoordinator", () => {
+  it("waits for explicit HTTP approval, rejects speech authority, then resumes audio", async () => {
+    const events: Array<{ type: string; payload?: Record<string, unknown> }> =
+      [];
+    const audio: Buffer[] = [];
+    const realtime = new ApprovalRealtimeRegistry();
+    const approvalId = "00000000-0000-4000-8000-000000000099";
+    const turns = {
+      run: vi.fn().mockResolvedValue({
+        status: "approval_required",
+        transcript: "yes",
+        detectedLanguage: "en",
+        approval: {
+          approvalId,
+          title: "Confirm action",
+          preview: "Run test action",
+          expiresAt: "2030-01-01T00:00:00.000Z",
+        },
+      }),
+      synthesizeApprovedResponse: vi
+        .fn()
+        .mockResolvedValue(Buffer.from("RIFFapproved")),
+    };
+    const session = new VoiceSessionCoordinator(
+      "approval-root",
+      { actorId: "actor", grantedPermissions: ["test.approval"] },
+      turns as unknown as VoiceTurnService,
+      {
+        event: (event) => events.push(event),
+        audio: (chunk) => audio.push(chunk),
+        close: vi.fn(),
+      },
+      limits,
+      "en",
+      realtime,
+    );
+    session.start();
+    sendTurn(session);
+    await vi.waitFor(() => expect(session.state).toBe("AWAITING_APPROVAL"));
+    expect(
+      events.find((event) => event.type === "approval.required")?.payload,
+    ).toEqual(expect.objectContaining({ approvalId, title: "Confirm action" }));
+
+    sendTurn(session);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "error" &&
+          event.payload?.code === "VOICE_APPROVAL_PENDING",
+      ),
+    ).toBe(true);
+    expect(turns.synthesizeApprovedResponse).not.toHaveBeenCalled();
+
+    realtime.approved(approvalId, "Approved action completed");
+    await vi.waitFor(() => expect(session.state).toBe("READY"));
+    expect(turns.synthesizeApprovedResponse).toHaveBeenCalledOnce();
+    expect(
+      events.filter((event) => event.type === "approval.approved"),
+    ).toHaveLength(1);
+    expect(
+      events.filter((event) => event.type === "turn.completed"),
+    ).toHaveLength(1);
+    expect(audio.length).toBeGreaterThan(0);
+  });
+
+  it("does not execute or resume a pending approval after disconnect", async () => {
+    const realtime = new ApprovalRealtimeRegistry();
+    const synthesizeApprovedResponse = vi.fn();
+    const session = new VoiceSessionCoordinator(
+      "disconnect-root",
+      { actorId: "actor", grantedPermissions: [] },
+      {
+        run: vi.fn().mockResolvedValue({
+          status: "approval_required",
+          transcript: "request",
+          detectedLanguage: "en",
+          approval: {
+            approvalId: "00000000-0000-4000-8000-000000000098",
+            title: "Confirm",
+            preview: "Test",
+            expiresAt: "2030-01-01T00:00:00.000Z",
+          },
+        }),
+        synthesizeApprovedResponse,
+      } as unknown as VoiceTurnService,
+      { event: vi.fn(), audio: vi.fn(), close: vi.fn() },
+      limits,
+      "en",
+      realtime,
+    );
+    session.start();
+    sendTurn(session);
+    await vi.waitFor(() => expect(session.state).toBe("AWAITING_APPROVAL"));
+    session.close();
+    realtime.approved("00000000-0000-4000-8000-000000000098", "must not play");
+    await Promise.resolve();
+    expect(synthesizeApprovedResponse).not.toHaveBeenCalled();
+  });
+
   it("enforces state and invalid frame limits", () => {
     const h = harness();
     h.session.acceptAudio(speech);

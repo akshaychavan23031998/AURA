@@ -243,6 +243,10 @@ The Agent-facing catalog contains only capability data: name, description, categ
 
 Phase 19 proves the boundary with exactly three local version 1 implementations: `system.echo`, `utility.calculator`, and `utility.datetime`. Calculator parses a deliberately small arithmetic grammar without dynamic execution. Datetime reads server time for an explicit IANA timezone and performs no location inference or network access. Approval persistence, durable idempotency, external integrations, and multi-step planning remain planned.
 
+Phase 20 introduces the approval lifecycle `PENDING → CONSUMED` or `PENDING → REJECTED`, with expiration enforced by PostgreSQL conditional updates. A REQUIRED Agent proposal is prepared against Tool Service metadata, persisted with its exact validated action and trusted Agent continuation request, and returned as an `approval_required` orchestration result without execution. Gateway owns records and decisions; Tool Service independently verifies an internal proof against its authoritative policy and canonical action digest. Explicit approval consumes once, executes the stored action, and passes only the normal Tool result through Agent continuation. Consumption is conservative: once reserved for dispatch it is never reusable, and ambiguous downstream outcomes are never retried.
+
+Realtime voice emits `approval.required` and enters `AWAITING_APPROVAL`. Incoming PCM receives `VOICE_APPROVAL_PENDING`; speech, transcript text, disconnect, and reconnect have no decision authority. An active socket is notified after the authenticated HTTP decision, allowing approved Agent output to proceed through TTS or rejection to settle safely. The notifier is ephemeral while the approval record remains durable.
+
 Capabilities enter through small milestones: define the contract and ownership, implement the simplest viable path, test it, and then operationalize it. Shared packages stay narrow and are created around demonstrated reuse rather than speculation.
 
 Testing will use four layers:

@@ -7,6 +7,7 @@ export type VoiceSessionState =
   | "READY"
   | "LISTENING"
   | "PROCESSING"
+  | "AWAITING_APPROVAL"
   | "SPEAKING"
   | "INTERRUPTING"
   | "CLOSED";

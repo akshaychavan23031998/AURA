@@ -42,4 +42,24 @@ describe("voice protocol", () => {
       ).error,
     ).toMatch(/expired/i);
   });
+  it("derives approval state only from the server protocol event", () => {
+    const event = parseVoiceEvent({
+      ...base,
+      type: "approval.required",
+      turnId: "00000000-0000-4000-8000-000000000002",
+      payload: {
+        approvalId: "00000000-0000-4000-8000-000000000003",
+        title: "Confirm action",
+        preview: "Run safe test action",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+      },
+    });
+    expect(transitionForEvent(event!)).toMatchObject({
+      status: "awaiting-approval",
+    });
+    expect(
+      transitionForEvent(parseVoiceEvent({ ...base, type: "speech.started" })!)
+        .status,
+    ).toBe("listening");
+  });
 });

@@ -6,6 +6,7 @@ import type { GatewayConfig } from "../../config/index.js";
 import type { VoiceTurnService } from "../../orchestration/voice-turn-service.js";
 import { clientEventSchema, VOICE_PROTOCOL } from "../../voice/protocol.js";
 import { VoiceSessionCoordinator } from "../../voice/session-coordinator.js";
+import type { ApprovalRealtimeRegistry } from "../../approvals/approval-realtime-registry.js";
 
 const AUTH_PROTOCOL_PREFIX = "aura.jwt.";
 
@@ -27,6 +28,7 @@ export function registerVoiceSessionRoute(
   turns: VoiceTurnService,
   authenticate: preHandlerHookHandler,
   config: GatewayConfig,
+  realtimeApprovals?: ApprovalRealtimeRegistry,
 ): void {
   const authenticateUpgrade: preHandlerHookHandler = function (
     request,
@@ -64,6 +66,8 @@ export function registerVoiceSessionRoute(
           close: () => socket.close(),
         },
         config.voiceStream,
+        undefined,
+        realtimeApprovals,
       );
       let alive = true;
       let idleTimer: NodeJS.Timeout;

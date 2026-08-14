@@ -34,6 +34,7 @@ describe("gateway configuration", () => {
     });
 
     expect(config).toEqual({
+      approvals: { ttlSeconds: 300 },
       runtime: { environment: "production" },
       server: {
         host: "127.0.0.1",

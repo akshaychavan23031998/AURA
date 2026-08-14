@@ -5,7 +5,13 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createAccessTokenVerifier } from "../src/auth/token-verifier.js";
 import { createDatabaseClient, type DatabaseClient } from "../src/db/client.js";
-import { externalIdentities, refreshTokens, users } from "../src/db/schema.js";
+import {
+  externalIdentities,
+  refreshTokens,
+  toolApprovals,
+  users,
+} from "../src/db/schema.js";
+import { ApprovalRepository } from "../src/approvals/approval-repository.js";
 import { IdentityRepository } from "../src/identity/repositories.js";
 import {
   InvalidSessionError,
@@ -33,6 +39,7 @@ const database: DatabaseClient = createDatabaseClient({
 });
 const repository = new IdentityRepository(database);
 const sessions = new SessionService(repository, testConfig.auth);
+const approvals = new ApprovalRepository(database);
 
 beforeAll(async () => {
   await database.db.execute(sql`drop schema if exists public cascade`);
@@ -197,5 +204,57 @@ describe.sequential("PostgreSQL identity persistence", () => {
     expect(second).toBe(first);
     expect(await database.db.select().from(users)).toHaveLength(1);
     expect(await database.db.select().from(externalIdentities)).toHaveLength(1);
+  });
+
+  it("persists, owns, rejects, expires, and consumes approvals once", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const otherActor = await database.db
+      .insert(users)
+      .values({})
+      .returning({ id: users.id });
+    const create = (expiresAt: Date) =>
+      approvals.create({
+        actorId,
+        toolName: "test.approval-required",
+        toolVersion: 1,
+        inputDigest: "a".repeat(64),
+        input: { value: "safe" },
+        request: { message: "safe" },
+        title: "Confirm test action",
+        preview: "Run test approval-required action",
+        expiresAt,
+      });
+    const persisted = await create(new Date(Date.now() + 60_000));
+    expect(
+      await new ApprovalRepository(database).findOwned(persisted.id, actorId),
+    ).toMatchObject({ id: persisted.id, status: "PENDING" });
+    expect(
+      await approvals.findOwned(persisted.id, otherActor[0]!.id),
+    ).toBeUndefined();
+    const [first, second] = await Promise.all([
+      approvals.consume(persisted.id, actorId, new Date()),
+      approvals.consume(persisted.id, actorId, new Date()),
+    ]);
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect((first ?? second)?.status).toBe("CONSUMED");
+
+    const rejected = await create(new Date(Date.now() + 60_000));
+    expect(
+      (await approvals.reject(rejected.id, actorId, new Date()))?.status,
+    ).toBe("REJECTED");
+    expect(
+      await approvals.consume(rejected.id, actorId, new Date()),
+    ).toBeUndefined();
+    const expired = await create(new Date(Date.now() - 1));
+    expect(
+      await approvals.consume(expired.id, actorId, new Date()),
+    ).toBeUndefined();
+    const decisionRace = await create(new Date(Date.now() + 60_000));
+    const [approvedRace, rejectedRace] = await Promise.all([
+      approvals.consume(decisionRace.id, actorId, new Date()),
+      approvals.reject(decisionRace.id, actorId, new Date()),
+    ]);
+    expect([approvedRace, rejectedRace].filter(Boolean)).toHaveLength(1);
+    expect(await database.db.select().from(toolApprovals)).toHaveLength(4);
   });
 });

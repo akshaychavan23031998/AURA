@@ -11,9 +11,10 @@ const approvalSchema = z
   .object({
     status: z.literal("approved"),
     approvalId: z.string().min(1).max(128),
-    approvedBy: z.string().min(1).max(128),
     approvedActorId: z.string().min(1).max(128),
     approvedTool: z.string().min(1).max(128),
+    approvedToolVersion: z.number().int().positive(),
+    inputDigest: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
 
@@ -37,6 +38,12 @@ const executionRequestSchema = z
   })
   .strict();
 
+const prepareRequestSchema = executionRequestSchema.pick({
+  tool: true,
+  version: true,
+  input: true,
+});
+
 export interface ToolRouteDependencies {
   readonly registry: ToolRegistry;
   readonly executor: ToolExecutor;
@@ -56,6 +63,25 @@ export function registerToolRoutes(
     () => ({
       tools: dependencies.registry.listAgentCapabilities(),
     }),
+  );
+  app.post(
+    "/tools/prepare",
+    { preHandler: dependencies.internalAuth },
+    (request) => {
+      const parsed = prepareRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        throw new ToolError(
+          "VALIDATION_ERROR",
+          400,
+          "Request validation failed",
+        );
+      }
+      return dependencies.executor.prepare(
+        parsed.data.tool,
+        parsed.data.version,
+        parsed.data.input,
+      );
+    },
   );
 
   app.post(

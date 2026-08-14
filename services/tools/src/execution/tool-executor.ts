@@ -3,6 +3,7 @@ import { ToolError } from "../errors/tool-error.js";
 import type { ToolRegistry } from "../registry/tool-registry.js";
 import { hasValidApproval, requiresApproval } from "./approval-policy.js";
 import type { ExecutionContext } from "../domain/tool-context.js";
+import { actionDigest } from "./action-digest.js";
 
 export interface ToolExecutionRequest {
   readonly tool: string;
@@ -34,7 +35,10 @@ export class ToolExecutor {
       );
     }
 
-    if (requiresApproval(tool) && !hasValidApproval(tool, request.context)) {
+    if (
+      requiresApproval(tool) &&
+      !hasValidApproval(tool, request.context, parsedInput.data)
+    ) {
       throw new ToolError(
         "TOOL_APPROVAL_REQUIRED",
         409,
@@ -70,6 +74,25 @@ export class ToolExecutor {
         { cause: error },
       );
     }
+  }
+
+  public prepare(toolName: string, version: number, input: unknown) {
+    const tool = this.registry.resolve(toolName, version);
+    const parsed = tool.inputSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new ToolError("TOOL_INPUT_INVALID", 400, "Tool input is invalid");
+    }
+    return {
+      tool: tool.name,
+      version: tool.version,
+      title: tool.title,
+      approvalPolicy: requiresApproval(tool)
+        ? ("REQUIRED" as const)
+        : ("NONE" as const),
+      input: parsed.data,
+      inputDigest: actionDigest(tool.name, tool.version, parsed.data),
+      preview: tool.title,
+    };
   }
 }
 

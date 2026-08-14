@@ -6,6 +6,7 @@ const authEnvironmentSchema = z.object({
   AUTH_JWT_AUDIENCE: z.string().trim().min(1).max(128),
   AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600),
   AUTH_SESSION_TTL_SECONDS: z.coerce.number().int().min(3600).max(2_592_000),
+  TOOL_APPROVAL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600),
   WEB_APP_ORIGIN: z
     .url()
     .refine((url) => url.startsWith("http://") || url.startsWith("https://")),

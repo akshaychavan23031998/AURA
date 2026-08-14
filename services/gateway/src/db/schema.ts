@@ -1,5 +1,7 @@
 import {
   index,
+  integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -11,6 +13,13 @@ import {
 export const userStatus = pgEnum("user_status", ["ACTIVE", "DISABLED"]);
 export const externalIdentityProvider = pgEnum("external_identity_provider", [
   "google",
+]);
+export const approvalStatus = pgEnum("approval_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+  "CONSUMED",
+  "EXPIRED",
 ]);
 
 export const users = pgTable("users", {
@@ -90,5 +99,33 @@ export const externalIdentities = pgTable(
       table.providerSubject,
     ),
     index("external_identities_user_id_idx").on(table.userId),
+  ],
+);
+
+export const toolApprovals = pgTable(
+  "tool_approvals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    toolName: text("tool_name").notNull(),
+    toolVersion: integer("tool_version").notNull(),
+    inputDigest: text("input_digest").notNull(),
+    inputEnvelope: jsonb("input_envelope").notNull(),
+    requestEnvelope: jsonb("request_envelope").notNull(),
+    title: text("title").notNull(),
+    preview: text("preview").notNull(),
+    status: approvalStatus("status").notNull().default("PENDING"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("tool_approvals_actor_status_idx").on(table.actorId, table.status),
+    index("tool_approvals_expires_at_idx").on(table.expiresAt),
   ],
 );

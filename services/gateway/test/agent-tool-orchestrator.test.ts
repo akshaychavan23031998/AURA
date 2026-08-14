@@ -46,6 +46,73 @@ function dependencies(agentResults: readonly AgentResult[] = [finalPlan]) {
 }
 
 describe("AgentToolOrchestrator", () => {
+  it("persists and suspends an authoritative REQUIRED proposal without executing", async () => {
+    const respond = vi
+      .fn<AgentServiceClient["respond"]>()
+      .mockResolvedValue(toolPlan);
+    const execute = vi.fn<ToolServiceClient["execute"]>();
+    const prepare = vi
+      .fn<NonNullable<ToolServiceClient["prepare"]>>()
+      .mockResolvedValue({
+        tool: "test.approval-required",
+        version: 1,
+        title: "Test action",
+        approvalPolicy: "REQUIRED",
+        input: { value: "fixed" },
+        inputDigest: "a".repeat(64),
+        preview: "Run test action",
+      });
+    const create = vi.fn().mockResolvedValue({
+      id: "00000000-0000-4000-8000-000000000099",
+      title: "Test action",
+      preview: "Run test action",
+      expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+    });
+    const orchestrator = new AgentToolOrchestrator({
+      agentClient: { respond },
+      toolClient: { prepare, execute },
+      approvals: { create },
+    });
+
+    const result = await orchestrator.run(
+      request,
+      requestId,
+      authorizationContext,
+    );
+
+    expect(result).toMatchObject({
+      status: "approval_required",
+      approval: { title: "Test action", preview: "Run test action" },
+    });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: authorizationContext.actorId,
+        toolName: "test.approval-required",
+        input: { value: "fixed" },
+      }),
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(respond).toHaveBeenCalledOnce();
+  });
+
+  it("resumes an approved exact action through Agent continuation", async () => {
+    const { orchestrator, respond, execute } = dependencies([finalPlan]);
+    await expect(
+      orchestrator.resumeApproved(
+        request,
+        { name: "system.echo", input: { message: "AURA" } },
+        authorizationContext,
+        requestId,
+      ),
+    ).resolves.toMatchObject({ status: "completed", steps: 2 });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(respond).toHaveBeenCalledOnce();
+    expect(respond.mock.calls[0]?.[0].toolResult).toMatchObject({
+      tool: "system.echo",
+    });
+    expect(respond.mock.calls[0]?.[1]).toBe(requestId);
+  });
+
   it("returns a direct response without calling Tool Service", async () => {
     const { orchestrator, respond, execute } = dependencies([finalPlan]);
     await expect(

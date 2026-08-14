@@ -15,6 +15,13 @@
       "when": 1786684032191,
       "tag": "0001_fluffy_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0002_tool_approvals",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,7 @@ const DEVELOPMENT_DEFAULTS = {
   AUTH_JWT_AUDIENCE: "aura-api",
   AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
   AUTH_SESSION_TTL_SECONDS: "604800",
+  TOOL_APPROVAL_TTL_SECONDS: "300",
   WEB_APP_ORIGIN: "http://localhost:3000",
   GOOGLE_OIDC_ENABLED: "false",
 } as const;
@@ -90,6 +91,7 @@ export interface GatewayConfig {
     readonly interruptSettleTimeoutMs: number;
   };
   readonly auth: AuthConfig;
+  readonly approvals?: { readonly ttlSeconds: number };
   readonly browser: {
     readonly origin: string;
     readonly secureCookies: boolean;
@@ -201,6 +203,7 @@ export function loadConfig(
       accessTokenTtlSeconds: parsed.AUTH_ACCESS_TOKEN_TTL_SECONDS,
       sessionTtlSeconds: parsed.AUTH_SESSION_TTL_SECONDS,
     }),
+    approvals: Object.freeze({ ttlSeconds: parsed.TOOL_APPROVAL_TTL_SECONDS }),
     browser: Object.freeze({
       origin: parsed.WEB_APP_ORIGIN.replace(/\/$/, ""),
       secureCookies: parsed.NODE_ENV === "production",

@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import type { TrustedToolContext } from "../clients/tools/tool-service-client.js";
+import type {
+  ApprovalRealtimeRegistry,
+  RealtimeApprovalListener,
+} from "../approvals/approval-realtime-registry.js";
 import type { VoiceTurnService } from "../orchestration/voice-turn-service.js";
 import {
   type CancellationReason,
@@ -57,6 +61,15 @@ export class VoiceSessionCoordinator {
   private execution: TurnExecution | undefined;
   private queuedTurnReady = false;
   private cancellationTimer: NodeJS.Timeout | undefined;
+  private pendingApproval:
+    | {
+        id: string;
+        turnId: string;
+        execution: TurnExecution;
+        listener: RealtimeApprovalListener;
+        expiryTimer: NodeJS.Timeout;
+      }
+    | undefined;
   private closed = false;
 
   public constructor(
@@ -66,6 +79,7 @@ export class VoiceSessionCoordinator {
     private readonly sink: SessionSink,
     private readonly limits: SessionLimits,
     private locale?: string,
+    private readonly realtimeApprovals?: ApprovalRealtimeRegistry,
   ) {
     this.inputVad = this.createVad(limits.vadMinSpeechMs);
     this.interruptVad = this.createVad(limits.bargeInMinSpeechMs);
@@ -102,6 +116,8 @@ export class VoiceSessionCoordinator {
       this.acceptBargeIn(frame);
       return;
     }
+    if (this.state === "AWAITING_APPROVAL")
+      return this.error("VOICE_APPROVAL_PENDING", this.execution?.turnId);
     if (this.state !== "READY" && this.state !== "LISTENING")
       return this.error("VOICE_INVALID_FRAME");
     this.acceptInput(frame);
@@ -113,6 +129,7 @@ export class VoiceSessionCoordinator {
       new DOMException("Session disconnected", "AbortError"),
     );
     clearTimeout(this.cancellationTimer);
+    this.detachPendingApproval();
     this.state = "CLOSED";
     this.resetInput();
     this.interruptVad.reset();
@@ -256,6 +273,10 @@ export class VoiceSessionCoordinator {
         execution.controller.signal,
       );
       if (!this.isCurrent(execution)) return;
+      if ("approval" in result) {
+        this.awaitApproval(result.approval, turnId, execution);
+        return;
+      }
       execution.phase = "AUDIO_DELIVERY";
       this.state = "SPEAKING";
       const audio = Buffer.from(result.audioBase64, "base64");
@@ -287,8 +308,139 @@ export class VoiceSessionCoordinator {
     } catch {
       if (this.isCurrent(execution)) this.error(failureCode, turnId);
     } finally {
-      await this.settle(execution);
+      if (this.pendingApproval?.execution !== execution)
+        await this.settle(execution);
     }
+  }
+
+  private awaitApproval(
+    approval: {
+      approvalId: string;
+      title: string;
+      preview: string;
+      expiresAt: string;
+    },
+    turnId: string,
+    execution: TurnExecution,
+  ): void {
+    this.state = "AWAITING_APPROVAL";
+    const listener: RealtimeApprovalListener = {
+      approved: (text) => void this.resumeApproved(text),
+      rejected: () => this.finishRejected(),
+      failed: () => this.finishApprovalFailure(),
+    };
+    const expiresIn = Math.min(
+      2_147_483_647,
+      Math.max(0, Date.parse(approval.expiresAt) - Date.now()),
+    );
+    const expiryTimer = setTimeout(() => this.finishExpired(), expiresIn);
+    expiryTimer.unref();
+    this.pendingApproval = {
+      id: approval.approvalId,
+      turnId,
+      execution,
+      listener,
+      expiryTimer,
+    };
+    this.realtimeApprovals?.attach(approval.approvalId, listener);
+    this.emit("approval.required", turnId, approval);
+  }
+
+  private async resumeApproved(responseText: string): Promise<void> {
+    const pending = this.pendingApproval;
+    if (pending === undefined || this.closed) return;
+    this.pendingApproval = undefined;
+    clearTimeout(pending.expiryTimer);
+    this.state = "PROCESSING";
+    this.emit("approval.approved", pending.turnId, {
+      approvalId: pending.id,
+    });
+    try {
+      this.emit("agent.completed", pending.turnId, { text: responseText });
+      this.emit("tts.started", pending.turnId);
+      const audio = await this.turns.synthesizeApprovedResponse(
+        responseText,
+        this.locale ?? "en",
+        `${this.rootRequestId}:${pending.turnId}`,
+        pending.execution.controller.signal,
+      );
+      if (!this.isCurrent(pending.execution)) return;
+      pending.execution.phase = "AUDIO_DELIVERY";
+      this.state = "SPEAKING";
+      this.emit("audio.started", pending.turnId, {
+        mimeType: "audio/wav",
+        delivery: "chunked-complete-wav",
+      });
+      for (
+        let offset = 0;
+        offset < audio.length;
+        offset += this.limits.audioChunkBytes
+      ) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        if (!this.isCurrent(pending.execution)) return;
+        this.sink.audio(
+          audio.subarray(offset, offset + this.limits.audioChunkBytes),
+        );
+      }
+      this.emit("audio.completed", pending.turnId, {
+        audioBytes: audio.length,
+      });
+      this.emit("turn.completed", pending.turnId);
+      pending.execution.phase = "COMPLETED";
+      pending.execution.cancellation = "SETTLED";
+    } catch {
+      if (!this.closed) this.error("VOICE_TTS_FAILED", pending.turnId);
+    } finally {
+      await this.settle(pending.execution);
+    }
+  }
+
+  private finishRejected(): void {
+    const pending = this.pendingApproval;
+    if (pending === undefined || this.closed) return;
+    this.pendingApproval = undefined;
+    clearTimeout(pending.expiryTimer);
+    this.emit("approval.rejected", pending.turnId, {
+      approvalId: pending.id,
+    });
+    this.emit("agent.completed", pending.turnId, {
+      text: "Okay, I won't perform that action.",
+    });
+    this.emit("turn.completed", pending.turnId);
+    pending.execution.phase = "COMPLETED";
+    pending.execution.cancellation = "SETTLED";
+    void this.settle(pending.execution);
+  }
+
+  private finishExpired(): void {
+    const pending = this.pendingApproval;
+    if (pending === undefined || this.closed) return;
+    this.realtimeApprovals?.detach(pending.id, pending.listener);
+    this.pendingApproval = undefined;
+    this.emit("approval.expired", pending.turnId, {
+      approvalId: pending.id,
+    });
+    this.error("APPROVAL_EXPIRED", pending.turnId);
+    pending.execution.cancellation = "SETTLED";
+    void this.settle(pending.execution);
+  }
+
+  private finishApprovalFailure(): void {
+    const pending = this.pendingApproval;
+    if (pending === undefined || this.closed) return;
+    this.pendingApproval = undefined;
+    clearTimeout(pending.expiryTimer);
+    this.error("APPROVAL_EXECUTION_FAILED", pending.turnId);
+    pending.execution.cancellation = "SETTLED";
+    void this.settle(pending.execution);
+  }
+
+  private detachPendingApproval(): void {
+    const pending = this.pendingApproval;
+    if (pending !== undefined)
+      this.realtimeApprovals?.detach(pending.id, pending.listener);
+    if (pending !== undefined) clearTimeout(pending.expiryTimer);
+    this.pendingApproval = undefined;
   }
 
   private async settle(execution: TurnExecution): Promise<void> {
