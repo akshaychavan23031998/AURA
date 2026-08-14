@@ -32,7 +32,7 @@ def create_app(
     planner: Planner | None = None,
     inference_client: InferenceClient | None = None,
 ) -> FastAPI:
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.app_env)
     managed_inference: InferenceClient | None = None
     if planner is not None:
         selected_planner = planner

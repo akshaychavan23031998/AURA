@@ -8,6 +8,7 @@ const DEVELOPMENT_DEFAULTS = {
   NODE_ENV: "development",
   GATEWAY_HOST: "0.0.0.0",
   GATEWAY_PORT: "4000",
+  GATEWAY_TRUST_PROXY: "127.0.0.1,::1",
   LOG_LEVEL: "info",
   TOOLS_SERVICE_URL: "http://localhost:4001",
   TOOLS_SERVICE_TIMEOUT_MS: "3000",
@@ -24,6 +25,9 @@ const DEVELOPMENT_DEFAULTS = {
   VOICE_BARGE_IN_ENABLED: "true",
   VOICE_BARGE_IN_MIN_SPEECH_MS: "100",
   VOICE_INTERRUPT_SETTLE_TIMEOUT_MS: "5000",
+  DATABASE_POOL_MAX: "10",
+  DATABASE_CONNECT_TIMEOUT_MS: "3000",
+  DATABASE_QUERY_TIMEOUT_MS: "5000",
   AUTH_JWT_ISSUER: "aura-gateway",
   AUTH_JWT_AUDIENCE: "aura-api",
   AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
@@ -48,6 +52,7 @@ export interface GatewayConfig {
     readonly host: string;
     readonly port: number;
     readonly bodyLimit: number;
+    readonly trustedProxies: readonly string[];
   };
   readonly logging: {
     readonly level:
@@ -99,11 +104,19 @@ export interface GatewayConfig {
         readonly redirectUri: string;
         readonly transactionTtlSeconds: 600;
       };
-  readonly database: { readonly url: string };
+  readonly database: {
+    readonly url: string;
+    readonly poolMax: number;
+    readonly connectTimeoutMs: number;
+    readonly queryTimeoutMs: number;
+  };
 }
 
 export interface DatabaseConfig {
   readonly url: string;
+  readonly poolMax: number;
+  readonly connectTimeoutMs: number;
+  readonly queryTimeoutMs: number;
 }
 
 export function loadAuthConfig(
@@ -126,7 +139,12 @@ export function loadDatabaseConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): DatabaseConfig {
   const parsed = parseDatabaseEnvironment(environment);
-  return Object.freeze({ url: parsed.DATABASE_URL });
+  return Object.freeze({
+    url: parsed.DATABASE_URL,
+    poolMax: parsed.DATABASE_POOL_MAX,
+    connectTimeoutMs: parsed.DATABASE_CONNECT_TIMEOUT_MS,
+    queryTimeoutMs: parsed.DATABASE_QUERY_TIMEOUT_MS,
+  });
 }
 
 export function loadConfig(
@@ -140,6 +158,9 @@ export function loadConfig(
       host: parsed.GATEWAY_HOST,
       port: parsed.GATEWAY_PORT,
       bodyLimit: 64 * 1024,
+      trustedProxies: Object.freeze(
+        parsed.GATEWAY_TRUST_PROXY.split(",").map((entry) => entry.trim()),
+      ),
     }),
     logging: Object.freeze({ level: parsed.LOG_LEVEL }),
     toolsService: Object.freeze({
@@ -194,6 +215,11 @@ export function loadConfig(
           transactionTtlSeconds: 600 as const,
         })
       : Object.freeze({ enabled: false as const }),
-    database: Object.freeze({ url: parsed.DATABASE_URL }),
+    database: Object.freeze({
+      url: parsed.DATABASE_URL,
+      poolMax: parsed.DATABASE_POOL_MAX,
+      connectTimeoutMs: parsed.DATABASE_CONNECT_TIMEOUT_MS,
+      queryTimeoutMs: parsed.DATABASE_QUERY_TIMEOUT_MS,
+    }),
   });
 }

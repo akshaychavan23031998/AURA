@@ -9,6 +9,7 @@ describe("gateway configuration", () => {
       NODE_ENV: "production",
       GATEWAY_HOST: "127.0.0.1",
       GATEWAY_PORT: "8080",
+      GATEWAY_TRUST_PROXY: "10.20.0.0/24",
       LOG_LEVEL: "warn",
       TOOLS_SERVICE_URL: "http://127.0.0.1:4001",
       TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
@@ -26,11 +27,20 @@ describe("gateway configuration", () => {
       AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
       AUTH_SESSION_TTL_SECONDS: "604800",
       DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+      DATABASE_POOL_MAX: "8",
+      DATABASE_CONNECT_TIMEOUT_MS: "2500",
+      DATABASE_QUERY_TIMEOUT_MS: "4500",
+      WEB_APP_ORIGIN: "https://aura.example.com",
     });
 
     expect(config).toEqual({
       runtime: { environment: "production" },
-      server: { host: "127.0.0.1", port: 8080, bodyLimit: 65_536 },
+      server: {
+        host: "127.0.0.1",
+        port: 8080,
+        bodyLimit: 65_536,
+        trustedProxies: ["10.20.0.0/24"],
+      },
       logging: { level: "warn" },
       toolsService: {
         url: "http://127.0.0.1:4001",
@@ -71,13 +81,16 @@ describe("gateway configuration", () => {
         sessionTtlSeconds: 604_800,
       },
       browser: {
-        origin: "http://localhost:3000",
+        origin: "https://aura.example.com",
         secureCookies: true,
         developmentSessionEnabled: false,
       },
       googleOidc: { enabled: false },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+        poolMax: 8,
+        connectTimeoutMs: 2500,
+        queryTimeoutMs: 4500,
       },
     });
     expect(Object.isFrozen(config)).toBe(true);
@@ -188,5 +201,24 @@ describe("gateway configuration", () => {
       clientId: "client.apps.googleusercontent.com",
       transactionTtlSeconds: 600,
     });
+  });
+
+  it("requires HTTPS browser origins and explicit trusted proxies in production", () => {
+    const base = {
+      NODE_ENV: "production",
+      TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
+      AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+      VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
+      AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
+      DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+    };
+    expect(() => loadConfig(base)).toThrow(/WEB_APP_ORIGIN/);
+    expect(() =>
+      loadConfig({
+        ...base,
+        WEB_APP_ORIGIN: "https://aura.example.com",
+        GATEWAY_TRUST_PROXY: "*",
+      }),
+    ).toThrow(/GATEWAY_TRUST_PROXY/);
   });
 });

@@ -5,11 +5,16 @@ from typing import Any
 
 
 class JsonFormatter(logging.Formatter):
+    def __init__(self, environment: str) -> None:
+        super().__init__()
+        self._environment = environment
+
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname.lower(),
             "service": "voice",
+            "environment": self._environment,
             "message": record.getMessage(),
         }
         for field in (
@@ -31,9 +36,9 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, separators=(",", ":"))
 
 
-def configure_logging(level: str) -> None:
+def configure_logging(level: str, environment: str = "development") -> None:
     handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter())
+    handler.setFormatter(JsonFormatter(environment))
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)

@@ -2,47 +2,39 @@
 
 **Self-Hosted Multilingual Autonomous Voice Agent**
 
-AURA is a personal, production-minded platform for natural multilingual voice interaction, contextual reasoning, permission-aware tools, and self-hosted AI components. The project is being built incrementally so each capability enters through an explicit, testable service boundary.
+AURA is a production-minded platform for multilingual voice interaction, self-hosted reasoning, and permission-aware tools. Capabilities enter through explicit, testable service boundaries.
 
 ## Current status
 
-**Phase 16 — Google OIDC account entry.** AURA now authenticates people with Google OpenID Connect Authorization Code + PKCE, binds the verified provider `sub` to a persisted AURA user, and issues an independent AURA session. Access JWTs remain memory-only and rotating refresh cookies remain HttpOnly. Passwords, additional providers, Google API access, account management, RAG, memory, and external integrations remain unimplemented.
+**Phase 17 — production deployment foundation.** AURA now has non-root production images, an explicit migration job, a private service network, and a Caddy HTTPS/WSS edge for a repeatable production-like stack. Models and secrets remain external to images, and llama.cpp remains a separately managed inference runtime.
 
-## Planned architecture
+Implemented application capabilities include Google OIDC account entry, PostgreSQL sessions and refresh rotation, authenticated realtime voice, VAD and safe interruption, local Whisper/Piper speech, self-hosted Qwen through llama.cpp, and server-authoritative Tool execution. Kubernetes, RAG, memory, new tools, and autonomous workflows remain outside the current scope.
 
-- **Web:** Next.js user interface and realtime client.
-- **Gateway:** External HTTP/WebSocket entry point, policy enforcement, voice-session state/VAD, and orchestration.
-- **Voice:** Implemented local whole-turn STT/TTS transformation; true streaming and interruption are planned.
-- **Agent:** Language understanding, reasoning, planning, and tool selection.
-- **Tools:** Permission-aware integrations and privileged action execution.
-- **Knowledge:** RAG, retrieval, contextual memory, and graph access.
-- **Analytics:** Asynchronous operational and product metrics.
+## Architecture
 
-Realtime voice follows `Browser → WebSocket → Gateway → Voice`. Kafka is planned only for asynchronous domain events and never carries realtime audio.
+- **Web:** Next.js authenticated realtime voice client.
+- **Gateway:** Public HTTP/WebSocket boundary, identity, sessions, request lifecycle, voice coordination, and orchestration.
+- **Voice:** Internal local whole-turn STT/TTS transformation.
+- **Agent:** Internal language understanding, reasoning, and tool proposal.
+- **Tools:** Internal permission-aware action execution.
+- **PostgreSQL:** Transactional identity and session system of record.
+- **Caddy:** Production HTTPS/WSS edge and the only public container boundary.
 
-## Planned infrastructure
-
-PostgreSQL will hold transactional system-of-record data, CognoDB will hold graph-oriented contextual memory, and Redis will hold transient state. Kafka will provide the asynchronous event backbone. Docker support will arrive with runnable services; Kubernetes remains deferred until scaling requirements justify it.
+Realtime voice follows `Browser → Caddy → Gateway → Voice`, with Gateway coordinating Agent and Tool calls. Internal services are not published by the production-like Compose topology.
 
 ## Repository structure
 
 ```text
 apps/web/                 Next.js application
-services/                 Documented future service boundaries
-packages/                 Shared TypeScript package foundations
-infrastructure/           Future Docker, Kafka, and Kubernetes assets
+services/                 Gateway, Agent, Voice, Tools, and future boundaries
+packages/                 Narrow shared TypeScript foundations
+infrastructure/docker/    Development PostgreSQL and production-like stack
 docs/                     Architecture decisions and system direction
 ```
 
 ## Development setup
 
-### Prerequisites
-
-- Node.js 22 LTS (see `.nvmrc`)
-- pnpm 11.13.0 (Corepack can provision the version declared in `package.json`)
-- Python 3.12 with isolated Agent and Voice venvs
-
-### Install and run
+Prerequisites are Node.js 22 LTS, pnpm 11.13.0, Python 3.12, and isolated Agent and Voice virtual environments.
 
 ```bash
 corepack enable
@@ -50,9 +42,15 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). Copy `.env.example` only when local configuration is needed; never commit credentials or model weights.
 
-### Quality checks
+## Production-like deployment
+
+The Compose stack runs Web, Gateway, Tools, Agent, Voice, PostgreSQL, a one-shot migration, and Caddy. Model weights are mounted read-only and secrets are injected at runtime.
+
+See [infrastructure/docker/README.md](infrastructure/docker/README.md) for configuration, TLS, startup, migration, model provisioning, shutdown, and troubleshooting instructions.
+
+## Quality checks
 
 ```bash
 pnpm format:check
@@ -62,13 +60,10 @@ pnpm test
 pnpm build
 ```
 
-Copy `.env.example` to `.env` only when local configuration is needed. Never commit credentials or model weights.
-
-## Roadmap
+## Roadmap boundaries
 
 - **V0:** Listen → Understand → Think → Speak
-- **V1:** Tools + Actions
-- **V1.5:** Memory + RAG + Permissions
-- **V2:** Autonomous multi-step workflows
+- **V1:** Tools and actions
+- **Later:** Memory, RAG, and explicitly bounded workflows
 
-See [docs/architecture.md](docs/architecture.md) for boundaries and evolution constraints.
+Redis, Kafka, CognoDB, Kubernetes, and cloud-specific deployment SDKs are not introduced by Phase 17. See [docs/architecture.md](docs/architecture.md) for ownership and evolution constraints.

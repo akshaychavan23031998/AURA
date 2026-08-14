@@ -31,6 +31,8 @@ NEXT_PUBLIC_ENABLE_DEV_SESSION=true
 
 Deploy the web app and Gateway on the same schemeful site when using `SameSite=Strict`, configure Gateway `WEB_APP_ORIGIN` to the exact web origin, and use HTTPS/WSS. Users cannot provide arbitrary Gateway URLs through the interface.
 
+The production image uses Next.js standalone output and bakes `NEXT_PUBLIC_*` settings at image build time. The production-like stack uses one public origin for Web and Gateway, so `NEXT_PUBLIC_GATEWAY_URL` is that exact HTTPS origin. Do not reuse an image across origins unless it was built for that origin. Microphone capture requires a browser-trusted secure context; Caddy's localhost certificate must be trusted for local validation.
+
 ## Commands
 
 ```bash

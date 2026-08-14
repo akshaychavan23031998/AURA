@@ -43,6 +43,8 @@ services/agent/.venv/Scripts/python.exe -m aura_agent.main
 
 `GET /health` is process liveness. `GET /ready` succeeds only after the selected planner initializes; LLM mode probes the already-loaded local runtime once during lifespan.
 
+The production image runs as a non-root user and contains application dependencies but no model weights. llama.cpp is intentionally outside the image because hardware acceleration and model lifecycle are deployment-specific. Configure its private URL in LLM mode; Agent closes its HTTP inference client during graceful ASGI shutdown and never terminates the external runtime.
+
 ## Configuration
 
 | Variable                      | Default         | Constraint                                             |

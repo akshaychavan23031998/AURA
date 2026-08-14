@@ -44,6 +44,7 @@ The service-local `.env.example` is the executable Gateway contract; the root ex
 | `NODE_ENV`                          | `development`           | `development`, `test`, or `production` |
 | `GATEWAY_HOST`                      | `0.0.0.0`               | non-empty host                         |
 | `GATEWAY_PORT`                      | `4000`                  | 1-65535                                |
+| `GATEWAY_TRUST_PROXY`               | loopback addresses      | explicit proxy IPs/CIDRs; never `*`    |
 | `LOG_LEVEL`                         | `info`                  | supported Pino level                   |
 | `TOOLS_SERVICE_URL`                 | `http://localhost:4001` | trusted HTTP/HTTPS URL                 |
 | `TOOLS_SERVICE_TOKEN`               | none                    | required, 32+ characters               |
@@ -62,6 +63,9 @@ The service-local `.env.example` is the executable Gateway contract; the root ex
 | `GOOGLE_OIDC_CLIENT_SECRET`         | none                    | required when enabled; never logged    |
 | `GOOGLE_OIDC_REDIRECT_URI`          | none                    | exact registered callback URI          |
 | `DATABASE_URL`                      | none                    | required PostgreSQL URL                |
+| `DATABASE_POOL_MAX`                 | `10`                    | bounded pool size, 1-50                |
+| `DATABASE_CONNECT_TIMEOUT_MS`       | `3000`                  | connection acquisition timeout         |
+| `DATABASE_QUERY_TIMEOUT_MS`         | `5000`                  | PostgreSQL query timeout               |
 | `VOICE_STREAM_MAX_FRAME_BYTES`      | `640`                   | maximum inbound binary frame           |
 | `VOICE_VAD_THRESHOLD`               | `500`                   | absolute PCM energy threshold          |
 | `VOICE_VAD_MIN_SPEECH_MS`           | `100`                   | speech-start debounce                  |
@@ -72,6 +76,10 @@ The service-local `.env.example` is the executable Gateway contract; the root ex
 | `VOICE_INTERRUPT_SETTLE_TIMEOUT_MS` | `5000`                  | cancellation settlement warning bound  |
 
 Configuration is read once and fails fast. Database connection and query timeouts are bounded. URLs, tokens, hashes, secrets, cookies, authorization headers, and request bodies are not logged.
+
+Production requires an HTTPS `WEB_APP_ORIGIN` and, when enabled, an HTTPS Google callback. `GATEWAY_TRUST_PROXY` must name only reverse-proxy addresses or CIDRs that can directly reach Gateway. Fastify ignores forwarded client addresses from all other peers. The supplied Compose network fixes Caddy and Gateway inside `172.28.0.0/24`; Gateway is not host-published.
+
+Run migrations explicitly before Gateway rollout with `pnpm db:migrate` from source or `node dist/db/migrate.js` in the production image. Gateway readiness checks PostgreSQL but never mutates schema. Pool size and connect/query deadlines are bounded through configuration.
 
 ## Local identity flow
 
@@ -128,7 +136,7 @@ The fixed Phase 8 permission is `system.echo`; persistent RBAC is not implemente
 
 ## Boundaries
 
-The Gateway owns HTTP ingress, identity/session persistence, request lifecycle, external errors, correlation, edge hardening, trusted downstream calls, and orchestration. It does not own LLM inference, audio processing, retrieval, tool execution, external integrations, Kafka analytics, or Agent/Tool database access. OAuth, passwords, frontend login, RBAC, WebSockets, rate limiting, Redis, and production deployment remain future milestones.
+The Gateway owns HTTP ingress, identity/session persistence, request lifecycle, external errors, correlation, edge hardening, trusted downstream calls, and orchestration. It does not own LLM inference, audio processing, retrieval, tool execution, external integrations, Kafka analytics, or Agent/Tool database access. Passwords, additional providers, RBAC expansion, rate limiting, Redis, and Kubernetes remain future milestones.
 
 ## Turn-based voice API
 

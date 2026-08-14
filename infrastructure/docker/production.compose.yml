@@ -1,0 +1,228 @@
+name: aura-production
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [aura-internal]
+  security_opt: [no-new-privileges:true]
+  init: true
+
+services:
+  postgres:
+    <<: *service-defaults
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aura}
+      POSTGRES_USER: ${POSTGRES_USER:-aura}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - aura_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: services/gateway/Dockerfile
+    restart: "no"
+    networks: [aura-internal]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aura}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      DATABASE_CONNECT_TIMEOUT_MS: ${DATABASE_CONNECT_TIMEOUT_MS:-5000}
+      DATABASE_QUERY_TIMEOUT_MS: ${DATABASE_QUERY_TIMEOUT_MS:-10000}
+    command: ["node", "dist/db/migrate.js"]
+
+  tools:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: services/tools/Dockerfile
+    environment:
+      NODE_ENV: production
+      TOOLS_HOST: 0.0.0.0
+      TOOLS_PORT: 4001
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      INTERNAL_SERVICE_TOKEN: ${TOOLS_SERVICE_TOKEN:?TOOLS_SERVICE_TOKEN is required}
+      INTERNAL_ALLOWED_SERVICE_ID: gateway
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4001/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  agent:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: services/agent/Dockerfile
+    environment:
+      APP_ENV: production
+      AGENT_HOST: 0.0.0.0
+      AGENT_PORT: 8001
+      LOG_LEVEL: ${PYTHON_LOG_LEVEL:-INFO}
+      AURA_INTERNAL_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?AGENT_SERVICE_TOKEN is required}
+      AURA_ALLOWED_SERVICE_ID: gateway
+      AGENT_PLANNER_MODE: ${AGENT_PLANNER_MODE:-deterministic}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL_NAME: ${LLM_MODEL_NAME:-}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 15
+
+  voice:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: services/voice/Dockerfile
+    environment:
+      APP_ENV: production
+      VOICE_HOST: 0.0.0.0
+      VOICE_PORT: 8002
+      LOG_LEVEL: ${PYTHON_LOG_LEVEL:-INFO}
+      AURA_INTERNAL_SERVICE_TOKEN: ${VOICE_SERVICE_TOKEN:?VOICE_SERVICE_TOKEN is required}
+      AURA_ALLOWED_SERVICE_ID: gateway
+      VOICE_STT_MODEL: /models/faster-whisper-tiny
+      TTS_MODEL_ROOT: /models
+      VOICE_STT_DEVICE: ${VOICE_STT_DEVICE:-cpu}
+      VOICE_STT_COMPUTE_TYPE: ${VOICE_STT_COMPUTE_TYPE:-int8}
+    volumes:
+      - type: bind
+        source: ${VOICE_MODEL_PATH:?VOICE_MODEL_PATH is required}
+        target: /models
+        read_only: true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/ready', timeout=2)",
+        ]
+      interval: 15s
+      timeout: 3s
+      start_period: 120s
+      retries: 10
+
+  gateway:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: services/gateway/Dockerfile
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      tools: { condition: service_healthy }
+      agent: { condition: service_healthy }
+      voice: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 4000
+      GATEWAY_TRUST_PROXY: 172.28.0.0/24
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aura}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      DATABASE_CONNECT_TIMEOUT_MS: ${DATABASE_CONNECT_TIMEOUT_MS:-5000}
+      DATABASE_QUERY_TIMEOUT_MS: ${DATABASE_QUERY_TIMEOUT_MS:-10000}
+      TOOLS_SERVICE_URL: http://tools:4001
+      TOOLS_SERVICE_TOKEN: ${TOOLS_SERVICE_TOKEN}
+      TOOLS_SERVICE_TIMEOUT_MS: ${TOOLS_SERVICE_TIMEOUT_MS:-3000}
+      AGENT_SERVICE_URL: http://agent:8001
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN}
+      AGENT_SERVICE_TIMEOUT_MS: ${AGENT_SERVICE_TIMEOUT_MS:-300000}
+      VOICE_SERVICE_URL: http://voice:8002
+      VOICE_SERVICE_TOKEN: ${VOICE_SERVICE_TOKEN}
+      VOICE_SERVICE_TIMEOUT_MS: ${VOICE_SERVICE_TIMEOUT_MS:-300000}
+      VOICE_MAX_AUDIO_BYTES: ${VOICE_MAX_AUDIO_BYTES:-10485760}
+      VOICE_STREAM_MAX_FRAME_BYTES: 640
+      VOICE_VAD_THRESHOLD: ${VOICE_VAD_THRESHOLD:-500}
+      VOICE_VAD_END_SILENCE_MS: ${VOICE_VAD_END_SILENCE_MS:-600}
+      VOICE_VAD_MIN_SPEECH_MS: ${VOICE_VAD_MIN_SPEECH_MS:-100}
+      VOICE_SESSION_IDLE_TIMEOUT_MS: ${VOICE_SESSION_IDLE_TIMEOUT_MS:-120000}
+      VOICE_BARGE_IN_ENABLED: ${VOICE_BARGE_IN_ENABLED:-true}
+      VOICE_BARGE_IN_MIN_SPEECH_MS: ${VOICE_BARGE_IN_MIN_SPEECH_MS:-100}
+      VOICE_INTERRUPT_SETTLE_TIMEOUT_MS: ${VOICE_INTERRUPT_SETTLE_TIMEOUT_MS:-5000}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required}
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-aura-gateway}
+      AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-aura-api}
+      AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:-900}
+      AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-604800}
+      WEB_APP_ORIGIN: ${AURA_PUBLIC_ORIGIN:?AURA_PUBLIC_ORIGIN is required}
+      GOOGLE_OIDC_ENABLED: ${GOOGLE_OIDC_ENABLED:-false}
+      GOOGLE_OIDC_CLIENT_ID: ${GOOGLE_OIDC_CLIENT_ID:-}
+      GOOGLE_OIDC_CLIENT_SECRET: ${GOOGLE_OIDC_CLIENT_SECRET:-}
+      GOOGLE_OIDC_REDIRECT_URI: ${GOOGLE_OIDC_REDIRECT_URI:-}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 15
+
+  web:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_GATEWAY_URL: ${AURA_PUBLIC_ORIGIN}
+        NEXT_PUBLIC_GOOGLE_OIDC_ENABLED: ${GOOGLE_OIDC_ENABLED:-false}
+        NEXT_PUBLIC_ENABLE_DEV_SESSION: "false"
+    depends_on:
+      gateway: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+
+  edge:
+    <<: *service-defaults
+    image: caddy:2.10.2-alpine
+    depends_on:
+      gateway: { condition: service_healthy }
+      web: { condition: service_healthy }
+    environment:
+      AURA_DOMAIN: ${AURA_DOMAIN:-localhost}
+    ports:
+      - "${AURA_HTTPS_PORT:-8443}:443"
+      - "${AURA_HTTP_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - aura_caddy_data:/data
+      - aura_caddy_config:/config
+
+networks:
+  aura-internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  aura_postgres_data:
+  aura_caddy_data:
+  aura_caddy_config:

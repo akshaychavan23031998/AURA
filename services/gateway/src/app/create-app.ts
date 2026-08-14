@@ -69,7 +69,10 @@ export async function createApp(
       options.logger ??
       ({
         level: options.config.logging.level,
-        base: { service: "gateway" },
+        base: {
+          service: "gateway",
+          environment: options.config.runtime.environment,
+        },
         redact: {
           paths: [
             "req.headers.authorization",
@@ -85,6 +88,7 @@ export async function createApp(
       } satisfies FastifyServerOptions["logger"]),
     genReqId: resolveRequestId,
     bodyLimit: options.config.server.bodyLimit,
+    trustProxy: [...options.config.server.trustedProxies],
   };
   const app = Fastify(serverOptions);
   const database = options.database ?? createDatabaseClient(options.config);

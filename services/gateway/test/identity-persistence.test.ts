@@ -29,7 +29,7 @@ if (!/_(?:test|tests)$/.test(parsedDatabaseUrl.pathname.slice(1))) {
 
 const database: DatabaseClient = createDatabaseClient({
   ...testConfig,
-  database: { url: databaseUrl },
+  database: { ...testConfig.database, url: databaseUrl },
 });
 const repository = new IdentityRepository(database);
 const sessions = new SessionService(repository, testConfig.auth);

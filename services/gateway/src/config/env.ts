@@ -20,6 +20,19 @@ const databaseEnvironmentSchema = z.object({
       return false;
     }
   }, "DATABASE_URL must be a PostgreSQL URL"),
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
+  DATABASE_CONNECT_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(30_000)
+    .default(3000),
+  DATABASE_QUERY_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(60_000)
+    .default(5000),
 });
 
 const optionalCredential = z.preprocess(
@@ -32,6 +45,7 @@ const environmentSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]),
     GATEWAY_HOST: z.string().trim().min(1, "GATEWAY_HOST is required"),
     GATEWAY_PORT: z.coerce.number().int().min(1).max(65_535),
+    GATEWAY_TRUST_PROXY: z.string().trim().min(1),
     LOG_LEVEL: z.enum([
       "fatal",
       "error",
@@ -92,6 +106,24 @@ const environmentSchema = z
     ...databaseEnvironmentSchema.shape,
   })
   .superRefine((value, context) => {
+    const trustedProxies = value.GATEWAY_TRUST_PROXY.split(",").map((entry) =>
+      entry.trim(),
+    );
+    if (trustedProxies.some((entry) => entry === "" || entry === "*"))
+      context.addIssue({
+        code: "custom",
+        path: ["GATEWAY_TRUST_PROXY"],
+        message: "GATEWAY_TRUST_PROXY must contain explicit addresses or CIDRs",
+      });
+    if (
+      value.NODE_ENV === "production" &&
+      !value.WEB_APP_ORIGIN.startsWith("https://")
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["WEB_APP_ORIGIN"],
+        message: "WEB_APP_ORIGIN must use HTTPS in production",
+      });
     if (!value.GOOGLE_OIDC_ENABLED) return;
     for (const key of [
       "GOOGLE_OIDC_CLIENT_ID",

@@ -31,9 +31,8 @@ describe("OIDC transaction codec", () => {
       600,
     );
     const encoded = codec.encode(transaction);
-    expect(
-      codec.decode(`${encoded.slice(0, -1)}x`, transaction.issuedAt),
-    ).toBeUndefined();
+    const tampered = `${encoded[0] === "A" ? "B" : "A"}${encoded.slice(1)}`;
+    expect(codec.decode(tampered, transaction.issuedAt)).toBeUndefined();
     expect(
       new OidcTransactionCodec(
         "different-secret-at-least-32-chars",

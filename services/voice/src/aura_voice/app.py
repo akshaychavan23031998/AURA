@@ -35,7 +35,7 @@ logger = logging.getLogger("aura.voice")
 def create_app(
     settings: Settings, transcriber: SpeechTranscriber, synthesizer: SpeechSynthesizer
 ) -> FastAPI:
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.app_env)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

@@ -92,7 +92,12 @@ describe("Gateway Agent Tool orchestration contract", () => {
 
     const gatewayConfig: GatewayConfig = {
       runtime: { environment: "test" },
-      server: { host: "127.0.0.1", port: 0, bodyLimit: 65_536 },
+      server: {
+        host: "127.0.0.1",
+        port: 0,
+        bodyLimit: 65_536,
+        trustedProxies: ["127.0.0.1", "::1"],
+      },
       logging: { level: "silent" },
       toolsService: { url: toolsUrl, token: serviceToken, timeoutMs: 2000 },
       agentService: {
@@ -134,7 +139,12 @@ describe("Gateway Agent Tool orchestration contract", () => {
         developmentSessionEnabled: false,
       },
       googleOidc: { enabled: false },
-      database: { url: "postgresql://aura:aura@127.0.0.1:5432/aura_test" },
+      database: {
+        url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+        poolMax: 10,
+        connectTimeoutMs: 3000,
+        queryTimeoutMs: 5000,
+      },
     };
     const gatewayApp = await createGatewayApp({
       config: gatewayConfig,

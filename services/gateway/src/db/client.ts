@@ -15,14 +15,14 @@ export function createDatabaseClient(config: {
 }): DatabaseClient {
   const pool = new Pool({
     connectionString: config.database.url,
-    connectionTimeoutMillis: 3000,
-    query_timeout: 5000,
-    max: 10,
+    connectionTimeoutMillis: config.database.connectTimeoutMs,
+    query_timeout: config.database.queryTimeoutMs,
+    max: config.database.poolMax,
   });
   return {
     db: drizzle(pool, { schema }),
     async check() {
-      await pool.query("select 1");
+      await pool.query("select 1 from users limit 1");
     },
     async close() {
       await pool.end();

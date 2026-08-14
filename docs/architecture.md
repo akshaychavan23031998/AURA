@@ -227,15 +227,13 @@ Structured logs are expected to support `timestamp`, `level`, `service`, `reques
 
 ## 8. Deployment model
 
-- **Web:** Next.js on Vercel.
-- **Node.js services:** Containers on a VM or managed container platform.
-- **Python AI services:** GPU-capable containers or VMs where needed.
-- **Datastores:** Managed offerings where their operational and security properties fit.
-- **Kafka:** Managed Kafka or dedicated infrastructure.
-- **Local development:** Docker Compose in a later milestone.
-- **Kubernetes:** Only after scale, availability, or operational requirements justify it.
+Phase 17 implements a containerized production foundation. Caddy is the only public network boundary and terminates HTTPS/WSS before routing `/api`, `/health`, and `/ready` to Gateway and all other paths to Next.js. PostgreSQL, Gateway, Tools, Agent, and Voice share a fixed private Compose subnet and publish no host ports. Gateway trusts forwarded client information only from that explicit subnet.
 
-No container or Kubernetes configuration exists in Phase 1.
+Application images use non-root runtime users and contain no secrets or model weights. PostgreSQL data and Caddy state use named volumes; Voice weights are an external read-only mount. Drizzle migration is a one-shot dependency that completes before Gateway starts. Gateway readiness proves database connectivity but does not apply schema changes.
+
+llama.cpp remains separately managed because CPU/GPU binaries, accelerators, and large model lifecycle are host-specific. Agent consumes its private HTTP endpoint and never owns or kills the process. Deterministic Agent mode supports deployment smoke tests without expensive inference.
+
+The Compose topology is a production-like validation target, not a high-availability control plane. Real production requires protected secret injection, trusted DNS, public certificates, backups, monitoring, capacity limits, and an orchestrator appropriate to measured requirements. Kubernetes remains deferred.
 
 ## 9. Evolution and testing strategy
 

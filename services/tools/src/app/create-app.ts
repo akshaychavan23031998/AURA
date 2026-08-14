@@ -34,7 +34,10 @@ export async function createApp(
       options.logger ??
       ({
         level: options.config.logging.level,
-        base: { service: "tools" },
+        base: {
+          service: "tools",
+          environment: options.config.runtime.environment,
+        },
         redact: {
           paths: [
             "req.headers.authorization",

@@ -6,6 +6,9 @@ The Voice Service is AURA's internal, self-hosted speech transformation boundary
 
 - `GET /health`: process liveness.
 - `GET /ready`: STT and TTS models were loaded once and are available.
+
+The production image runs as a non-root user and contains the speech runtimes, not model weights. Provision models separately and mount them read-only at `/models`; startup fails and readiness remains unavailable when required weights cannot initialize. Uvicorn handles SIGTERM/SIGINT and the lifespan marks the service unready during shutdown.
+
 - `POST /v1/stt`: authenticated multipart `audio` upload; accepts only 16 kHz, mono, 16-bit PCM WAV up to 10 MiB and 30 seconds.
 - `POST /v1/tts`: authenticated JSON `{ "text": "...", "locale": "hi-IN" }`; returns validated mono PCM `audio/wav`. The legacy `language` field remains accepted internally for Phase 10 compatibility.
 

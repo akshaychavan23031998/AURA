@@ -2,7 +2,12 @@ import type { GatewayConfig } from "../src/config/index.js";
 
 export const testConfig: GatewayConfig = {
   runtime: { environment: "test" },
-  server: { host: "127.0.0.1", port: 4000, bodyLimit: 65_536 },
+  server: {
+    host: "127.0.0.1",
+    port: 4000,
+    bodyLimit: 65_536,
+    trustedProxies: ["127.0.0.1", "::1"],
+  },
   logging: { level: "silent" },
   toolsService: {
     url: "http://127.0.0.1:4001",
@@ -48,5 +53,10 @@ export const testConfig: GatewayConfig = {
     developmentSessionEnabled: false,
   },
   googleOidc: { enabled: false },
-  database: { url: "postgresql://aura:aura@127.0.0.1:5432/aura_test" },
+  database: {
+    url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+    poolMax: 10,
+    connectTimeoutMs: 3000,
+    queryTimeoutMs: 5000,
+  },
 };

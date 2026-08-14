@@ -5,6 +5,9 @@ import { createDatabaseClient } from "../db/client.js";
 import { IdentityRepository } from "./repositories.js";
 import { SessionService } from "./session-service.js";
 
+if (process.env.NODE_ENV === "production")
+  throw new Error("Development session creation is disabled in production");
+
 const index = process.argv.indexOf("--user-id");
 const parsed = z
   .uuid()
