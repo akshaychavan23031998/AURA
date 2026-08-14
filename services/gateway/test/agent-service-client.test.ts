@@ -82,4 +82,25 @@ describe("Agent Service client", () => {
       ),
     ).rejects.toMatchObject({ code: "UPSTREAM_SERVICE_TIMEOUT" });
   });
+
+  it("composes caller cancellation with the configured timeout", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      (_input, init) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("superseded", "AbortError")),
+            { once: true },
+          ),
+        ),
+    );
+    const controller = new AbortController();
+    const request = createAgentServiceClient(testConfig, fetchMock).respond(
+      { message: "hello" },
+      "request-cancel",
+      controller.signal,
+    );
+    controller.abort(new DOMException("superseded", "AbortError"));
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+  });
 });

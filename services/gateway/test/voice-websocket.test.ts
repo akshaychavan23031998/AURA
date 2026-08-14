@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 import WebSocket from "ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app/create-app.js";
+import type { AgentServiceClient } from "../src/clients/agent/agent-service-client.js";
 import {
   testAuthorizationHeader,
   testTokenVerifier,
@@ -22,7 +23,9 @@ afterEach(() => {
   opened.length = 0;
 });
 
-async function fixture() {
+async function fixture(
+  overrides: Partial<Parameters<typeof createApp>[0]> = {},
+) {
   const app = await createApp({
     config: {
       ...testConfig,
@@ -30,11 +33,12 @@ async function fixture() {
         ...testConfig.voiceStream,
         vadMinSpeechMs: 40,
         vadEndSilenceMs: 40,
+        bargeInMinSpeechMs: 40,
       },
     },
     logger: false,
     tokenVerifier: testTokenVerifier,
-    voiceClient: {
+    voiceClient: overrides.voiceClient ?? {
       transcribe: vi.fn().mockResolvedValue({
         text: "echo AURA",
         detectedLanguage: "en",
@@ -42,7 +46,7 @@ async function fixture() {
       }),
       synthesize: vi.fn().mockResolvedValue(Buffer.from("RIFFvoice")),
     },
-    agentClient: {
+    agentClient: overrides.agentClient ?? {
       respond: vi.fn().mockResolvedValue({
         requestId: "downstream",
         intent: "respond",
@@ -50,6 +54,7 @@ async function fixture() {
         plan: { type: "respond" },
       }),
     },
+    ...overrides,
   });
   await app.listen({ host: "127.0.0.1", port: 0 });
   const port = (app.server.address() as AddressInfo).port;
@@ -146,13 +151,134 @@ describe("voice WebSocket transport", () => {
     await new Promise<void>((resolve) => socket.once("open", resolve));
     socket.send("not-json");
     socket.send(
+      JSON.stringify({
+        protocol: "aura.voice.v1",
+        type: "session.start",
+        cancellationScope: "tool",
+      }),
+    );
+    socket.send(
       JSON.stringify({ protocol: "aura.voice.v1", type: "session.start" }),
     );
     socket.send(Buffer.alloc(641));
     await vi.waitFor(() =>
-      expect(errors).toEqual(["VOICE_INVALID_EVENT", "VOICE_INVALID_FRAME"]),
+      expect(errors).toEqual([
+        "VOICE_INVALID_EVENT",
+        "VOICE_INVALID_EVENT",
+        "VOICE_INVALID_FRAME",
+      ]),
+    );
+    socket.close();
+    await app.close();
+  });
+
+  it("interrupts processing and completes a buffered replacement turn", async () => {
+    const respond = vi.fn<AgentServiceClient["respond"]>(
+      (_request, _requestId, signal) => {
+        if (respond.mock.calls.length === 1)
+          return new Promise((_resolve, reject) =>
+            signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("superseded", "AbortError")),
+              {
+                once: true,
+              },
+            ),
+          );
+        return Promise.resolve({
+          requestId: "second",
+          intent: "respond",
+          response: "second response",
+          plan: { type: "respond" as const },
+        });
+      },
+    );
+    const { app, url } = await fixture({ agentClient: { respond } });
+    const socket = connect(url);
+    const events: Array<{ type: string }> = [];
+    socket.on("message", (data, binary) => {
+      if (!binary)
+        events.push(
+          JSON.parse(Buffer.from(data as ArrayBuffer).toString("utf8")) as {
+            type: string;
+          },
+        );
+    });
+    await new Promise<void>((resolve) => socket.once("open", resolve));
+    socket.send(
+      JSON.stringify({ protocol: "aura.voice.v1", type: "session.start" }),
+    );
+    sendSocketTurn(socket);
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledOnce());
+    sendSocketTurn(socket);
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === "turn.interrupted")).toBe(
+        true,
+      ),
+    );
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(
+        events.filter((event) => event.type === "turn.completed"),
+      ).toHaveLength(1),
+    );
+    socket.close();
+    await app.close();
+  });
+
+  it("stops WebSocket audio delivery when speaking is interrupted", async () => {
+    const audioPayload = Buffer.alloc(80_000, 1);
+    const { app, url } = await fixture({
+      voiceClient: {
+        transcribe: vi.fn().mockResolvedValue({
+          text: "hello",
+          detectedLanguage: "en",
+          durationMs: 40,
+        }),
+        synthesize: vi.fn().mockResolvedValue(audioPayload),
+      },
+    });
+    const socket = connect(url);
+    const events: Array<{ type: string }> = [];
+    let audioChunks = 0;
+    socket.on("message", (data, binary) => {
+      if (binary) {
+        audioChunks += 1;
+        if (audioChunks === 1) {
+          socket.send(speech);
+          socket.send(speech);
+        }
+      } else
+        events.push(
+          JSON.parse(Buffer.from(data as ArrayBuffer).toString("utf8")) as {
+            type: string;
+          },
+        );
+    });
+    await new Promise<void>((resolve) => socket.once("open", resolve));
+    socket.send(
+      JSON.stringify({ protocol: "aura.voice.v1", type: "session.start" }),
+    );
+    sendSocketTurn(socket);
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === "turn.interrupted")).toBe(
+        true,
+      ),
+    );
+    const chunksAtInterrupt = audioChunks;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(audioChunks).toBe(chunksAtInterrupt);
+    expect(audioChunks).toBeLessThan(
+      Math.ceil(audioPayload.length / testConfig.voiceStream.audioChunkBytes),
     );
     socket.close();
     await app.close();
   });
 });
+
+function sendSocketTurn(socket: WebSocket): void {
+  socket.send(speech);
+  socket.send(speech);
+  socket.send(silence);
+  socket.send(silence);
+}

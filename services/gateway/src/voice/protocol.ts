@@ -3,7 +3,13 @@ import { z } from "zod";
 export const VOICE_PROTOCOL = "aura.voice.v1" as const;
 export type VoiceProtocolVersion = typeof VOICE_PROTOCOL;
 export type VoiceSessionState =
-  "CONNECTED" | "READY" | "LISTENING" | "PROCESSING" | "SPEAKING" | "CLOSED";
+  | "CONNECTED"
+  | "READY"
+  | "LISTENING"
+  | "PROCESSING"
+  | "SPEAKING"
+  | "INTERRUPTING"
+  | "CLOSED";
 export type VoiceSessionId = string;
 export type VoiceTurnId = string;
 

@@ -4,6 +4,8 @@ import { z } from "zod";
 
 import type { GatewayConfig } from "../../config/index.js";
 import { AppError } from "../../errors/app-error.js";
+import { withTimeout } from "../abort-signal.js";
+import { isAbortError } from "../../voice/cancellation.js";
 
 export const INTERNAL_SERVICE_ID_HEADER = "x-aura-service-id";
 export const INTERNAL_SERVICE_TOKEN_HEADER = "x-aura-service-token";
@@ -51,7 +53,11 @@ export interface ToolExecutionResultContext {
 export type AgentResult = z.infer<typeof agentResponseSchema>;
 
 export interface AgentServiceClient {
-  respond(request: AgentRequest, requestId: string): Promise<AgentResult>;
+  respond(
+    request: AgentRequest,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<AgentResult>;
 }
 
 export interface AgentClientLogger {
@@ -65,7 +71,7 @@ export function createAgentServiceClient(
   logger?: AgentClientLogger,
 ): AgentServiceClient {
   return {
-    async respond(request, requestId) {
+    async respond(request, requestId, signal) {
       const startedAt = performance.now();
       try {
         const response = await fetchImplementation(
@@ -79,7 +85,7 @@ export function createAgentServiceClient(
               [INTERNAL_SERVICE_TOKEN_HEADER]: config.agentService.token,
             },
             body: JSON.stringify(request),
-            signal: AbortSignal.timeout(config.agentService.timeoutMs),
+            signal: withTimeout(signal, config.agentService.timeoutMs),
           },
         );
         const contentType = response.headers.get("content-type") ?? "";
@@ -130,7 +136,7 @@ export function createAgentServiceClient(
           },
           "Agent Service call failed",
         );
-        if (error instanceof AppError) throw error;
+        if (error instanceof AppError || isAbortError(error)) throw error;
         if (error instanceof DOMException && error.name === "TimeoutError") {
           throw new AppError({
             code: "UPSTREAM_SERVICE_TIMEOUT",

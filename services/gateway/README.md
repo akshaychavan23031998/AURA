@@ -34,29 +34,32 @@ Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
 The service-local `.env.example` is the executable Gateway contract; the root example remains a workspace overview.
 
-| Variable                        | Default                 | Constraint                             |
-| ------------------------------- | ----------------------- | -------------------------------------- |
-| `NODE_ENV`                      | `development`           | `development`, `test`, or `production` |
-| `GATEWAY_HOST`                  | `0.0.0.0`               | non-empty host                         |
-| `GATEWAY_PORT`                  | `4000`                  | 1-65535                                |
-| `LOG_LEVEL`                     | `info`                  | supported Pino level                   |
-| `TOOLS_SERVICE_URL`             | `http://localhost:4001` | trusted HTTP/HTTPS URL                 |
-| `TOOLS_SERVICE_TOKEN`           | none                    | required, 32+ characters               |
-| `TOOLS_SERVICE_TIMEOUT_MS`      | `3000`                  | 100-30000 ms                           |
-| `AGENT_SERVICE_URL`             | `http://localhost:8001` | trusted HTTP/HTTPS URL                 |
-| `AGENT_SERVICE_TOKEN`           | none                    | required, 32+ characters               |
-| `AGENT_SERVICE_TIMEOUT_MS`      | `5000`                  | 100-300000 ms; increase for local LLM  |
-| `AUTH_JWT_SECRET`               | none                    | required, 32-512 characters            |
-| `AUTH_JWT_ISSUER`               | `aura-gateway`          | non-empty, at most 128 characters      |
-| `AUTH_JWT_AUDIENCE`             | `aura-api`              | non-empty, at most 128 characters      |
-| `AUTH_ACCESS_TOKEN_TTL_SECONDS` | `900`                   | 60-3600 seconds                        |
-| `AUTH_SESSION_TTL_SECONDS`      | `604800`                | 3600-2592000 seconds                   |
-| `DATABASE_URL`                  | none                    | required PostgreSQL URL                |
-| `VOICE_STREAM_MAX_FRAME_BYTES`  | `640`                   | maximum inbound binary frame           |
-| `VOICE_VAD_THRESHOLD`           | `500`                   | absolute PCM energy threshold          |
-| `VOICE_VAD_MIN_SPEECH_MS`       | `100`                   | speech-start debounce                  |
-| `VOICE_VAD_END_SILENCE_MS`      | `600`                   | utterance-end silence                  |
-| `VOICE_SESSION_IDLE_TIMEOUT_MS` | `120000`                | inactive session lifetime              |
+| Variable                            | Default                 | Constraint                             |
+| ----------------------------------- | ----------------------- | -------------------------------------- |
+| `NODE_ENV`                          | `development`           | `development`, `test`, or `production` |
+| `GATEWAY_HOST`                      | `0.0.0.0`               | non-empty host                         |
+| `GATEWAY_PORT`                      | `4000`                  | 1-65535                                |
+| `LOG_LEVEL`                         | `info`                  | supported Pino level                   |
+| `TOOLS_SERVICE_URL`                 | `http://localhost:4001` | trusted HTTP/HTTPS URL                 |
+| `TOOLS_SERVICE_TOKEN`               | none                    | required, 32+ characters               |
+| `TOOLS_SERVICE_TIMEOUT_MS`          | `3000`                  | 100-30000 ms                           |
+| `AGENT_SERVICE_URL`                 | `http://localhost:8001` | trusted HTTP/HTTPS URL                 |
+| `AGENT_SERVICE_TOKEN`               | none                    | required, 32+ characters               |
+| `AGENT_SERVICE_TIMEOUT_MS`          | `5000`                  | 100-300000 ms; increase for local LLM  |
+| `AUTH_JWT_SECRET`                   | none                    | required, 32-512 characters            |
+| `AUTH_JWT_ISSUER`                   | `aura-gateway`          | non-empty, at most 128 characters      |
+| `AUTH_JWT_AUDIENCE`                 | `aura-api`              | non-empty, at most 128 characters      |
+| `AUTH_ACCESS_TOKEN_TTL_SECONDS`     | `900`                   | 60-3600 seconds                        |
+| `AUTH_SESSION_TTL_SECONDS`          | `604800`                | 3600-2592000 seconds                   |
+| `DATABASE_URL`                      | none                    | required PostgreSQL URL                |
+| `VOICE_STREAM_MAX_FRAME_BYTES`      | `640`                   | maximum inbound binary frame           |
+| `VOICE_VAD_THRESHOLD`               | `500`                   | absolute PCM energy threshold          |
+| `VOICE_VAD_MIN_SPEECH_MS`           | `100`                   | speech-start debounce                  |
+| `VOICE_VAD_END_SILENCE_MS`          | `600`                   | utterance-end silence                  |
+| `VOICE_SESSION_IDLE_TIMEOUT_MS`     | `120000`                | inactive session lifetime              |
+| `VOICE_BARGE_IN_ENABLED`            | `true`                  | enable validated-speech interruption   |
+| `VOICE_BARGE_IN_MIN_SPEECH_MS`      | `100`                   | speech required before interruption    |
+| `VOICE_INTERRUPT_SETTLE_TIMEOUT_MS` | `5000`                  | cancellation settlement warning bound  |
 
 Configuration is read once and fails fast. Database connection and query timeouts are bounded. URLs, tokens, hashes, secrets, cookies, authorization headers, and request bodies are not logged.
 
@@ -114,4 +117,19 @@ Connect to `GET /api/v1/voice/session` with the normal bearer credential and opt
 
 The state path is `CONNECTED → READY → LISTENING → PROCESSING → SPEAKING → READY`, with `CLOSED` terminal. Only one turn may be active. Frames during processing/speaking return `VOICE_BUSY`; invalid or oversized frames, utterances, buffers, and idle sessions fail closed without orchestration retries. Audio/text content is not logged. Request IDs are rooted in the upgrade request and each turn derives a correlated child ID.
 
-Current VAD is a deterministic in-process PCM energy detector. It is dependency-light and testable, but less robust than neural VAD in noise. STT and TTS remain whole-turn Voice Service calls; completed WAV bytes are chunked only for transport. Barge-in, interruption, partial transcripts, native browser capture, streamed STT/TTS, multi-turn persistence, and Redis coordination are not implemented.
+Current VAD is a deterministic in-process PCM energy detector. It is dependency-light and testable, but less robust than neural VAD in noise. STT and TTS remain whole-turn Voice Service calls; completed WAV bytes are chunked only for transport. Partial transcripts, native browser capture, streamed STT/TTS, multi-turn persistence, and Redis coordination are not implemented.
+
+### Barge-in and safe cancellation
+
+During `PROCESSING` or `SPEAKING`, inbound PCM continues through a separate VAD. Sustained speech emits `turn.interrupting`, `turn.interrupted`, and `turn.superseded`, then begins one bounded replacement turn. Noise or speech shorter than `VOICE_BARGE_IN_MIN_SPEECH_MS` has no effect. Unsent old WAV chunks stop at the next cooperative chunk boundary.
+
+| Execution phase    | Interruption behavior                                                |
+| ------------------ | -------------------------------------------------------------------- |
+| STT                | Abort request; suppress stale output                                 |
+| Initial Agent      | Abort request before Tool dispatch                                   |
+| Tool execution     | Never abort or retry; buffer replacement audio until terminal result |
+| Agent finalization | Abort response generation; retain successful Tool completion         |
+| TTS                | Abort request; emit no old audio                                     |
+| Audio delivery     | Stop remaining unsent chunks                                         |
+
+Tool dispatch is the action-commit boundary. Interruption never rolls back, replays, or automatically retries an action. A Tool that succeeds after supersession emits only `turn.action_completed_after_interrupt`; no arguments or result data are exposed. A failed or ambiguous Tool call is likewise never retried. Client events are strict and cannot provide actor, permissions, cancellation scope, Tool state, or service identity.

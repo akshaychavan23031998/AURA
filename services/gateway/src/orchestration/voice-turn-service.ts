@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import type { TrustedToolContext } from "../clients/tools/tool-service-client.js";
 import type { VoiceServiceClient } from "../clients/voice/voice-service-client.js";
 import type { AgentToolOrchestrator } from "./agent-tool-orchestrator.js";
+import type { TurnExecutionPhase } from "../voice/cancellation.js";
 export interface VoiceTurnLogger {
   info(bindings: object, message: string): void;
 }
@@ -10,6 +11,9 @@ export interface VoiceTurnObserver {
   onAgentStarted?(): void;
   onAgentCompleted?(responseText: string): void;
   onSynthesisStarted?(): void;
+  onPhaseChange?(phase: TurnExecutionPhase): void;
+  onToolDispatched?(): void;
+  onToolCompleted?(): void;
 }
 export class VoiceTurnService {
   public constructor(
@@ -27,15 +31,26 @@ export class VoiceTurnService {
     requestId: string,
     context: TrustedToolContext,
     observer?: VoiceTurnObserver,
+    signal?: AbortSignal,
   ) {
     const startedAt = performance.now();
     const sttAt = performance.now();
-    const transcript = await this.voice.transcribe(
-      input.audio,
-      input.mimeType,
-      requestId,
-      input.locale,
-    );
+    observer?.onPhaseChange?.("STT");
+    const transcript =
+      signal === undefined
+        ? await this.voice.transcribe(
+            input.audio,
+            input.mimeType,
+            requestId,
+            input.locale,
+          )
+        : await this.voice.transcribe(
+            input.audio,
+            input.mimeType,
+            requestId,
+            input.locale,
+            signal,
+          );
     observer?.onTranscript?.(transcript);
     const sttDurationMs = performance.now() - sttAt;
     const agentAt = performance.now();
@@ -50,17 +65,42 @@ export class VoiceTurnService {
       },
       requestId,
       context,
+      {
+        ...(signal === undefined ? {} : { signal }),
+        ...(observer?.onPhaseChange === undefined
+          ? {}
+          : {
+              onPhaseChange: (phase: TurnExecutionPhase) =>
+                observer.onPhaseChange?.(phase),
+            }),
+        ...(observer?.onToolDispatched === undefined
+          ? {}
+          : { onToolDispatched: () => observer.onToolDispatched?.() }),
+        ...(observer?.onToolCompleted === undefined
+          ? {}
+          : { onToolCompleted: () => observer.onToolCompleted?.() }),
+      },
     );
     observer?.onAgentCompleted?.(result.response.text);
     const agentDurationMs = performance.now() - agentAt;
     const ttsAt = performance.now();
     observer?.onSynthesisStarted?.();
-    const audio = await this.voice.synthesize(
-      result.response.text,
-      input.locale ?? transcript.detectedLanguage,
-      requestId,
-    );
+    observer?.onPhaseChange?.("TTS");
+    const audio =
+      signal === undefined
+        ? await this.voice.synthesize(
+            result.response.text,
+            input.locale ?? transcript.detectedLanguage,
+            requestId,
+          )
+        : await this.voice.synthesize(
+            result.response.text,
+            input.locale ?? transcript.detectedLanguage,
+            requestId,
+            signal,
+          );
     const ttsDurationMs = performance.now() - ttsAt;
+    observer?.onPhaseChange?.("COMPLETED");
     this.logger?.info(
       {
         requestId,

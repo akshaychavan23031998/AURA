@@ -2,6 +2,8 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { GatewayConfig } from "../../config/index.js";
 import { AppError } from "../../errors/app-error.js";
+import { withTimeout } from "../abort-signal.js";
+import { isAbortError } from "../../voice/cancellation.js";
 
 export const VOICE_SERVICE_TOKEN_HEADER = "x-aura-service-token";
 const MAX_AUDIO_RESPONSE_BYTES = 12 * 1024 * 1024;
@@ -19,8 +21,14 @@ export interface VoiceServiceClient {
     mimeType: string,
     requestId: string,
     locale?: string,
+    signal?: AbortSignal,
   ): Promise<Transcription>;
-  synthesize(text: string, locale: string, requestId: string): Promise<Buffer>;
+  synthesize(
+    text: string,
+    locale: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<Buffer>;
 }
 export interface VoiceClientLogger {
   info(bindings: object, message: string): void;
@@ -38,7 +46,7 @@ export function createVoiceServiceClient(
     "x-request-id": requestId,
   });
   return {
-    async transcribe(audio, mimeType, requestId, locale) {
+    async transcribe(audio, mimeType, requestId, locale, signal) {
       const startedAt = performance.now();
       try {
         const form = new FormData();
@@ -56,7 +64,7 @@ export function createVoiceServiceClient(
               ...(locale === undefined ? {} : { "x-aura-locale-hint": locale }),
             },
             body: form,
-            signal: AbortSignal.timeout(config.voiceService.timeoutMs),
+            signal: withTimeout(signal, config.voiceService.timeoutMs),
           },
         );
         if (!response.ok)
@@ -93,7 +101,7 @@ export function createVoiceServiceClient(
         );
       }
     },
-    async synthesize(text, locale, requestId) {
+    async synthesize(text, locale, requestId, signal) {
       const startedAt = performance.now();
       try {
         const response = await fetchImplementation(
@@ -105,7 +113,7 @@ export function createVoiceServiceClient(
               "content-type": "application/json",
             },
             body: JSON.stringify({ text, locale }),
-            signal: AbortSignal.timeout(config.voiceService.timeoutMs),
+            signal: withTimeout(signal, config.voiceService.timeoutMs),
           },
         );
         if (!response.ok)
@@ -223,6 +231,7 @@ function translate(
     "Voice Service call failed",
   );
   if (error instanceof AppError) return error;
+  if (isAbortError(error)) throw error;
   if (error instanceof DOMException && error.name === "TimeoutError")
     return new AppError({
       code: "UPSTREAM_SERVICE_TIMEOUT",

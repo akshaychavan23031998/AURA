@@ -10,6 +10,7 @@ import type {
   TrustedToolContext,
 } from "../clients/tools/tool-service-client.js";
 import { AppError } from "../errors/app-error.js";
+import type { TurnExecutionPhase } from "../voice/cancellation.js";
 
 export interface AgentRunRequest {
   readonly message: string;
@@ -33,6 +34,12 @@ export interface AgentToolOrchestratorDependencies {
   readonly toolClient: ToolServiceClient;
   readonly logger?: OrchestrationLogger;
 }
+export interface OrchestrationControl {
+  readonly signal?: AbortSignal;
+  readonly onPhaseChange?: (phase: TurnExecutionPhase) => void;
+  readonly onToolDispatched?: () => void;
+  readonly onToolCompleted?: () => void;
+}
 
 type ToolPlan = Extract<AgentResult["plan"], { readonly type: "tool" }>;
 
@@ -45,12 +52,11 @@ export class AgentToolOrchestrator {
     request: AgentRunRequest,
     requestId: string,
     authorizationContext: TrustedToolContext,
+    control: OrchestrationControl = {},
   ): Promise<AgentRunResult> {
     const startedAt = performance.now();
-    const initial = await this.dependencies.agentClient.respond(
-      request,
-      requestId,
-    );
+    control.onPhaseChange?.("AGENT_INITIAL");
+    const initial = await this.respond(request, requestId, control.signal);
 
     if (initial.plan.type === "respond") {
       this.logCompleted(requestId, "respond", 1, startedAt);
@@ -63,6 +69,7 @@ export class AgentToolOrchestrator {
       requestId,
       authorizationContext,
       startedAt,
+      control,
     );
   }
 
@@ -72,13 +79,19 @@ export class AgentToolOrchestrator {
     requestId: string,
     authorizationContext: TrustedToolContext,
     startedAt: number,
+    control: OrchestrationControl,
   ): Promise<AgentRunResult> {
     const proposal = plan.tool;
+    control.signal?.throwIfAborted();
+    control.onPhaseChange?.("TOOL_EXECUTION");
+    control.onToolDispatched?.();
     const toolResult = await this.dependencies.toolClient.execute(
       { tool: proposal.name, input: proposal.input },
       authorizationContext,
       requestId,
     );
+    control.onToolCompleted?.();
+    control.signal?.throwIfAborted();
 
     let final: AgentResult;
     try {
@@ -90,10 +103,8 @@ export class AgentToolOrchestrator {
           data: toolResult.data,
         },
       };
-      final = await this.dependencies.agentClient.respond(
-        continuation,
-        requestId,
-      );
+      control.onPhaseChange?.("AGENT_FINALIZATION");
+      final = await this.respond(continuation, requestId, control.signal);
     } catch (error) {
       this.dependencies.logger?.error(
         {
@@ -162,6 +173,16 @@ export class AgentToolOrchestrator {
       },
       "Agent orchestration completed",
     );
+  }
+
+  private respond(
+    request: AgentRequest,
+    requestId: string,
+    signal?: AbortSignal,
+  ): Promise<AgentResult> {
+    return signal === undefined
+      ? this.dependencies.agentClient.respond(request, requestId)
+      : this.dependencies.agentClient.respond(request, requestId, signal);
   }
 }
 

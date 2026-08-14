@@ -18,10 +18,17 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 10 authenticated turn-based voice orchestration with bounded WAV ingress, local faster-whisper STT, local Piper TTS, correlation propagation, and explicit post-action synthesis failure semantics
 - Phase 11 config-driven multilingual Piper voice selection for English, Hindi, experimental Hinglish/Telugu, conservative locale/text normalization, bounded synthesis, WAV validation, and explicit unsupported Kannada behavior
 - Phase 12 authenticated `aura.voice.v1` WebSocket ingress with fixed PCM framing, deterministic server-side energy VAD, explicit one-turn state, bounded buffers, correlated lifecycle events, and chunked completed-WAV output
+- Phase 13 VAD-driven barge-in with typed execution phases, request-scoped STT/Agent/TTS cancellation, superseded-turn suppression, cancellable audio delivery, and non-retriable Tool settlement sequencing
 
 ### Planned
 
-True streaming STT/TTS, partial transcripts, interruption/barge-in, knowledge/RAG, memory, analytics, OAuth/account login, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+True streaming STT/TTS, partial transcripts, full-duplex overlap, knowledge/RAG, memory, analytics, OAuth/account login, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+
+### Safe interruption boundary
+
+Phase 13 treats interruption as turn supersession, not transaction rollback. STT, initial Agent planning, Agent finalization, TTS, and unsent audio are request-scoped and cancellable. A Tool request becomes committed at dispatch: it receives no user-cancellation signal, is never retried, and must reach a known terminal result before a buffered replacement turn can execute. A late successful action may emit `turn.action_completed_after_interrupt` without result data; stale Agent, TTS, audio-completion, and turn-completion events remain suppressed.
+
+The session accepts bounded PCM while old work settles. Validated speech moves the user-facing state through `INTERRUPTING` into `LISTENING`; silence and sub-threshold noise do not interrupt. Disconnect aborts only safe dependencies and audio delivery. Tool transport ambiguity remains authoritative and non-retriable.
 
 ## 2. Architectural style
 

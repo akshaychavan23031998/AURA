@@ -75,4 +75,34 @@ describe("Voice Service client", () => {
       ),
     ).rejects.toMatchObject({ code: "UPSTREAM_PROTOCOL_ERROR" });
   });
+
+  it.each(["stt", "tts"] as const)(
+    "composes caller cancellation for %s",
+    async (operation) => {
+      const fetchMock = vi.fn<typeof fetch>(
+        (_input, init) =>
+          new Promise((_resolve, reject) =>
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("superseded", "AbortError")),
+              { once: true },
+            ),
+          ),
+      );
+      const client = createVoiceServiceClient(testConfig, fetchMock);
+      const controller = new AbortController();
+      const request =
+        operation === "stt"
+          ? client.transcribe(
+              Buffer.from("RIFF"),
+              "audio/wav",
+              "voice-cancel",
+              undefined,
+              controller.signal,
+            )
+          : client.synthesize("hello", "en", "voice-cancel", controller.signal);
+      controller.abort(new DOMException("superseded", "AbortError"));
+      await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    },
+  );
 });

@@ -117,6 +117,9 @@ describe("Gateway Agent Tool orchestration contract", () => {
         vadEndSilenceMs: 600,
         frameMs: 20,
         idleTimeoutMs: 120000,
+        bargeInEnabled: true,
+        bargeInMinSpeechMs: 100,
+        interruptSettleTimeoutMs: 5000,
       },
       auth: {
         secret: "gateway-jwt-test-secret-at-least-32-characters",

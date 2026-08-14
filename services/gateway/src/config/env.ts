@@ -61,6 +61,15 @@ const environmentSchema = z.object({
     .int()
     .min(1_000)
     .max(3_600_000),
+  VOICE_BARGE_IN_ENABLED: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true"),
+  VOICE_BARGE_IN_MIN_SPEECH_MS: z.coerce.number().int().min(20).max(2_000),
+  VOICE_INTERRUPT_SETTLE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(30_000),
   ...authEnvironmentSchema.shape,
   ...databaseEnvironmentSchema.shape,
 });

@@ -17,6 +17,9 @@ const limits: SessionLimits = {
   vadMinSpeechMs: 40,
   vadEndSilenceMs: 40,
   frameMs: 20,
+  bargeInEnabled: true,
+  bargeInMinSpeechMs: 40,
+  interruptSettleTimeoutMs: 1_000,
 };
 const speech = Buffer.alloc(640);
 for (let i = 0; i < 640; i += 2) speech.writeInt16LE(2000, i);
@@ -123,7 +126,7 @@ describe("VoiceSessionCoordinator", () => {
       ]),
     );
   });
-  it("rejects audio while processing without duplicate orchestration", async () => {
+  it("does not interrupt processing for insufficient speech", async () => {
     let resolve!: (value: Awaited<ReturnType<VoiceTurnService["run"]>>) => void;
     const run = vi.fn<VoiceTurnService["run"]>(
       (_input, _requestId, _context, observer) =>
@@ -140,7 +143,9 @@ describe("VoiceSessionCoordinator", () => {
     h.session.acceptAudio(silence);
     h.session.acceptAudio(silence);
     h.session.acceptAudio(speech);
-    expect(h.events.at(-1)?.payload?.code).toBe("VOICE_BUSY");
+    expect(h.events.some((event) => event.type === "turn.interrupted")).toBe(
+      false,
+    );
     expect(run).toHaveBeenCalledOnce();
     resolve({
       transcript: "hello",
@@ -163,4 +168,108 @@ describe("VoiceSessionCoordinator", () => {
     expect(h.session.state).toBe("CLOSED");
     expect(h.run).toHaveBeenCalledOnce();
   });
+
+  it("supersedes processing after validated barge-in and accepts a replacement turn", async () => {
+    const run = vi.fn<VoiceTurnService["run"]>(
+      (_input, _requestId, _context, observer, signal) => {
+        if (run.mock.calls.length === 1) {
+          observer?.onPhaseChange?.("AGENT_INITIAL");
+          observer?.onAgentStarted?.();
+          return new Promise((_resolve, reject) =>
+            signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("superseded", "AbortError")),
+              {
+                once: true,
+              },
+            ),
+          );
+        }
+        observer?.onTranscript?.({ text: "second", detectedLanguage: "en" });
+        observer?.onAgentStarted?.();
+        observer?.onAgentCompleted?.("second response");
+        observer?.onSynthesisStarted?.();
+        return Promise.resolve({
+          transcript: "second",
+          detectedLanguage: "en",
+          responseText: "second response",
+          audioBase64: Buffer.from("RIFFsecond").toString("base64"),
+          audioMimeType: "audio/wav",
+        });
+      },
+    );
+    const h = harness(run);
+    h.session.start();
+    sendTurn(h.session);
+    await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+    sendTurn(h.session);
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(h.events.some((event) => event.type === "turn.completed")).toBe(
+        true,
+      ),
+    );
+    expect(
+      h.events.filter((event) => event.type === "turn.interrupted"),
+    ).toHaveLength(1);
+    expect(
+      h.events.filter((event) => event.type === "turn.superseded"),
+    ).toHaveLength(1);
+    expect(
+      h.events.filter((event) => event.type === "turn.completed"),
+    ).toHaveLength(1);
+  });
+
+  it("stops old audio chunks immediately after speaking is interrupted", async () => {
+    const events: Array<{ type: string }> = [];
+    const audio: Buffer[] = [];
+    const run = vi.fn<VoiceTurnService["run"]>(
+      (_input, _requestId, _context, observer) => {
+        observer?.onPhaseChange?.("COMPLETED");
+        return Promise.resolve({
+          transcript: "first",
+          detectedLanguage: "en",
+          responseText: "response",
+          audioBase64: Buffer.alloc(40, 1).toString("base64"),
+          audioMimeType: "audio/wav",
+        });
+      },
+    );
+    const session = new VoiceSessionCoordinator(
+      "root-audio",
+      { actorId: "actor", grantedPermissions: [] },
+      { run } as unknown as VoiceTurnService,
+      {
+        event: (event) => events.push(event),
+        audio: (chunk) => {
+          audio.push(chunk);
+          if (audio.length === 3) {
+            session.acceptAudio(speech);
+            session.acceptAudio(speech);
+          }
+        },
+        close: vi.fn(),
+      },
+      limits,
+    );
+    session.start();
+    sendTurn(session);
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === "turn.interrupted")).toBe(
+        true,
+      ),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(audio).toHaveLength(3);
+    expect(events.some((event) => event.type === "audio.completed")).toBe(
+      false,
+    );
+  });
 });
+
+function sendTurn(session: VoiceSessionCoordinator): void {
+  session.acceptAudio(speech);
+  session.acceptAudio(speech);
+  session.acceptAudio(silence);
+  session.acceptAudio(silence);
+}

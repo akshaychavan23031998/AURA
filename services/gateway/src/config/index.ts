@@ -21,6 +21,9 @@ const DEVELOPMENT_DEFAULTS = {
   VOICE_VAD_END_SILENCE_MS: "600",
   VOICE_VAD_MIN_SPEECH_MS: "100",
   VOICE_SESSION_IDLE_TIMEOUT_MS: "120000",
+  VOICE_BARGE_IN_ENABLED: "true",
+  VOICE_BARGE_IN_MIN_SPEECH_MS: "100",
+  VOICE_INTERRUPT_SETTLE_TIMEOUT_MS: "5000",
   AUTH_JWT_ISSUER: "aura-gateway",
   AUTH_JWT_AUDIENCE: "aura-api",
   AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
@@ -75,6 +78,9 @@ export interface GatewayConfig {
     readonly vadEndSilenceMs: number;
     readonly frameMs: 20;
     readonly idleTimeoutMs: number;
+    readonly bargeInEnabled: boolean;
+    readonly bargeInMinSpeechMs: number;
+    readonly interruptSettleTimeoutMs: number;
   };
   readonly auth: AuthConfig;
   readonly database: { readonly url: string };
@@ -147,6 +153,9 @@ export function loadConfig(
       vadEndSilenceMs: parsed.VOICE_VAD_END_SILENCE_MS,
       frameMs: 20 as const,
       idleTimeoutMs: parsed.VOICE_SESSION_IDLE_TIMEOUT_MS,
+      bargeInEnabled: parsed.VOICE_BARGE_IN_ENABLED,
+      bargeInMinSpeechMs: parsed.VOICE_BARGE_IN_MIN_SPEECH_MS,
+      interruptSettleTimeoutMs: parsed.VOICE_INTERRUPT_SETTLE_TIMEOUT_MS,
     }),
     auth: Object.freeze({
       secret: parsed.AUTH_JWT_SECRET,

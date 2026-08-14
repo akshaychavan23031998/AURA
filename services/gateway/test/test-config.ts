@@ -31,6 +31,9 @@ export const testConfig: GatewayConfig = {
     vadEndSilenceMs: 600,
     frameMs: 20,
     idleTimeoutMs: 120_000,
+    bargeInEnabled: true,
+    bargeInMinSpeechMs: 100,
+    interruptSettleTimeoutMs: 5_000,
   },
   auth: {
     secret: "gateway-jwt-test-secret-at-least-32-characters",
