@@ -31,8 +31,10 @@ describe("ToolRegistry", () => {
         .map((tool) => tool.name),
     ).toEqual([
       "calendar.events.create",
+      "calendar.events.delete",
       "calendar.events.get",
       "calendar.events.list",
+      "calendar.events.update",
       "system.echo",
       "utility.calculator",
       "utility.datetime",

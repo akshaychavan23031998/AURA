@@ -81,6 +81,8 @@ describe("Google Calendar tools", () => {
       list: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     };
     const registry = new ToolRegistry();
     for (const tool of createCalendarTools(client)) registry.register(tool);
@@ -134,6 +136,8 @@ describe("Google Calendar tools", () => {
       list: vi.fn(),
       get: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     };
     const registry = new ToolRegistry();
     for (const tool of createCalendarTools(client)) registry.register(tool);
@@ -170,6 +174,8 @@ describe("Google Calendar tools", () => {
         timezone: createInput.timezone,
         status: "confirmed",
       }),
+      update: vi.fn(),
+      delete: vi.fn(),
     };
     const registry = new ToolRegistry();
     for (const tool of createCalendarTools(client)) registry.register(tool);
@@ -243,6 +249,8 @@ describe("Google Calendar tools", () => {
         timezone: createInput.timezone,
         status: "confirmed",
       }),
+      update: vi.fn(),
+      delete: vi.fn(),
     };
     const registry = new ToolRegistry();
     for (const tool of createCalendarTools(client)) registry.register(tool);
@@ -298,7 +306,13 @@ describe("Google Calendar tools", () => {
   });
 
   it("rejects invalid create inputs before provider execution", () => {
-    const client = { list: vi.fn(), get: vi.fn(), create: vi.fn() };
+    const client = {
+      list: vi.fn(),
+      get: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    };
     const registry = new ToolRegistry();
     for (const tool of createCalendarTools(client)) registry.register(tool);
     registry.seal();
@@ -319,4 +333,266 @@ describe("Google Calendar tools", () => {
       ).toThrowError(expect.objectContaining({ code: "TOOL_INPUT_INVALID" }));
     expect(client.create).not.toHaveBeenCalled();
   });
+
+  it("defines update and delete with authoritative write policies", () => {
+    const registry = new ToolRegistry();
+    for (const tool of createCalendarTools(createGoogleCalendarClient()))
+      registry.register(tool);
+    registry.seal();
+    expect(registry.listMetadata()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "calendar.events.update",
+          riskLevel: "WRITE",
+          approvalPolicy: "REQUIRED",
+          idempotency: "NON_IDEMPOTENT",
+          requiredPermissions: ["calendar.events.write"],
+        }),
+        expect.objectContaining({
+          name: "calendar.events.delete",
+          riskLevel: "DESTRUCTIVE",
+          approvalPolicy: "REQUIRED",
+          idempotency: "NON_IDEMPOTENT",
+          requiredPermissions: ["calendar.events.write"],
+        }),
+      ]),
+    );
+  });
+
+  it("prepares safe mutation previews without provider calls", () => {
+    const client = mutationClient();
+    const executor = calendarExecutor(client);
+    const update = executor.prepare(
+      "calendar.events.update",
+      1,
+      { eventId: "event-1", summary: "Project review" },
+      writePreparationContext,
+    );
+    expect(update.approvalPolicy).toBe("REQUIRED");
+    expect(update.preview).toContain("New title: Project review");
+    const deletion = executor.prepare(
+      "calendar.events.delete",
+      1,
+      { eventId: "event-1" },
+      writePreparationContext,
+    );
+    expect(deletion.approvalPolicy).toBe("REQUIRED");
+    expect(deletion.preview).toContain("This will remove the event");
+    expect(client.update).not.toHaveBeenCalled();
+    expect(client.delete).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsafe update and delete inputs before mutation", () => {
+    const client = mutationClient();
+    const executor = calendarExecutor(client);
+    for (const invalid of [
+      { eventId: "event-1" },
+      { eventId: "", summary: "Title" },
+      {
+        eventId: "event-1",
+        timezone: "Invalid/Timezone",
+        start: createInput.start,
+        end: createInput.end,
+      },
+      { eventId: "event-1", start: createInput.start },
+      {
+        eventId: "event-1",
+        start: createInput.end,
+        end: createInput.start,
+        timezone: createInput.timezone,
+      },
+      {
+        eventId: "event-1",
+        start: createInput.start,
+        end: "2026-08-17T16:30:00+05:30",
+        timezone: createInput.timezone,
+      },
+      { eventId: "event-1", summary: "Title", attendees: [] },
+    ])
+      expect(() =>
+        executor.prepare(
+          "calendar.events.update",
+          1,
+          invalid,
+          writePreparationContext,
+        ),
+      ).toThrowError(expect.objectContaining({ code: "TOOL_INPUT_INVALID" }));
+    for (const invalid of [
+      {},
+      { eventId: "" },
+      { eventId: "event-1", calendarId: "other" },
+    ])
+      expect(() =>
+        executor.prepare(
+          "calendar.events.delete",
+          1,
+          invalid,
+          writePreparationContext,
+        ),
+      ).toThrowError(expect.objectContaining({ code: "TOOL_INPUT_INVALID" }));
+    expect(client.update).not.toHaveBeenCalled();
+    expect(client.delete).not.toHaveBeenCalled();
+  });
+
+  it("requires write permission and approval for both mutations", async () => {
+    const client = mutationClient();
+    const executor = calendarExecutor(client);
+    for (const [tool, input] of [
+      ["calendar.events.update", { eventId: "event-1", summary: "New" }],
+      ["calendar.events.delete", { eventId: "event-1" }],
+    ] as const) {
+      expect(() =>
+        executor.prepare(tool, 1, input, {
+          actorId: "actor-1",
+          grantedPermissions: ["calendar.events.read"],
+        }),
+      ).toThrowError(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+      await expect(
+        executor.execute({
+          tool,
+          input,
+          context: {
+            ...context,
+            grantedPermissions: ["calendar.events.write"],
+          },
+        }),
+      ).rejects.toMatchObject({ code: "TOOL_APPROVAL_REQUIRED" });
+    }
+    expect(client.update).not.toHaveBeenCalled();
+    expect(client.delete).not.toHaveBeenCalled();
+  });
+
+  it("executes each exact approved mutation and rejects changed input", async () => {
+    const client = mutationClient();
+    client.update.mockResolvedValue({
+      eventId: "event-1",
+      title: "New title",
+      start: createInput.start,
+      end: createInput.end,
+      status: "confirmed",
+    });
+    client.delete.mockResolvedValue(undefined);
+    const executor = calendarExecutor(client);
+    for (const [tool, input] of [
+      ["calendar.events.update", { eventId: "event-1", summary: "New title" }],
+      ["calendar.events.delete", { eventId: "event-2" }],
+    ] as const) {
+      const approvedContext = {
+        requestId: `approved-${tool}`,
+        actorId: "actor-1",
+        grantedPermissions: ["calendar.events.write"],
+        providerAccessToken: "provider-access-token",
+        approval: {
+          status: "approved" as const,
+          approvalId: `approval-${tool}`,
+          approvedActorId: "actor-1",
+          approvedTool: tool,
+          approvedToolVersion: 1,
+          inputDigest: actionDigest(tool, 1, input),
+        },
+      };
+      await expect(
+        executor.execute({ tool, input, context: approvedContext }),
+      ).resolves.toMatchObject({ status: "success", tool });
+      await expect(
+        executor.execute({
+          tool,
+          input: { ...input, eventId: "mutated-event" },
+          context: approvedContext,
+        }),
+      ).rejects.toMatchObject({ code: "TOOL_APPROVAL_REQUIRED" });
+    }
+    expect(client.update).toHaveBeenCalledTimes(1);
+    expect(client.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses fixed encoded PATCH and DELETE endpoints with allowlisted payloads", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          id: "event/one",
+          summary: "Project review",
+          status: "confirmed",
+          start: {
+            dateTime: createInput.start,
+            timeZone: createInput.timezone,
+          },
+          end: { dateTime: createInput.end, timeZone: createInput.timezone },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const client = createGoogleCalendarClient(fetcher);
+    await client.update(
+      "provider-token",
+      { eventId: "event/one", summary: "Project review" },
+      "request-update-1",
+    );
+    await client.delete("provider-token", "event/one", "request-delete-1");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const updateUrl = fetcher.mock.calls[0]?.[0];
+    expect(updateUrl).toBeInstanceOf(URL);
+    expect(updateUrl instanceof URL ? updateUrl.href : "").toBe(
+      "https://www.googleapis.com/calendar/v3/calendars/primary/events/event%2Fone",
+    );
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe("PATCH");
+    const updateBody = fetcher.mock.calls[0]?.[1]?.body;
+    expect(typeof updateBody).toBe("string");
+    expect(
+      JSON.parse(typeof updateBody === "string" ? updateBody : "{}"),
+    ).toEqual({
+      summary: "Project review",
+    });
+    const deleteUrl = fetcher.mock.calls[1]?.[0];
+    expect(deleteUrl).toBeInstanceOf(URL);
+    expect(deleteUrl instanceof URL ? deleteUrl.href : "").toContain(
+      "event%2Fone",
+    );
+    expect(fetcher.mock.calls[1]?.[1]?.method).toBe("DELETE");
+  });
+
+  it.each(["update", "delete"] as const)(
+    "does not retry an ambiguous %s outcome",
+    async (operation) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockRejectedValue(new TypeError("response lost"));
+      const client = createGoogleCalendarClient(fetcher);
+      const result =
+        operation === "update"
+          ? client.update(
+              "provider-token",
+              { eventId: "event-1", summary: "New" },
+              "request-1",
+            )
+          : client.delete("provider-token", "event-1", "request-1");
+      await expect(result).rejects.toMatchObject({
+        code: "CALENDAR_REQUEST_FAILED",
+        message: "Calendar request failed",
+      });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
 });
+
+const writePreparationContext = {
+  actorId: "actor-1",
+  grantedPermissions: ["calendar.events.write"],
+};
+
+function mutationClient() {
+  return {
+    list: vi.fn(),
+    get: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  };
+}
+
+function calendarExecutor(client: ReturnType<typeof mutationClient>) {
+  const registry = new ToolRegistry();
+  for (const tool of createCalendarTools(client)) registry.register(tool);
+  registry.seal();
+  return new ToolExecutor(registry);
+}

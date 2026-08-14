@@ -41,8 +41,10 @@ describe("Tool Service HTTP contract", () => {
     const body = response.json<{ tools: Record<string, unknown>[] }>();
     expect(body.tools.map((tool) => tool.name)).toEqual([
       "calendar.events.create",
+      "calendar.events.delete",
       "calendar.events.get",
       "calendar.events.list",
+      "calendar.events.update",
       "system.echo",
       "utility.calculator",
       "utility.datetime",
@@ -77,8 +79,10 @@ describe("Tool Service HTTP contract", () => {
     const tools = response.json<{ tools: Record<string, unknown>[] }>().tools;
     expect(tools.map((tool) => tool.name)).toEqual([
       "calendar.events.create",
+      "calendar.events.delete",
       "calendar.events.get",
       "calendar.events.list",
+      "calendar.events.update",
       "system.echo",
       "utility.calculator",
       "utility.datetime",

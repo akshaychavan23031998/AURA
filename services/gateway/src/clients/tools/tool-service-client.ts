@@ -129,7 +129,7 @@ export function createToolServiceClient(
         const providerAccessToken = request.tool.startsWith("calendar.")
           ? await providerTokens?.getAccessToken(
               context.actorId,
-              request.tool === "calendar.events.create"
+              isCalendarWrite(request.tool)
                 ? "https://www.googleapis.com/auth/calendar.events"
                 : undefined,
             )
@@ -224,6 +224,14 @@ export function createToolServiceClient(
       }
     },
   };
+}
+
+function isCalendarWrite(toolName: string): boolean {
+  return new Set([
+    "calendar.events.create",
+    "calendar.events.update",
+    "calendar.events.delete",
+  ]).has(toolName);
 }
 
 function protocolError(): AppError {

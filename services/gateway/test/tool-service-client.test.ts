@@ -51,31 +51,38 @@ describe("Tool Service client", () => {
     expect(body.input).not.toHaveProperty("providerAccessToken");
   });
 
-  it("requires the Calendar event-write provider scope for event creation", async () => {
-    const getAccessToken = vi.fn().mockResolvedValue("provider-access-token");
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      Response.json({
-        status: "success",
-        tool: "calendar.events.create",
-        version: 1,
-        data: { event: { eventId: "event-1" } },
-      }),
-    );
-    await createToolServiceClient(testConfig, fetchMock, undefined, {
-      getAccessToken,
-    }).execute(
-      { tool: "calendar.events.create", input: {} },
-      {
-        actorId: "trusted-actor",
-        grantedPermissions: ["calendar.events.write"],
-      },
-      "calendar-create-1",
-    );
-    expect(getAccessToken).toHaveBeenCalledWith(
-      "trusted-actor",
-      "https://www.googleapis.com/auth/calendar.events",
-    );
-  });
+  it.each([
+    "calendar.events.create",
+    "calendar.events.update",
+    "calendar.events.delete",
+  ])(
+    "requires the Calendar event-write provider scope for %s",
+    async (tool) => {
+      const getAccessToken = vi.fn().mockResolvedValue("provider-access-token");
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          status: "success",
+          tool,
+          version: 1,
+          data: { event: { eventId: "event-1" } },
+        }),
+      );
+      await createToolServiceClient(testConfig, fetchMock, undefined, {
+        getAccessToken,
+      }).execute(
+        { tool, input: {} },
+        {
+          actorId: "trusted-actor",
+          grantedPermissions: ["calendar.events.write"],
+        },
+        "calendar-create-1",
+      );
+      expect(getAccessToken).toHaveBeenCalledWith(
+        "trusted-actor",
+        "https://www.googleapis.com/auth/calendar.events",
+      );
+    },
+  );
 
   it("authenticates, propagates correlation, and validates success", async () => {
     const fetchMock = vi.fn<typeof fetch>(() =>

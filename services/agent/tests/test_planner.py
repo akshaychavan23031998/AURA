@@ -18,6 +18,8 @@ def test_safe_catalog_contains_exactly_three_capabilities() -> None:
         "calendar.events.list",
         "calendar.events.get",
         "calendar.events.create",
+        "calendar.events.update",
+        "calendar.events.delete",
     ]
     assert all(
         set(item) == {"name", "description", "category", "inputSchema"}
@@ -147,6 +149,66 @@ async def test_calendar_create_result_produces_final_response() -> None:
     )
     assert isinstance(result.plan, RespondPlan)
     assert result.response == "Done, Team sync has been created on your calendar."
+
+
+@pytest.mark.asyncio
+async def test_calendar_update_and_delete_require_explicit_event_ids() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    rename = await planner.plan(
+        AgentRequest(message="rename calendar event abc123 to Project review")
+    )
+    assert isinstance(rename.plan, ToolPlan)
+    assert rename.plan.tool.name == "calendar.events.update"
+    assert rename.plan.tool.input == {
+        "eventId": "abc123",
+        "summary": "Project review",
+    }
+    move = await planner.plan(
+        AgentRequest(
+            message=(
+                "move calendar event abc123 to 2026-08-25 from 10:00 to 10:30 "
+                "in Asia/Kolkata"
+            )
+        )
+    )
+    assert isinstance(move.plan, ToolPlan)
+    assert move.plan.tool.name == "calendar.events.update"
+    assert move.plan.tool.input["start"] == "2026-08-25T10:00:00+05:30"
+    delete = await planner.plan(AgentRequest(message="delete calendar event abc123"))
+    assert isinstance(delete.plan, ToolPlan)
+    assert delete.plan.tool.name == "calendar.events.delete"
+    assert delete.plan.tool.input == {"eventId": "abc123"}
+    ambiguous = await planner.plan(AgentRequest(message="delete calendar event"))
+    assert isinstance(ambiguous.plan, RespondPlan)
+
+
+@pytest.mark.asyncio
+async def test_calendar_mutation_results_produce_final_responses() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    updated = await planner.plan(
+        AgentRequest(
+            message="rename calendar event abc123 to Project review",
+            toolResult=ToolExecutionResultContext(
+                tool="calendar.events.update",
+                status="success",
+                data={"event": {"title": "Project review"}},
+            ),
+        )
+    )
+    assert isinstance(updated.plan, RespondPlan)
+    assert "updated" in updated.response
+    deleted = await planner.plan(
+        AgentRequest(
+            message="delete calendar event abc123",
+            toolResult=ToolExecutionResultContext(
+                tool="calendar.events.delete",
+                status="success",
+                data={"eventId": "abc123", "deleted": True},
+            ),
+        )
+    )
+    assert isinstance(deleted.plan, RespondPlan)
+    assert "deleted" in deleted.response
 
 
 @pytest.mark.asyncio

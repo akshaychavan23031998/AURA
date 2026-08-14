@@ -99,4 +99,41 @@ AGENT_TOOL_CATALOG: Final = (
             "required": ["summary", "start", "end", "timezone"],
         },
     },
+    {
+        "name": "calendar.events.update",
+        "description": (
+            "Updates allowlisted fields on one event in the authenticated user's "
+            "primary Google Calendar. Requires an event ID and at least one change."
+        ),
+        "category": "productivity",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "eventId": {"type": "string", "minLength": 1, "maxLength": 1024},
+                "summary": {"type": "string", "minLength": 1, "maxLength": 200},
+                "start": {"type": "string", "format": "date-time"},
+                "end": {"type": "string", "format": "date-time"},
+                "timezone": {"type": "string", "minLength": 1, "maxLength": 64},
+                "location": {"type": "string", "minLength": 1, "maxLength": 500},
+            },
+            "required": ["eventId"],
+        },
+    },
+    {
+        "name": "calendar.events.delete",
+        "description": (
+            "Permanently deletes one event from the authenticated user's primary "
+            "Google Calendar by explicit event ID."
+        ),
+        "category": "productivity",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "eventId": {"type": "string", "minLength": 1, "maxLength": 1024}
+            },
+            "required": ["eventId"],
+        },
+    },
 )

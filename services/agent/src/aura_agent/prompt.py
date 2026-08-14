@@ -20,10 +20,11 @@ __TOOL_CATALOG__
 
 Valid plans are respond, or one tool from the supplied catalog. Use calculator
 only for arithmetic and datetime only with an explicit IANA timezone. Calendar
-read tools and event creation operate only on the authenticated user's primary
-calendar. Event creation requires explicit start, end, and IANA timezone data;
-ask for clarification instead of guessing missing time information. Never include
-credentials, provider identity, approval state, or a calendar owner.
+read and mutation tools operate only on the authenticated user's primary calendar.
+Create and time updates require explicit start, end, and IANA timezone data;
+updates and deletes require an explicit event ID. Ask for clarification instead of
+guessing missing identifiers or time information. Never include credentials,
+provider identity, approval state, or a calendar owner.
 Do not invent city-to-timezone mappings.
 Do not include fields outside the schema.
 

@@ -68,6 +68,19 @@ class DeterministicDevelopmentPlanner:
                 ):
                     raise ValueError("Invalid calendar create result")
                 response = f"Done, {event['title']} has been created on your calendar."
+            elif result.tool == "calendar.events.update":
+                event = result.data.get("event")
+                if not isinstance(event, dict) or not isinstance(
+                    event.get("title"), str
+                ):
+                    raise ValueError("Invalid calendar update result")
+                response = f"Done, {event['title']} has been updated on your calendar."
+            elif result.tool == "calendar.events.delete":
+                event_id = result.data.get("eventId")
+                deleted = result.data.get("deleted")
+                if not isinstance(event_id, str) or deleted is not True:
+                    raise ValueError("Invalid calendar delete result")
+                response = "Done, the calendar event has been deleted."
             else:
                 response = "Your calendar request completed successfully."
             return AgentResult(
@@ -143,6 +156,32 @@ class DeterministicDevelopmentPlanner:
                 plan=RespondPlan(),
             )
 
+        calendar_mutation = _parse_deterministic_calendar_mutation(normalized)
+        if calendar_mutation is not None:
+            tool_name, tool_input = calendar_mutation
+            return AgentResult(
+                intent="propose_tool",
+                response=(
+                    f"I can {tool_name.rsplit('.', 1)[-1]} that event after "
+                    "your explicit approval."
+                ),
+                plan=ToolPlan(tool=ToolProposal(name=tool_name, input=tool_input)),
+            )
+        if lowered.startswith(
+            ("rename calendar event", "update calendar event", "move calendar event")
+        ):
+            return AgentResult(
+                intent="respond",
+                response="Please provide the exact event ID and the requested change.",
+                plan=RespondPlan(),
+            )
+        if lowered.startswith(("delete calendar event", "remove calendar event")):
+            return AgentResult(
+                intent="respond",
+                response="Please provide the exact event ID to delete.",
+                plan=RespondPlan(),
+            )
+
         return AgentResult(
             intent="respond",
             response="Agent planning foundation is active.",
@@ -166,6 +205,8 @@ class _CatalogTool(BaseModel):
         "calendar.events.list",
         "calendar.events.get",
         "calendar.events.create",
+        "calendar.events.update",
+        "calendar.events.delete",
     ]
     input: dict[str, JsonValue]
 
@@ -214,7 +255,7 @@ class _CatalogTool(BaseModel):
                 and isinstance(event_id, str)
                 and 1 <= len(event_id) <= 1024
             )
-        else:
+        elif self.name == "calendar.events.create":
             summary = self.input.get("summary")
             start = self.input.get("start")
             end = self.input.get("end")
@@ -233,6 +274,38 @@ class _CatalogTool(BaseModel):
                 and 1 <= len(timezone) <= 64
                 and (location is None or isinstance(location, str))
                 and (location is None or 1 <= len(location.strip()) <= 500)
+            )
+        elif self.name == "calendar.events.update":
+            event_id = self.input.get("eventId")
+            allowed = {"eventId", "summary", "start", "end", "timezone", "location"}
+            changes = set(self.input) - {"eventId"}
+            time_fields = {"start", "end", "timezone"}
+            summary = self.input.get("summary")
+            location = self.input.get("location")
+            valid = (
+                set(self.input).issubset(allowed)
+                and bool(changes)
+                and isinstance(event_id, str)
+                and 1 <= len(event_id.strip()) <= 1024
+                and (summary is None or isinstance(summary, str))
+                and (summary is None or 1 <= len(summary.strip()) <= 200)
+                and (location is None or isinstance(location, str))
+                and (location is None or 1 <= len(location.strip()) <= 500)
+                and (
+                    not changes.intersection(time_fields)
+                    or time_fields.issubset(changes)
+                )
+                and all(
+                    isinstance(self.input.get(field), str)
+                    for field in changes.intersection(time_fields)
+                )
+            )
+        else:
+            event_id = self.input.get("eventId")
+            valid = (
+                set(self.input) == {"eventId"}
+                and isinstance(event_id, str)
+                and 1 <= len(event_id.strip()) <= 1024
             )
         if not valid:
             raise ValueError("Tool input does not match the trusted catalog")
@@ -470,3 +543,78 @@ def _parse_deterministic_calendar_create(message: str) -> dict[str, JsonValue] |
         "end": end.isoformat(),
         "timezone": match.group("timezone"),
     }
+
+
+def _parse_deterministic_calendar_mutation(
+    message: str,
+) -> (
+    tuple[
+        Literal["calendar.events.update", "calendar.events.delete"],
+        dict[str, JsonValue],
+    ]
+    | None
+):
+    title_match = re.fullmatch(
+        r"(?:rename calendar event|update calendar event) (?P<event_id>\S+) "
+        r"(?:to|title to) (?P<summary>.+)",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if title_match is not None:
+        return (
+            "calendar.events.update",
+            {
+                "eventId": title_match.group("event_id"),
+                "summary": title_match.group("summary").strip(),
+            },
+        )
+    move_match = re.fullmatch(
+        r"move calendar event (?P<event_id>\S+) to (?P<date>\d{4}-\d{2}-\d{2}) "
+        r"from (?P<start>\d{2}:\d{2}) to (?P<end>\d{2}:\d{2}) "
+        r"in (?P<timezone>[A-Za-z_]+(?:/[A-Za-z_+-]+)+)",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if move_match is not None:
+        interval = _explicit_local_interval(move_match)
+        if interval is None:
+            return None
+        start, end = interval
+        return (
+            "calendar.events.update",
+            {
+                "eventId": move_match.group("event_id"),
+                "start": start,
+                "end": end,
+                "timezone": move_match.group("timezone"),
+            },
+        )
+    delete_match = re.fullmatch(
+        r"(?:delete|remove) calendar event (?P<event_id>\S+)",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if delete_match is not None:
+        return (
+            "calendar.events.delete",
+            {"eventId": delete_match.group("event_id")},
+        )
+    return None
+
+
+def _explicit_local_interval(match: re.Match[str]) -> tuple[str, str] | None:
+    try:
+        zone_name = match.group("timezone")
+        zone = {
+            "Asia/Kolkata": timezone(timedelta(hours=5, minutes=30)),
+            "UTC": UTC,
+        }[zone_name]
+        start = datetime.fromisoformat(
+            f"{match.group('date')}T{match.group('start')}:00"
+        ).replace(tzinfo=zone)
+        end = datetime.fromisoformat(
+            f"{match.group('date')}T{match.group('end')}:00"
+        ).replace(tzinfo=zone)
+    except (KeyError, ValueError):
+        return None
+    return None if end <= start else (start.isoformat(), end.isoformat())

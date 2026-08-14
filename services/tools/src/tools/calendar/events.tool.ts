@@ -57,6 +57,58 @@ const createInputSchema = z
     { message: "Event duration must be positive and at most 24 hours" },
   );
 const createOutputSchema = z.object({ event: normalizedEventSchema }).strict();
+const eventIdSchema = z.string().trim().min(1).max(1024);
+const updateInputSchema = z
+  .object({
+    eventId: eventIdSchema,
+    summary: z.string().trim().min(1).max(200).optional(),
+    start: z.iso.datetime({ offset: true }).optional(),
+    end: z.iso.datetime({ offset: true }).optional(),
+    timezone: z
+      .string()
+      .min(1)
+      .max(64)
+      .refine(isIanaTimezone, "Timezone must be a valid IANA timezone")
+      .optional(),
+    location: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const mutable = [
+      input.summary,
+      input.start,
+      input.end,
+      input.timezone,
+      input.location,
+    ];
+    if (mutable.every((value) => value === undefined))
+      context.addIssue({
+        code: "custom",
+        message: "At least one update is required",
+      });
+    const timeValues = [input.start, input.end, input.timezone];
+    if (
+      timeValues.some((value) => value !== undefined) &&
+      timeValues.some((value) => value === undefined)
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Start, end, and timezone must be changed together",
+      });
+    if (input.start !== undefined && input.end !== undefined) {
+      const duration = Date.parse(input.end) - Date.parse(input.start);
+      if (duration <= 0 || duration > 24 * 60 * 60 * 1_000)
+        context.addIssue({
+          code: "custom",
+          message: "Event duration must be positive and at most 24 hours",
+        });
+    }
+  });
+const updateOutputSchema = z.object({ event: normalizedEventSchema }).strict();
+const deleteInputSchema = z.object({ eventId: eventIdSchema }).strict();
+const deleteOutputSchema = z
+  .object({ eventId: eventIdSchema, deleted: z.literal(true) })
+  .strict();
 
 export function createCalendarTools(
   client: GoogleCalendarClient,
@@ -159,6 +211,80 @@ export function createCalendarTools(
     } satisfies ToolDefinition<
       z.infer<typeof createInputSchema>,
       z.infer<typeof createOutputSchema>
+    >,
+    {
+      name: "calendar.events.update",
+      version: 1,
+      title: "Update calendar event",
+      description:
+        "Updates allowlisted fields on one event in the authenticated user's primary Google Calendar after explicit approval.",
+      category: "productivity",
+      inputSchema: updateInputSchema,
+      outputSchema: updateOutputSchema,
+      requiredPermissions: ["calendar.events.write"],
+      riskLevel: "WRITE",
+      approvalPolicy: "REQUIRED",
+      idempotency: "NON_IDEMPOTENT",
+      timeoutMs: 12_000,
+      enabled: true,
+      approvalPreview: (untrustedInput) => {
+        const input = updateInputSchema.parse(untrustedInput);
+        return [
+          `Event: ${input.eventId}`,
+          ...(input.summary === undefined
+            ? []
+            : [`New title: ${input.summary}`]),
+          ...(input.start === undefined ? [] : [`New start: ${input.start}`]),
+          ...(input.end === undefined ? [] : [`New end: ${input.end}`]),
+          ...(input.timezone === undefined
+            ? []
+            : [`Timezone: ${input.timezone}`]),
+          ...(input.location === undefined
+            ? []
+            : [`Location: ${input.location}`]),
+        ].join("\n");
+      },
+      execute: async (input, context) => ({
+        event: await client.update(
+          accessToken(context),
+          input,
+          context.requestId,
+        ),
+      }),
+    } satisfies ToolDefinition<
+      z.infer<typeof updateInputSchema>,
+      z.infer<typeof updateOutputSchema>
+    >,
+    {
+      name: "calendar.events.delete",
+      version: 1,
+      title: "Delete calendar event",
+      description:
+        "Permanently deletes one event from the authenticated user's primary Google Calendar after explicit approval.",
+      category: "productivity",
+      inputSchema: deleteInputSchema,
+      outputSchema: deleteOutputSchema,
+      requiredPermissions: ["calendar.events.write"],
+      riskLevel: "DESTRUCTIVE",
+      approvalPolicy: "REQUIRED",
+      idempotency: "NON_IDEMPOTENT",
+      timeoutMs: 12_000,
+      enabled: true,
+      approvalPreview: (untrustedInput) => {
+        const input = deleteInputSchema.parse(untrustedInput);
+        return `Event ID: ${input.eventId}\nThis will remove the event from your primary Google Calendar.`;
+      },
+      execute: async (input, context) => {
+        await client.delete(
+          accessToken(context),
+          input.eventId,
+          context.requestId,
+        );
+        return { eventId: input.eventId, deleted: true as const };
+      },
+    } satisfies ToolDefinition<
+      z.infer<typeof deleteInputSchema>,
+      z.infer<typeof deleteOutputSchema>
     >,
   ];
 }

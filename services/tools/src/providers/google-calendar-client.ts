@@ -52,6 +52,24 @@ export interface GoogleCalendarClient {
     input: CalendarCreateInput,
     requestId: string,
   ): Promise<CalendarEvent>;
+  update(
+    accessToken: string,
+    input: CalendarUpdateInput,
+    requestId: string,
+  ): Promise<CalendarEvent>;
+  delete(
+    accessToken: string,
+    eventId: string,
+    requestId: string,
+  ): Promise<void>;
+}
+export interface CalendarUpdateInput {
+  readonly eventId: string;
+  readonly summary?: string | undefined;
+  readonly start?: string | undefined;
+  readonly end?: string | undefined;
+  readonly timezone?: string | undefined;
+  readonly location?: string | undefined;
 }
 export interface CalendarCreateInput {
   readonly summary: string;
@@ -110,7 +128,7 @@ export function createGoogleCalendarClient(
         502,
         "Calendar request failed",
       );
-    return response.json();
+    return response.status === 204 ? undefined : response.json();
   };
   return {
     async list(token, input, requestId) {
@@ -173,7 +191,45 @@ export function createGoogleCalendarClient(
         );
       return normalizeEvent(parsed.data);
     },
+    async update(token, input, requestId) {
+      const url = eventUrl(input.eventId);
+      const payload = {
+        ...(input.summary === undefined ? {} : { summary: input.summary }),
+        ...(input.start === undefined || input.timezone === undefined
+          ? {}
+          : {
+              start: { dateTime: input.start, timeZone: input.timezone },
+            }),
+        ...(input.end === undefined || input.timezone === undefined
+          ? {}
+          : { end: { dateTime: input.end, timeZone: input.timezone } }),
+        ...(input.location === undefined ? {} : { location: input.location }),
+      };
+      const parsed = eventSchema.safeParse(
+        await request(url, token, requestId, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        }),
+      );
+      if (!parsed.success)
+        throw new ToolError(
+          "CALENDAR_REQUEST_FAILED",
+          502,
+          "Calendar returned invalid data",
+        );
+      return normalizeEvent(parsed.data);
+    },
+    async delete(token, eventId, requestId) {
+      await request(eventUrl(eventId), token, requestId, { method: "DELETE" });
+    },
   };
+}
+
+function eventUrl(eventId: string): URL {
+  return new URL(
+    `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+    GOOGLE_CALENDAR_ORIGIN,
+  );
 }
 function normalizeEvent(event: z.infer<typeof eventSchema>): CalendarEvent {
   const start = event.start.dateTime ?? event.start.date;

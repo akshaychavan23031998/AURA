@@ -4,7 +4,7 @@ The Agent Service is AURA's internal planning boundary. Phase 9 preserves the de
 
 Phase 18 centralizes the planner's tool knowledge in a sanitized capability catalog containing only name, description, category, and input schema. Security policy and execution authority are absent. Tool Service remains authoritative, Gateway orchestrates, and the Agent proposes at most one tool.
 
-The catalog permits `system.echo`, `utility.calculator`, `utility.datetime`, `calendar.events.list`, `calendar.events.get`, and `calendar.events.create`. Calendar creation exposes only its strict capability schema—not permission, Google scope, risk, approval, credentials, or actor state. The deterministic planner recognizes one deliberately narrow schedule form with an explicit date, start/end time, and supported IANA timezone; incomplete requests produce clarification rather than invented time data. All successful calls still return through Agent continuation.
+The catalog permits the three local tools plus `calendar.events.list`, `get`, `create`, `update`, and `delete`. Calendar capabilities expose only strict schemas—not permissions, Google scopes, risk, approval, credentials, or actor state. The deterministic planner supports narrow explicit create, rename, move, and delete forms; update/delete require an event ID and time mutations require complete date/start/end/timezone data. Missing information produces clarification rather than fuzzy search or invention. All successful calls return through Agent continuation.
 
 ## Planner modes
 
