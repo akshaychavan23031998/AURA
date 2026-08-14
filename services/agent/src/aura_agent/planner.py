@@ -14,6 +14,7 @@ from aura_agent.contracts import (
 )
 from aura_agent.inference import ChatMessage, InferenceClient
 from aura_agent.prompt import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
+from aura_agent.tool_catalog import AGENT_TOOL_CATALOG
 
 logger = logging.getLogger("aura.agent.planner")
 
@@ -191,18 +192,8 @@ def _initial_output_schema() -> dict[str, object]:
                                 "type": "object",
                                 "additionalProperties": False,
                                 "properties": {
-                                    "name": {"const": "system.echo"},
-                                    "input": {
-                                        "type": "object",
-                                        "additionalProperties": False,
-                                        "properties": {
-                                            "message": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                            }
-                                        },
-                                        "required": ["message"],
-                                    },
+                                    "name": {"const": AGENT_TOOL_CATALOG[0]["name"]},
+                                    "input": AGENT_TOOL_CATALOG[0]["inputSchema"],
                                 },
                                 "required": ["name", "input"],
                             },

@@ -2,7 +2,7 @@ import type { ExecutionContext } from "../domain/tool-context.js";
 import type { RegisteredTool } from "../registry/tool-definition.js";
 
 export function requiresApproval(tool: RegisteredTool): boolean {
-  return tool.riskLevel === "DESTRUCTIVE" || tool.requiresApproval;
+  return tool.riskLevel === "DESTRUCTIVE" || tool.approvalPolicy === "REQUIRED";
 }
 
 export function hasValidApproval(

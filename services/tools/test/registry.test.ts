@@ -7,11 +7,18 @@ import type { ToolDefinition } from "../src/registry/tool-definition.js";
 
 const testTool: ToolDefinition<{ value: string }, { value: string }> = {
   name: "test.read",
+  version: 1,
+  title: "Test read",
   description: "Reads a test value.",
+  category: "system",
   inputSchema: z.object({ value: z.string() }),
+  outputSchema: z.object({ value: z.string() }),
   requiredPermissions: ["test.read"],
   riskLevel: "READ",
-  requiresApproval: false,
+  approvalPolicy: "NONE",
+  idempotency: "IDEMPOTENT",
+  timeoutMs: 100,
+  enabled: true,
   execute: (input) => Promise.resolve(input),
 };
 
@@ -46,12 +53,42 @@ describe("ToolRegistry", () => {
     expect(metadata).toEqual([
       {
         name: "test.read",
+        version: 1,
+        title: "Test read",
         description: "Reads a test value.",
+        category: "system",
         requiredPermissions: ["test.read"],
         riskLevel: "READ",
-        requiresApproval: false,
+        approvalPolicy: "NONE",
+        idempotency: "IDEMPOTENT",
+        timeoutMs: 100,
+        enabled: true,
       },
     ]);
     expect(Object.isFrozen(metadata[0]?.requiredPermissions)).toBe(true);
+  });
+
+  it("rejects malformed identifiers and registration after sealing", () => {
+    const registry = new ToolRegistry();
+    expect(() => registry.register({ ...testTool, name: "invalid" })).toThrow(
+      /Invalid tool name/,
+    );
+    registry.register(testTool);
+    registry.seal();
+    expect(() =>
+      registry.register({ ...testTool, name: "test.other" }),
+    ).toThrow(/sealed/);
+  });
+
+  it("exposes only sanitized Agent capabilities", () => {
+    const registry = new ToolRegistry();
+    registry.register(testTool);
+    const capability = registry.listAgentCapabilities()[0];
+    expect(capability?.name).toBe("test.read");
+    expect(capability?.category).toBe("system");
+    expect(typeof capability?.inputSchema).toBe("object");
+    expect(capability).not.toHaveProperty("requiredPermissions");
+    expect(capability).not.toHaveProperty("execute");
+    expect(capability).not.toHaveProperty("riskLevel");
   });
 });

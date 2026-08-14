@@ -4,5 +4,6 @@ import { ToolRegistry } from "./tool-registry.js";
 export function createToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(echoTool);
+  registry.seal();
   return registry;
 }

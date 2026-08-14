@@ -12,6 +12,7 @@ const successSchema = z
   .object({
     status: z.literal("success"),
     tool: z.string(),
+    version: z.number().int().positive(),
     data: z.unknown(),
   })
   .strict();
@@ -38,7 +39,12 @@ export interface TrustedToolContext {
   readonly grantedPermissions: readonly string[];
 }
 
-export type ToolExecutionResult = z.infer<typeof successSchema>;
+export interface ToolExecutionResult {
+  readonly status: "success";
+  readonly tool: string;
+  readonly version?: number;
+  readonly data: unknown;
+}
 
 export interface ToolServiceClient {
   execute(
@@ -74,6 +80,7 @@ export function createToolServiceClient(
             },
             body: JSON.stringify({
               tool: request.tool,
+              version: 1,
               input: request.input,
               context,
             }),
@@ -110,7 +117,7 @@ export function createToolServiceClient(
 
         const parsedError = errorSchema.safeParse(body);
         if (!parsedError.success) throw protocolError();
-        const allowedStatus = [400, 403, 404, 409, 500].includes(
+        const allowedStatus = [400, 403, 404, 409, 500, 504].includes(
           response.status,
         );
         if (!allowedStatus) throw protocolError();
@@ -161,10 +168,14 @@ function protocolError(): AppError {
 function clientSafeToolMessage(code: string): string {
   const messages: Record<string, string> = {
     TOOL_NOT_FOUND: "Tool not found",
-    INVALID_TOOL_INPUT: "Tool input is invalid",
+    TOOL_DISABLED: "Tool is unavailable",
+    TOOL_VERSION_UNSUPPORTED: "Tool version is unsupported",
+    TOOL_INPUT_INVALID: "Tool input is invalid",
+    TOOL_OUTPUT_INVALID: "Tool execution failed",
     PERMISSION_DENIED: "Tool permission denied",
-    APPROVAL_REQUIRED: "Tool approval is required",
+    TOOL_APPROVAL_REQUIRED: "Tool approval is required",
     TOOL_EXECUTION_FAILED: "Tool execution failed",
+    TOOL_TIMEOUT: "Tool execution timed out",
   };
   return messages[code] ?? "Tool request failed";
 }

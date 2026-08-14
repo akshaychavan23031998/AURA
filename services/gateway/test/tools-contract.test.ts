@@ -116,6 +116,7 @@ describe("Gateway to Tool Service contract", () => {
     expect(response.json()).toEqual({
       status: "success",
       tool: "system.echo",
+      version: 1,
       data: { message: "AURA" },
     });
     expect(response.headers["x-request-id"]).toBe("contract-request-1");

@@ -66,4 +66,6 @@ pnpm build
 - **V1:** Tools and actions
 - **Later:** Memory, RAG, and explicitly bounded workflows
 
-Redis, Kafka, CognoDB, Kubernetes, and cloud-specific deployment SDKs are not introduced by Phase 17. See [docs/architecture.md](docs/architecture.md) for ownership and evolution constraints.
+Phase 18 begins V1 with a sealed, versioned Tool Registry and centralized policy/validation pipeline. `system.echo` remains the only registered tool; real integrations are planned, not implemented.
+
+Redis, Kafka, CognoDB, Kubernetes, and cloud-specific deployment SDKs are not introduced. See [docs/architecture.md](docs/architecture.md) for ownership and evolution constraints.

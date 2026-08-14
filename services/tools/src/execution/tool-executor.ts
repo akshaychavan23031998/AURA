@@ -6,6 +6,7 @@ import type { ExecutionContext } from "../domain/tool-context.js";
 
 export interface ToolExecutionRequest {
   readonly tool: string;
+  readonly version?: number;
   readonly input: unknown;
   readonly context: ExecutionContext;
 }
@@ -16,10 +17,10 @@ export class ToolExecutor {
   public async execute(
     request: ToolExecutionRequest,
   ): Promise<ToolSuccessResult> {
-    const tool = this.registry.get(request.tool);
+    const tool = this.registry.resolve(request.tool, request.version ?? 1);
     const parsedInput = tool.inputSchema.safeParse(request.input);
     if (!parsedInput.success) {
-      throw new ToolError("INVALID_TOOL_INPUT", 400, "Tool input is invalid");
+      throw new ToolError("TOOL_INPUT_INVALID", 400, "Tool input is invalid");
     }
 
     const granted = new Set(request.context.grantedPermissions);
@@ -35,16 +36,33 @@ export class ToolExecutor {
 
     if (requiresApproval(tool) && !hasValidApproval(tool, request.context)) {
       throw new ToolError(
-        "APPROVAL_REQUIRED",
+        "TOOL_APPROVAL_REQUIRED",
         409,
         "Trusted approval is required",
       );
     }
 
     try {
-      const data = await tool.execute(parsedInput.data, request.context);
-      return { status: "success", tool: tool.name, data };
+      const data = await withExecutionTimeout(
+        tool.execute(parsedInput.data, request.context),
+        tool.timeoutMs,
+      );
+      const parsedOutput = tool.outputSchema.safeParse(data);
+      if (!parsedOutput.success) {
+        throw new ToolError(
+          "TOOL_OUTPUT_INVALID",
+          500,
+          "Tool output is invalid",
+        );
+      }
+      return {
+        status: "success",
+        tool: tool.name,
+        version: tool.version,
+        data: parsedOutput.data,
+      };
     } catch (error) {
+      if (error instanceof ToolError) throw error;
       throw new ToolError(
         "TOOL_EXECUTION_FAILED",
         500,
@@ -52,5 +70,28 @@ export class ToolExecutor {
         { cause: error },
       );
     }
+  }
+}
+
+async function withExecutionTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () =>
+            reject(
+              new ToolError("TOOL_TIMEOUT", 504, "Tool execution timed out"),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }

@@ -17,6 +17,7 @@ describe("Tool Service client", () => {
           JSON.stringify({
             status: "success",
             tool: "system.echo",
+            version: 1,
             data: { message: "hello" },
           }),
           {

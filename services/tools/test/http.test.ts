@@ -42,11 +42,17 @@ describe("Tool Service HTTP contract", () => {
       tools: [
         {
           name: "system.echo",
+          version: 1,
+          title: "Echo text",
           description:
             "Returns the supplied message unchanged. Intended for service-contract validation.",
+          category: "system",
           requiredPermissions: ["system.echo"],
           riskLevel: "READ",
-          requiresApproval: false,
+          approvalPolicy: "NONE",
+          idempotency: "IDEMPOTENT",
+          timeoutMs: 2000,
+          enabled: true,
         },
       ],
     });
@@ -69,6 +75,7 @@ describe("Tool Service HTTP contract", () => {
     expect(response.json()).toEqual({
       status: "success",
       tool: "system.echo",
+      version: 1,
       data: { message: "hello" },
     });
   });
@@ -105,7 +112,7 @@ describe("Tool Service HTTP contract", () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json<ErrorResponse>().error.code).toBe(
-      "INVALID_TOOL_INPUT",
+      "TOOL_INPUT_INVALID",
     );
   });
 

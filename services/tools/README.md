@@ -2,7 +2,7 @@
 
 The Tool Service is AURA's controlled action-execution boundary. It treats Agent and LLM output as untrusted, resolves only statically registered tools, validates every input, and centrally enforces permission and approval policy before invoking trusted code.
 
-## Implemented through Phase 4
+## Implemented through Phase 18
 
 - Fastify runtime with validated immutable configuration
 - structured Pino logging, request IDs, sensitive-field redaction, and Helmet headers
@@ -84,3 +84,13 @@ The shared secret is transitional service authentication. It is required at star
 State-changing tools will eventually require persisted idempotency records. READ operations may be retried when an adapter permits it; WRITE operations may be retried only with idempotency guarantees; DESTRUCTIVE operations must never be blindly retried. External adapters must support bounded timeouts and `AbortSignal` cancellation. No retry or persistence framework exists yet.
 
 Future domain events may include `tool.execution.requested`, `tool.execution.completed`, and `tool.execution.failed`, but Phase 3 implements no Kafka contracts or runtime.
+
+## Phase 18 tool platform contract
+
+`ToolDefinition` is the authoritative server-side contract. Each definition has a stable namespaced name and version, title, category, strict input and output schemas, required permissions, risk and approval policy, idempotency classification, enabled state, and bounded timeout. The registry is populated from trusted imports, rejects duplicate or malformed definitions, and is sealed after startup.
+
+The common executor resolves the registered version, rejects disabled tools, verifies server-derived permissions and trusted approval, validates input, invokes the implementation exactly once, validates output, and returns `{ status, tool, version, data }`. Exceptions, invalid outputs, and timeouts use stable sanitized errors. A timeout never causes a retry.
+
+`GET /tools/catalog/agent` returns only the name, description, category, and JSON input schema. It omits functions, identity, permissions, risk, approval, idempotency, timeout, and internal metadata. The Agent cannot downgrade policy or grant authority.
+
+The only registered Phase 18 tool is `system.echo` version 1. Real integrations, approval persistence, durable idempotency, and multi-tool planning remain future work.

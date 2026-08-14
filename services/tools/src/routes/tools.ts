@@ -23,6 +23,7 @@ const executionRequestSchema = z
       .string()
       .regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/)
       .max(128),
+    version: z.number().int().positive().default(1),
     input: z.unknown(),
     context: z
       .object({
@@ -49,6 +50,13 @@ export function registerToolRoutes(
   app.get("/tools", { preHandler: dependencies.internalAuth }, () => ({
     tools: dependencies.registry.listMetadata(),
   }));
+  app.get(
+    "/tools/catalog/agent",
+    { preHandler: dependencies.internalAuth },
+    () => ({
+      tools: dependencies.registry.listAgentCapabilities(),
+    }),
+  );
 
   app.post(
     "/tools/execute",
@@ -64,7 +72,10 @@ export function registerToolRoutes(
       }
 
       const startedAt = performance.now();
-      const tool = dependencies.registry.get(parsed.data.tool);
+      const tool = dependencies.registry.resolve(
+        parsed.data.tool,
+        parsed.data.version,
+      );
       try {
         const context = {
           requestId: request.id,
@@ -82,6 +93,7 @@ export function registerToolRoutes(
         };
         const result = await dependencies.executor.execute({
           tool: parsed.data.tool,
+          version: parsed.data.version,
           input: parsed.data.input,
           context,
         });

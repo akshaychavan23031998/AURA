@@ -6,11 +6,18 @@ import type { ToolRisk } from "../domain/tool-risk.js";
 
 export interface ToolDefinition<Input, Output> {
   readonly name: string;
+  readonly version: number;
+  readonly title: string;
   readonly description: string;
+  readonly category: "system";
   readonly inputSchema: z.ZodType<Input>;
+  readonly outputSchema: z.ZodType<Output>;
   readonly requiredPermissions: readonly ToolPermission[];
   readonly riskLevel: ToolRisk;
-  readonly requiresApproval: boolean;
+  readonly approvalPolicy: "NONE" | "REQUIRED";
+  readonly idempotency: "IDEMPOTENT" | "NON_IDEMPOTENT";
+  readonly timeoutMs: number;
+  readonly enabled: boolean;
   execute(input: Input, context: ExecutionContext): Promise<Output>;
 }
 
@@ -18,8 +25,21 @@ export type RegisteredTool = ToolDefinition<unknown, unknown>;
 
 export interface ToolMetadata {
   readonly name: string;
+  readonly version: number;
+  readonly title: string;
   readonly description: string;
+  readonly category: "system";
   readonly requiredPermissions: readonly string[];
   readonly riskLevel: ToolRisk;
-  readonly requiresApproval: boolean;
+  readonly approvalPolicy: "NONE" | "REQUIRED";
+  readonly idempotency: "IDEMPOTENT" | "NON_IDEMPOTENT";
+  readonly timeoutMs: number;
+  readonly enabled: boolean;
+}
+
+export interface AgentToolCapability {
+  readonly name: string;
+  readonly description: string;
+  readonly category: "system";
+  readonly inputSchema: unknown;
 }
