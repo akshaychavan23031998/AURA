@@ -4,6 +4,8 @@ The Agent Service is AURA's internal planning boundary. Phase 9 preserves the de
 
 Phase 18 centralizes the planner's tool knowledge in a sanitized capability catalog containing only name, description, category, and input schema. Security policy and execution authority are absent. Tool Service remains authoritative, Gateway orchestrates, and the Agent proposes at most one tool.
 
+The Phase 19 catalog permits exactly `system.echo`, `utility.calculator`, and `utility.datetime`. The deterministic planner recognizes explicit arithmetic and explicit `Asia/Kolkata` or `UTC` date/time requests; it does not invent city-to-timezone mappings. All successful tool calls still return through Agent continuation before producing conversational output.
+
 ## Planner modes
 
 - `deterministic` is the safe default for tests and development without model weights.

@@ -14,4 +14,36 @@ AGENT_TOOL_CATALOG: Final = (
             "required": ["message"],
         },
     },
+    {
+        "name": "utility.calculator",
+        "description": (
+            "Evaluates arithmetic with numbers, parentheses, addition, subtraction, "
+            "multiplication, and division."
+        ),
+        "category": "utility",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "expression": {"type": "string", "minLength": 1, "maxLength": 256}
+            },
+            "required": ["expression"],
+        },
+    },
+    {
+        "name": "utility.datetime",
+        "description": (
+            "Returns the current date and time for an explicit IANA timezone."
+        ),
+        "category": "utility",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "operation": {"enum": ["current_time", "current_date"]},
+                "timezone": {"type": "string", "minLength": 1, "maxLength": 64},
+            },
+            "required": ["operation", "timezone"],
+        },
+    },
 )

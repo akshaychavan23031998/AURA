@@ -38,24 +38,49 @@ describe("Tool Service HTTP contract", () => {
       await app()
     ).inject({ method: "GET", url: "/tools", headers: internalHeaders });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      tools: [
-        {
-          name: "system.echo",
-          version: 1,
-          title: "Echo text",
-          description:
-            "Returns the supplied message unchanged. Intended for service-contract validation.",
-          category: "system",
-          requiredPermissions: ["system.echo"],
-          riskLevel: "READ",
-          approvalPolicy: "NONE",
-          idempotency: "IDEMPOTENT",
-          timeoutMs: 2000,
-          enabled: true,
-        },
-      ],
+    const body = response.json<{ tools: Record<string, unknown>[] }>();
+    expect(body.tools.map((tool) => tool.name)).toEqual([
+      "system.echo",
+      "utility.calculator",
+      "utility.datetime",
+    ]);
+    expect(body.tools[1]).toMatchObject({
+      version: 1,
+      category: "utility",
+      requiredPermissions: ["utility.calculator"],
+      riskLevel: "READ",
+      approvalPolicy: "NONE",
+      idempotency: "IDEMPOTENT",
+      enabled: true,
     });
+    expect(body.tools[2]).toMatchObject({
+      requiredPermissions: ["utility.datetime"],
+      idempotency: "NON_IDEMPOTENT",
+    });
+  });
+
+  it("returns a sanitized deterministic Agent catalog", async () => {
+    const response = await (
+      await app()
+    ).inject({
+      method: "GET",
+      url: "/tools/catalog/agent",
+      headers: internalHeaders,
+    });
+    const tools = response.json<{ tools: Record<string, unknown>[] }>().tools;
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "system.echo",
+      "utility.calculator",
+      "utility.datetime",
+    ]);
+    for (const tool of tools) {
+      expect(Object.keys(tool).sort()).toEqual([
+        "category",
+        "description",
+        "inputSchema",
+        "name",
+      ]);
+    }
   });
 
   it("executes system.echo with explicit permission", async () => {

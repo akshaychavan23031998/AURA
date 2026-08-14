@@ -1,9 +1,17 @@
 import json
 import logging
 import time
-from typing import Literal, Protocol
+from collections.abc import Mapping
+from typing import Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    model_validator,
+)
 
 from aura_agent.contracts import (
     AgentRequest,
@@ -27,14 +35,33 @@ class DeterministicDevelopmentPlanner:
     async def plan(self, request: AgentRequest) -> AgentResult:
         if request.tool_result is not None:
             result = request.tool_result
-            if result.tool != "system.echo":
+            known_tools = {cast(str, item["name"]) for item in AGENT_TOOL_CATALOG}
+            if result.tool not in known_tools:
                 raise ValueError("Unsupported tool result")
-            message = result.data.get("message")
-            if not isinstance(message, str):
-                raise ValueError("Invalid echo result")
+            if result.tool == "system.echo":
+                message = result.data.get("message")
+                if not isinstance(message, str):
+                    raise ValueError("Invalid echo result")
+                response = f"Echo completed successfully: {message}"
+            elif result.tool == "utility.calculator":
+                value = result.data.get("result")
+                if not isinstance(value, int | float):
+                    raise ValueError("Invalid calculator result")
+                response = f"The result is {value}."
+            else:
+                timezone = result.data.get("timezone")
+                date = result.data.get("date")
+                current_time = result.data.get("time")
+                if not all(
+                    isinstance(item, str) for item in (timezone, date, current_time)
+                ):
+                    raise ValueError("Invalid datetime result")
+                response = (
+                    f"In {timezone}, the date is {date} and the time is {current_time}."
+                )
             return AgentResult(
                 intent="respond",
-                response=f"Echo completed successfully: {message}",
+                response=response,
                 plan=RespondPlan(),
             )
 
@@ -50,6 +77,40 @@ class DeterministicDevelopmentPlanner:
                 ),
             )
 
+        normalized = request.message.strip()
+        lowered = normalized.casefold()
+        expression = None
+        if lowered.startswith("calculate "):
+            expression = normalized[len("calculate ") :].strip()
+        elif lowered.startswith("what is ") and normalized.endswith("?"):
+            expression = normalized[len("what is ") : -1].strip()
+        if expression:
+            return AgentResult(
+                intent="propose_tool",
+                response="I can calculate that.",
+                plan=ToolPlan(
+                    tool=ToolProposal(
+                        name="utility.calculator", input={"expression": expression}
+                    )
+                ),
+            )
+
+        for timezone in ("Asia/Kolkata", "UTC"):
+            if timezone.casefold() in lowered and (
+                "time" in lowered or "date" in lowered
+            ):
+                operation = "current_date" if "date" in lowered else "current_time"
+                return AgentResult(
+                    intent="propose_tool",
+                    response="I can check the current server-observed time.",
+                    plan=ToolPlan(
+                        tool=ToolProposal(
+                            name="utility.datetime",
+                            input={"operation": operation, "timezone": timezone},
+                        )
+                    ),
+                )
+
         return AgentResult(
             intent="respond",
             response="Agent planning foundation is active.",
@@ -63,24 +124,47 @@ class _RespondOutputPlan(BaseModel):
     type: Literal["respond"]
 
 
-class _EchoInput(BaseModel):
+class _CatalogTool(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    message: str = Field(min_length=1, max_length=8192)
+    name: Literal["system.echo", "utility.calculator", "utility.datetime"]
+    input: dict[str, JsonValue]
 
-
-class _EchoTool(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: Literal["system.echo"]
-    input: _EchoInput
+    @model_validator(mode="after")
+    def validate_catalog_input(self) -> "_CatalogTool":
+        if self.name == "system.echo":
+            value = self.input.get("message")
+            valid = (
+                set(self.input) == {"message"}
+                and isinstance(value, str)
+                and 1 <= len(value) <= 4096
+            )
+        elif self.name == "utility.calculator":
+            value = self.input.get("expression")
+            valid = (
+                set(self.input) == {"expression"}
+                and isinstance(value, str)
+                and 1 <= len(value) <= 256
+            )
+        else:
+            operation = self.input.get("operation")
+            timezone = self.input.get("timezone")
+            valid = (
+                set(self.input) == {"operation", "timezone"}
+                and operation in {"current_time", "current_date"}
+                and isinstance(timezone, str)
+                and 1 <= len(timezone) <= 64
+            )
+        if not valid:
+            raise ValueError("Tool input does not match the trusted catalog")
+        return self
 
 
 class _ToolOutputPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["tool"]
-    tool: _EchoTool
+    tool: _CatalogTool
 
 
 class _RespondOutput(BaseModel):
@@ -189,13 +273,9 @@ def _initial_output_schema() -> dict[str, object]:
                         "properties": {
                             "type": {"const": "tool"},
                             "tool": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "properties": {
-                                    "name": {"const": AGENT_TOOL_CATALOG[0]["name"]},
-                                    "input": AGENT_TOOL_CATALOG[0]["inputSchema"],
-                                },
-                                "required": ["name", "input"],
+                                "oneOf": [
+                                    _tool_schema(item) for item in AGENT_TOOL_CATALOG
+                                ]
                             },
                         },
                         "required": ["type", "tool"],
@@ -225,6 +305,18 @@ def _respond_output_schema() -> dict[str, object]:
     }
 
 
+def _tool_schema(capability: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "name": {"const": capability["name"]},
+            "input": capability["inputSchema"],
+        },
+        "required": ["name", "input"],
+    }
+
+
 def _parse_initial_output(value: object) -> _RespondOutput | _ToolOutput:
     try:
         return _RespondOutput.model_validate(value)
@@ -245,7 +337,7 @@ def _to_agent_result(output: _RespondOutput | _ToolOutput) -> AgentResult:
         plan=ToolPlan(
             tool=ToolProposal(
                 name=output.plan.tool.name,
-                input=output.plan.tool.input.model_dump(),
+                input=output.plan.tool.input,
             )
         ),
     )

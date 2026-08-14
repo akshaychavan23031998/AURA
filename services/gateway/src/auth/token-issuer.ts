@@ -7,7 +7,11 @@ export async function issueAccessToken(
   config: AuthConfig,
   subject: string,
   sessionId: string,
-  permissions: readonly AllowedPermission[] = ["system.echo"],
+  permissions: readonly AllowedPermission[] = [
+    "system.echo",
+    "utility.calculator",
+    "utility.datetime",
+  ],
   now = Math.floor(Date.now() / 1000),
 ): Promise<string> {
   return new SignJWT({

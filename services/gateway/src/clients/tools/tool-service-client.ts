@@ -176,6 +176,7 @@ function clientSafeToolMessage(code: string): string {
     TOOL_APPROVAL_REQUIRED: "Tool approval is required",
     TOOL_EXECUTION_FAILED: "Tool execution failed",
     TOOL_TIMEOUT: "Tool execution timed out",
+    CALCULATION_INVALID: "Expression is invalid",
   };
   return messages[code] ?? "Tool request failed";
 }

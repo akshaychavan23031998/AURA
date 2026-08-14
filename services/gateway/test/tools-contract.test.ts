@@ -121,5 +121,60 @@ describe("Gateway to Tool Service contract", () => {
     });
     expect(response.headers["x-request-id"]).toBe("contract-request-1");
     expect(downstreamRequestId).toBe("contract-request-1");
+
+    const calculator = await gatewayApp.inject({
+      method: "POST",
+      url: "/api/v1/tools/execute",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "x-request-id": "calculator-request-1",
+      },
+      payload: {
+        tool: "utility.calculator",
+        input: { expression: "(12.5 + 7.5) * 2" },
+      },
+    });
+    expect(calculator.statusCode).toBe(200);
+    expect(calculator.json()).toEqual({
+      status: "success",
+      tool: "utility.calculator",
+      version: 1,
+      data: { expression: "(12.5 + 7.5) * 2", result: 40 },
+    });
+    expect(calculator.headers["x-request-id"]).toBe("calculator-request-1");
+
+    const datetime = await gatewayApp.inject({
+      method: "POST",
+      url: "/api/v1/tools/execute",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        tool: "utility.datetime",
+        input: { operation: "current_time", timezone: "UTC" },
+      },
+    });
+    expect(datetime.statusCode).toBe(200);
+    expect(datetime.json()).toMatchObject({
+      status: "success",
+      tool: "utility.datetime",
+      version: 1,
+      data: { timezone: "UTC" },
+    });
+
+    const echoOnlyToken = await issueAccessToken(
+      gatewayConfig.auth,
+      "contract-user-1",
+      "00000000-0000-4000-8000-000000000001",
+      ["system.echo"],
+    );
+    const denied = await gatewayApp.inject({
+      method: "POST",
+      url: "/api/v1/tools/execute",
+      headers: { authorization: `Bearer ${echoOnlyToken}` },
+      payload: { tool: "utility.calculator", input: { expression: "1 + 1" } },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({
+      error: { code: "PERMISSION_DENIED" },
+    });
   });
 });

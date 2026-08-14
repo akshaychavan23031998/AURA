@@ -10,7 +10,7 @@ The Tool Service is AURA's controlled action-execution boundary. It treats Agent
 - deterministic in-memory tool registry
 - explicit tool definition, risk, permission, context, approval, and result contracts
 - centralized executor and approval policy
-- `system.echo`, the only production-registered tool
+- exactly three production tools: `system.echo`, `utility.calculator`, and `utility.datetime`
 - operational, metadata, and execution endpoints
 - timing-safe shared-secret authentication for internal tool routes
 
@@ -93,4 +93,14 @@ The common executor resolves the registered version, rejects disabled tools, ver
 
 `GET /tools/catalog/agent` returns only the name, description, category, and JSON input schema. It omits functions, identity, permissions, risk, approval, idempotency, timeout, and internal metadata. The Agent cannot downgrade policy or grant authority.
 
-The only registered Phase 18 tool is `system.echo` version 1. Real integrations, approval persistence, durable idempotency, and multi-tool planning remain future work.
+Phase 19 registers exactly three version 1 tools:
+
+| Tool                 | Input                     | Output                               | Permission           | Risk   | Approval |
+| -------------------- | ------------------------- | ------------------------------------ | -------------------- | ------ | -------- |
+| `system.echo`        | `{ message }`             | unchanged message                    | `system.echo`        | `READ` | `NONE`   |
+| `utility.calculator` | `{ expression }`          | expression and finite numeric result | `utility.calculator` | `READ` | `NONE`   |
+| `utility.datetime`   | `{ operation, timezone }` | UTC instant plus timezone date/time  | `utility.datetime`   | `READ` | `NONE`   |
+
+Calculator uses a local explicit arithmetic parser—never `eval`, dynamic JavaScript, a subprocess, or a network service. Datetime accepts an explicit validated IANA timezone and uses the platform timezone database; it does not infer locations. It is classified `NON_IDEMPOTENT` because current time changes between calls, despite being read-only and safe to repeat.
+
+Calendar, Gmail, Contacts, external SaaS integrations, approval persistence, durable idempotency, and multi-tool planning remain future work.

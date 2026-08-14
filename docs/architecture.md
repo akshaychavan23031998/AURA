@@ -239,7 +239,9 @@ The Compose topology is a production-like validation target, not a high-availabi
 
 Phase 18 establishes the V1 Tool Platform boundary. Tool Service owns statically registered immutable definitions and centrally enforces identifier/version resolution, enabled state, permissions, risk/approval policy, strict input validation, bounded one-shot execution, and output validation. Normalized results are versioned and failures never expose implementation exceptions.
 
-The Agent-facing catalog contains only capability data: name, description, category, and input schema. It excludes actor identity, granted permissions, risk, approval, timeout, and implementation details. Gateway continues to derive trusted authorization context and orchestrate a single proposed tool. `system.echo` version 1 is the only implementation; approval persistence, durable idempotency, real integrations, and multi-step planning remain planned.
+The Agent-facing catalog contains only capability data: name, description, category, and input schema. It excludes actor identity, granted permissions, risk, approval, timeout, and implementation details. Gateway continues to derive trusted authorization context and orchestrate a single proposed tool.
+
+Phase 19 proves the boundary with exactly three local version 1 implementations: `system.echo`, `utility.calculator`, and `utility.datetime`. Calculator parses a deliberately small arithmetic grammar without dynamic execution. Datetime reads server time for an explicit IANA timezone and performs no location inference or network access. Approval persistence, durable idempotency, external integrations, and multi-step planning remain planned.
 
 Capabilities enter through small milestones: define the contract and ownership, implement the simplest viable path, test it, and then operationalize it. Shared packages stay narrow and are created around demonstrated reuse rather than speculation.
 

@@ -66,6 +66,6 @@ pnpm build
 - **V1:** Tools and actions
 - **Later:** Memory, RAG, and explicitly bounded workflows
 
-Phase 18 begins V1 with a sealed, versioned Tool Registry and centralized policy/validation pipeline. `system.echo` remains the only registered tool; real integrations are planned, not implemented.
+V1 currently registers `system.echo`, `utility.calculator`, and `utility.datetime` through the sealed, versioned Tool Registry and centralized policy/validation pipeline. Calendar, Gmail, Contacts, and external SaaS integrations remain unimplemented.
 
 Redis, Kafka, CognoDB, Kubernetes, and cloud-specific deployment SDKs are not introduced. See [docs/architecture.md](docs/architecture.md) for ownership and evolution constraints.

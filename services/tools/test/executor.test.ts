@@ -9,7 +9,7 @@ import { ToolRegistry } from "../src/registry/tool-registry.js";
 const baseContext: ExecutionContext = {
   requestId: "request-1",
   actorId: "actor-1",
-  grantedPermissions: ["test.write"],
+  grantedPermissions: ["system.echo"],
 };
 
 function createWriteTool(
@@ -23,7 +23,7 @@ function createWriteTool(
     category: "system",
     inputSchema: z.object({ value: z.string() }).strict(),
     outputSchema: z.object({ value: z.string() }).strict(),
-    requiredPermissions: ["test.write"],
+    requiredPermissions: ["system.echo"],
     riskLevel: "WRITE",
     approvalPolicy: "REQUIRED",
     idempotency: "NON_IDEMPOTENT",

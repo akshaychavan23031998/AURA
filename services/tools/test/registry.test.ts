@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ToolError } from "../src/errors/tool-error.js";
 import { ToolRegistry } from "../src/registry/tool-registry.js";
 import type { ToolDefinition } from "../src/registry/tool-definition.js";
+import { createToolRegistry } from "../src/registry/create-registry.js";
 
 const testTool: ToolDefinition<{ value: string }, { value: string }> = {
   name: "test.read",
@@ -13,7 +14,7 @@ const testTool: ToolDefinition<{ value: string }, { value: string }> = {
   category: "system",
   inputSchema: z.object({ value: z.string() }),
   outputSchema: z.object({ value: z.string() }),
-  requiredPermissions: ["test.read"],
+  requiredPermissions: ["system.echo"],
   riskLevel: "READ",
   approvalPolicy: "NONE",
   idempotency: "IDEMPOTENT",
@@ -23,6 +24,13 @@ const testTool: ToolDefinition<{ value: string }, { value: string }> = {
 };
 
 describe("ToolRegistry", () => {
+  it("registers exactly the three production tools in deterministic order", () => {
+    expect(
+      createToolRegistry()
+        .listMetadata()
+        .map((tool) => tool.name),
+    ).toEqual(["system.echo", "utility.calculator", "utility.datetime"]);
+  });
   it("registers and retrieves an explicit tool", () => {
     const registry = new ToolRegistry();
     registry.register(testTool);
@@ -57,7 +65,7 @@ describe("ToolRegistry", () => {
         title: "Test read",
         description: "Reads a test value.",
         category: "system",
-        requiredPermissions: ["test.read"],
+        requiredPermissions: ["system.echo"],
         riskLevel: "READ",
         approvalPolicy: "NONE",
         idempotency: "IDEMPOTENT",

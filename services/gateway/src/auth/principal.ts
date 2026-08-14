@@ -1,4 +1,8 @@
-export const allowedPermissions = ["system.echo"] as const;
+export const allowedPermissions = [
+  "system.echo",
+  "utility.calculator",
+  "utility.datetime",
+] as const;
 export type AllowedPermission = (typeof allowedPermissions)[number];
 
 export interface AuthenticatedPrincipal {

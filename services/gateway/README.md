@@ -170,3 +170,5 @@ During `PROCESSING` or `SPEAKING`, inbound PCM continues through a separate VAD.
 Tool dispatch is the action-commit boundary. Interruption never rolls back, replays, or automatically retries an action. A Tool that succeeds after supersession emits only `turn.action_completed_after_interrupt`; no arguments or result data are exposed. A failed or ambiguous Tool call is likewise never retried. Client events are strict and cannot provide actor, permissions, cancellation scope, Tool state, or service identity.
 
 Phase 18 preserves Gateway orchestration ownership: the Agent proposes one namespaced tool and input, while Gateway supplies the authenticated actor and server-derived permissions. Tool Service owns versions and policy; public clients cannot inject identity, permissions, risk, approval, results, or execution state.
+
+Phase 19 adds the exact permissions `utility.calculator` and `utility.datetime` alongside `system.echo`. They use the same authenticated REST and voice orchestration paths; Gateway contains no calculator, timezone, or integration implementation logic.

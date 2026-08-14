@@ -18,7 +18,9 @@ and a respond plan; never propose another tool.
 Available tool catalog (capability data only):
 __TOOL_CATALOG__
 
-Valid plans are respond, or tool with name system.echo.
+Valid plans are respond, or one tool from the supplied catalog. Use calculator
+only for arithmetic and datetime only with an explicit IANA timezone. Do not
+invent city-to-timezone mappings.
 Do not include fields outside the schema.
 
 Conversation example:
