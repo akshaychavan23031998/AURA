@@ -20,6 +20,7 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 - Phase 12 authenticated `aura.voice.v1` WebSocket ingress with fixed PCM framing, deterministic server-side energy VAD, explicit one-turn state, bounded buffers, correlated lifecycle events, and chunked completed-WAV output
 - Phase 13 VAD-driven barge-in with typed execution phases, request-scoped STT/Agent/TTS cancellation, superseded-turn suppression, cancellable audio delivery, and non-retriable Tool settlement sequencing
 - Phase 14 browser voice client with AudioWorklet capture, deterministic 16 kHz PCM framing, validated WebSocket events, in-memory transcript state, ordered WAV playback, and authoritative interruption handling
+- Phase 15 browser identity lifecycle with HttpOnly refresh cookies, memory-only access tokens, single-flight rotation, conservative authenticated retries, server-controlled development bootstrap, and coordinated voice teardown
 
 ### Planned
 
@@ -36,6 +37,8 @@ The session accepts bounded PCM while old work settles. Validated speech moves t
 The web client owns microphone permission UX, local resampling/framing, connection lifecycle, ephemeral playback, and presentation state. It does not decide interruption authority, actor identity, permissions, Tool state, or orchestration. Incoming control events are untrusted and runtime validated; binary audio is associated only with the current server-declared turn.
 
 Because browser WebSocket APIs cannot set `Authorization`, the existing access JWT is carried in a bounded `aura.jwt.*` WebSocket subprotocol while `aura.voice.v1` is the only negotiated protocol. Gateway extracts it into the existing verifier and redacts the credential-bearing header. Production deployments require TLS/WSS. This compatibility mechanism does not change normal HTTP bearer authentication.
+
+Browser refresh tokens are rotating opaque credentials stored only in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/auth`; production cookies are also `Secure`. The web application keeps the current access JWT in process memory and bootstraps by refreshing once before rendering authenticated UI. Cookie-backed mutations require the exact configured web `Origin`, and credentialed CORS allows only that origin. Concurrent refresh demand shares one request. Only safe HTTP methods may be retried once after refresh; action POSTs are never automatically replayed. Logout revokes the persisted session, expires the cookie, clears memory, and unmounts the voice runtime.
 
 ## 2. Architectural style
 

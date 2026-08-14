@@ -128,6 +128,11 @@ describe("Gateway Agent Tool orchestration contract", () => {
         accessTokenTtlSeconds: 900,
         sessionTtlSeconds: 604_800,
       },
+      browser: {
+        origin: "http://localhost:3000",
+        secureCookies: false,
+        developmentSessionEnabled: false,
+      },
       database: { url: "postgresql://aura:aura@127.0.0.1:5432/aura_test" },
     };
     const gatewayApp = await createGatewayApp({

@@ -92,7 +92,7 @@ export async function createApp(
     options.voiceClient ??
     createVoiceServiceClient(options.config, fetch, app.log);
 
-  await registerSecurity(app);
+  await registerSecurity(app, options.config);
   await app.register(websocket, {
     options: {
       maxPayload: options.config.voiceService.maxAudioBytes,

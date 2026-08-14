@@ -30,6 +30,61 @@ body {
 button {
   font: inherit;
 }
+.authenticated-shell {
+  position: relative;
+}
+.logout-button {
+  position: absolute;
+  z-index: 5;
+  top: 48px;
+  right: max(32px, calc((100vw - 1120px) / 2 + 18px));
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(7 11 16 / 70%);
+  color: var(--muted);
+  cursor: pointer;
+}
+.logout-button:hover,
+.logout-button:focus-visible {
+  color: var(--text);
+  border-color: var(--mint);
+}
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.auth-panel {
+  width: min(480px, 100%);
+  padding: 42px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  box-shadow: 0 28px 80px rgb(0 0 0 / 28%);
+  text-align: center;
+}
+.auth-panel .brand-mark {
+  margin: 0 auto 22px;
+}
+.auth-panel h1 {
+  margin: 8px 0 12px;
+  font-size: clamp(28px, 7vw, 42px);
+}
+.auth-copy,
+.development-label {
+  color: var(--muted);
+}
+.auth-copy {
+  min-height: 48px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+.development-label {
+  margin: 14px 0 0;
+  font-size: 12px;
+}
 .voice-shell {
   width: min(1120px, calc(100% - 32px));
   min-height: 100vh;

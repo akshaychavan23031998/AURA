@@ -11,22 +11,24 @@ The Gateway is AURA's external HTTP and WebSocket entry point. Phase 12 adds an 
 - Drizzle-managed PostgreSQL users, sessions, and refresh-token history
 - immediate active-session and active-user enforcement on protected requests
 - transactional refresh rotation, replay-family revocation, and idempotent logout
+- browser refresh-cookie transport with exact-Origin CSRF checks and narrowly scoped credentialed CORS
 - idempotent development-user bootstrap and development-session CLIs
 - authenticated `aura.voice.v1` WebSocket sessions with fixed PCM framing, server-side energy VAD, explicit turn states, correlation, heartbeat/idle cleanup, and chunked completed-WAV output
 
 ## Endpoints
 
-| Method | Path                    | Authentication | Purpose                                     |
-| ------ | ----------------------- | -------------- | ------------------------------------------- |
-| `GET`  | `/health`               | None           | Process liveness                            |
-| `GET`  | `/ready`                | None           | Gateway and PostgreSQL readiness            |
-| `POST` | `/api/v1/auth/refresh`  | Refresh body   | Rotate refresh token and issue access token |
-| `POST` | `/api/v1/auth/logout`   | Bearer         | Revoke the caller's current session         |
-| `POST` | `/api/v1/tools/execute` | Bearer         | Execute a validated Tool Service request    |
-| `POST` | `/api/v1/agent/respond` | Bearer         | Produce an unexecuted planning response     |
-| `POST` | `/api/v1/agent/run`     | Bearer         | Run deterministic orchestration             |
-| `POST` | `/api/v1/voice/run`     | Bearer         | Run one multipart voice turn                |
-| `GET`  | `/api/v1/voice/session` | Bearer upgrade | Open an `aura.voice.v1` WebSocket session   |
+| Method | Path                               | Authentication      | Purpose                                     |
+| ------ | ---------------------------------- | ------------------- | ------------------------------------------- |
+| `GET`  | `/health`                          | None                | Process liveness                            |
+| `GET`  | `/ready`                           | None                | Gateway and PostgreSQL readiness            |
+| `POST` | `/api/v1/auth/refresh`             | Refresh cookie/body | Rotate refresh token and issue access token |
+| `POST` | `/api/v1/auth/logout`              | Bearer              | Revoke the caller's current session         |
+| `POST` | `/api/v1/auth/development-session` | Development only    | Create the fixed local development identity |
+| `POST` | `/api/v1/tools/execute`            | Bearer              | Execute a validated Tool Service request    |
+| `POST` | `/api/v1/agent/respond`            | Bearer              | Produce an unexecuted planning response     |
+| `POST` | `/api/v1/agent/run`                | Bearer              | Run deterministic orchestration             |
+| `POST` | `/api/v1/voice/run`                | Bearer              | Run one multipart voice turn                |
+| `GET`  | `/api/v1/voice/session`            | Bearer upgrade      | Open an `aura.voice.v1` WebSocket session   |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
@@ -51,6 +53,7 @@ The service-local `.env.example` is the executable Gateway contract; the root ex
 | `AUTH_JWT_AUDIENCE`                 | `aura-api`              | non-empty, at most 128 characters      |
 | `AUTH_ACCESS_TOKEN_TTL_SECONDS`     | `900`                   | 60-3600 seconds                        |
 | `AUTH_SESSION_TTL_SECONDS`          | `604800`                | 3600-2592000 seconds                   |
+| `WEB_APP_ORIGIN`                    | `http://localhost:3000` | exact trusted browser origin           |
 | `DATABASE_URL`                      | none                    | required PostgreSQL URL                |
 | `VOICE_STREAM_MAX_FRAME_BYTES`      | `640`                   | maximum inbound binary frame           |
 | `VOICE_VAD_THRESHOLD`               | `500`                   | absolute PCM energy threshold          |
@@ -95,7 +98,9 @@ Access JWTs are short lived. Their `sub` identifies a persisted user and `sid` i
 
 Refresh tokens contain 32 cryptographically random bytes encoded as base64url. Only SHA-256 digests are stored because high-entropy opaque tokens do not need password hashing. Rotation locks and consumes the current record transactionally, stores a replacement, and preserves absolute session expiry. Reuse of consumed/revoked evidence returns the same generic 401 as other authentication failures and revokes the whole session family. Raw tokens and hashes never enter application logs.
 
-`/refresh` accepts `{ "refreshToken": "..." }` and returns a replacement access/refresh pair. `/logout` requires a current access token and returns 204. There are no login, signup, password, OAuth, or public user-creation endpoints. JSON refresh responses are for development/testing; a future browser design should prefer an HttpOnly, Secure, SameSite refresh cookie after explicit CSRF design.
+For browsers, `/refresh` reads and rotates `aura_refresh` from an HttpOnly cookie and returns only the short-lived access token. The replacement cookie is `SameSite=Strict`, scoped to `/api/v1/auth`, and `Secure` in production. Cookie-backed refresh/logout requests must carry the exact configured `WEB_APP_ORIGIN`; credentialed CORS is restricted to that same origin. The legacy `{ "refreshToken": "..." }` request and access/refresh response remain available for non-browser development tooling and compatibility.
+
+`/logout` requires a current access token, revokes its persisted session, clears the browser cookie, and returns 204. `/development-session` exists only when Gateway runs with `NODE_ENV=development`; it accepts no user or permission selection and always bootstraps the repository's fixed development identity. Production responds with 404. There are no login, signup, password, OAuth, or public user-creation endpoints.
 
 The fixed Phase 8 permission is `system.echo`; persistent RBAC is not implemented. Identity persistence establishes who the caller is and whether the session is active. Tool Service remains authoritative for tool-specific permission, risk, approval, and execution policy. External JWTs are never forwarded to Agent or Tool Service.
 

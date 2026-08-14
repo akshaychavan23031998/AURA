@@ -18,6 +18,7 @@
     "identity:dev-session": "tsx src/identity/create-dev-session.ts"
   },
   "dependencies": {
+    "@fastify/cors": "11.2.0",
     "@fastify/helmet": "13.1.0",
     "@fastify/multipart": "9.3.0",
     "@fastify/websocket": "11.2.0",

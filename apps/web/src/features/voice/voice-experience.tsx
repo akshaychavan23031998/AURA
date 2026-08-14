@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { resolveVoiceWebSocketUrl } from "./gateway-url";
-import { readAccessToken } from "./session-token";
 import { VoiceSessionClient } from "./voice-session-client";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { applyTransition } from "@/store/slices/voice.slice";
@@ -18,7 +17,13 @@ const labels = {
   error: "Needs attention",
 } as const;
 
-export function VoiceExperience() {
+export function VoiceExperience({
+  getAccessToken,
+  onSessionExpired,
+}: Readonly<{
+  getAccessToken(): string | undefined;
+  onSessionExpired(): void;
+}>) {
   const dispatch = useAppDispatch();
   const voice = useAppSelector((state) => state.voice);
   const clientRef = useRef<VoiceSessionClient | undefined>(undefined);
@@ -38,21 +43,20 @@ export function VoiceExperience() {
 
   const connect = async () => {
     if (clientRef.current !== undefined) return;
-    const token = readAccessToken();
-    if (token === undefined) {
-      dispatch(
-        applyTransition({
-          status: "error",
-          error:
-            "No authenticated session is available. Sign in before starting voice.",
-        }),
-      );
-      return;
-    }
     try {
-      const client = new VoiceSessionClient(resolveVoiceWebSocketUrl(), token, {
-        onTransition: (transition) => dispatch(applyTransition(transition)),
-      });
+      const accessToken = getAccessToken();
+      if (accessToken === undefined) {
+        onSessionExpired();
+        return;
+      }
+      const client = new VoiceSessionClient(
+        resolveVoiceWebSocketUrl(),
+        accessToken,
+        {
+          onTransition: (transition) => dispatch(applyTransition(transition)),
+          onSessionExpired,
+        },
+      );
       clientRef.current = client;
       await client.connect(navigator.language);
     } catch {

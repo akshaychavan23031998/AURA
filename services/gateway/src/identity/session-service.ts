@@ -12,6 +12,10 @@ export interface SessionManager {
   ): Promise<{ accessToken: string; refreshToken: string }>;
   revoke(sessionId: string, userId: string): Promise<void>;
   isActive(sessionId: string, userId: string): Promise<boolean>;
+  createDevelopmentSession(): Promise<{
+    accessToken: string;
+    refreshToken: string;
+  }>;
 }
 
 export class InvalidSessionError extends Error {}
@@ -62,5 +66,9 @@ export class SessionService implements SessionManager {
 
   public isActive(sessionId: string, userId: string): Promise<boolean> {
     return this.repository.isSessionActive(sessionId, userId, new Date());
+  }
+
+  public async createDevelopmentSession() {
+    return this.create(await this.repository.bootstrapDevelopmentUser());
   }
 }

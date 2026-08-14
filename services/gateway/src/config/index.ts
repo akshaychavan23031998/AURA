@@ -28,6 +28,7 @@ const DEVELOPMENT_DEFAULTS = {
   AUTH_JWT_AUDIENCE: "aura-api",
   AUTH_ACCESS_TOKEN_TTL_SECONDS: "900",
   AUTH_SESSION_TTL_SECONDS: "604800",
+  WEB_APP_ORIGIN: "http://localhost:3000",
 } as const;
 
 export interface AuthConfig {
@@ -83,6 +84,11 @@ export interface GatewayConfig {
     readonly interruptSettleTimeoutMs: number;
   };
   readonly auth: AuthConfig;
+  readonly browser: {
+    readonly origin: string;
+    readonly secureCookies: boolean;
+    readonly developmentSessionEnabled: boolean;
+  };
   readonly database: { readonly url: string };
 }
 
@@ -163,6 +169,11 @@ export function loadConfig(
       audience: parsed.AUTH_JWT_AUDIENCE,
       accessTokenTtlSeconds: parsed.AUTH_ACCESS_TOKEN_TTL_SECONDS,
       sessionTtlSeconds: parsed.AUTH_SESSION_TTL_SECONDS,
+    }),
+    browser: Object.freeze({
+      origin: parsed.WEB_APP_ORIGIN.replace(/\/$/, ""),
+      secureCookies: parsed.NODE_ENV === "production",
+      developmentSessionEnabled: parsed.NODE_ENV === "development",
     }),
     database: Object.freeze({ url: parsed.DATABASE_URL }),
   });

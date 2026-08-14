@@ -11,6 +11,7 @@ import {
 export interface VoiceSessionCallbacks {
   onTransition(transition: VoiceUiTransition): void;
   onEvent?(event: VoiceServerEvent): void;
+  onSessionExpired?(): void;
 }
 export interface VoiceSessionDependencies {
   createSocket(url: string, protocols: string[]): WebSocket;
@@ -138,6 +139,7 @@ export class VoiceSessionClient {
     this.socket = undefined;
     this.dependencies.playback.stop();
     await this.dependencies.microphone.stop();
+    if (event.code === 1008) this.callbacks.onSessionExpired?.();
     this.callbacks.onTransition(
       event.code === 1000
         ? { status: "disconnected" }

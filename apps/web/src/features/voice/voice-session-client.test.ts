@@ -48,6 +48,7 @@ function fixture() {
   } as unknown as VoicePlayback;
   const createSocket = vi.fn(() => socket as unknown as WebSocket);
   const transitions = vi.fn();
+  const onSessionExpired = vi.fn();
   const dependencies: VoiceSessionDependencies = {
     createSocket,
     microphone,
@@ -56,7 +57,7 @@ function fixture() {
   const client = new VoiceSessionClient(
     "ws://localhost:4000/api/v1/voice/session",
     "one.two.three",
-    { onTransition: transitions },
+    { onTransition: transitions, onSessionExpired },
     dependencies,
   );
   return {
@@ -66,6 +67,7 @@ function fixture() {
     playback,
     createSocket,
     transitions,
+    onSessionExpired,
     frame: () => onFrame?.(new ArrayBuffer(640)),
   };
 }
@@ -136,6 +138,7 @@ describe("VoiceSessionClient", () => {
         expect.objectContaining({ error: expect.stringMatching(/expired/i) }),
       ),
     );
+    expect(h.onSessionExpired).toHaveBeenCalledOnce();
   });
   it("closes and releases capture explicitly", async () => {
     const h = fixture();
@@ -143,6 +146,7 @@ describe("VoiceSessionClient", () => {
     h.socket.open();
     await h.client.disconnect();
     expect(h.microphone.stop).toHaveBeenCalled();
+    expect(h.playback.stop).toHaveBeenCalled();
     expect(h.transitions).toHaveBeenLastCalledWith({ status: "disconnected" });
   });
 });

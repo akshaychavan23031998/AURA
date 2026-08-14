@@ -1,5 +1,5 @@
-import { VoiceExperience } from "@/features/voice/voice-experience";
+import { AuthExperience } from "@/features/auth/auth-experience";
 
 export default function HomePage() {
-  return <VoiceExperience />;
+  return <AuthExperience />;
 }

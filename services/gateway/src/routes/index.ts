@@ -26,7 +26,8 @@ export function registerRoutes(
   config?: GatewayConfig,
 ): void {
   registerHealthRoutes(app, checkDatabase);
-  registerAuthRoutes(app, sessions, authenticate);
+  if (config !== undefined)
+    registerAuthRoutes(app, sessions, authenticate, config);
   registerToolExecutionRoute(app, toolClient, authenticate);
   registerAgentResponseRoute(app, agentClient, authenticate);
   registerAgentRunRoute(app, orchestrator, authenticate);
