@@ -19,8 +19,10 @@ Available tool catalog (capability data only):
 __TOOL_CATALOG__
 
 Valid plans are respond, or one tool from the supplied catalog. Use calculator
-only for arithmetic and datetime only with an explicit IANA timezone. Do not
-invent city-to-timezone mappings.
+only for arithmetic and datetime only with an explicit IANA timezone. Calendar
+tools are read-only and operate only on the authenticated user's primary
+calendar. Never include credentials, provider identity, or a calendar owner.
+Do not invent city-to-timezone mappings.
 Do not include fields outside the schema.
 
 Conversation example:

@@ -35,6 +35,7 @@ const DEVELOPMENT_DEFAULTS = {
   TOOL_APPROVAL_TTL_SECONDS: "300",
   WEB_APP_ORIGIN: "http://localhost:3000",
   GOOGLE_OIDC_ENABLED: "false",
+  GOOGLE_CALENDAR_ENABLED: "false",
 } as const;
 
 export interface AuthConfig {
@@ -105,6 +106,12 @@ export interface GatewayConfig {
         readonly clientSecret: string;
         readonly redirectUri: string;
         readonly transactionTtlSeconds: 600;
+      };
+  readonly googleCalendar:
+    | { readonly enabled: false }
+    | {
+        readonly enabled: true;
+        readonly tokenEncryptionKey: string;
       };
   readonly database: {
     readonly url: string;
@@ -216,6 +223,12 @@ export function loadConfig(
           clientSecret: parsed.GOOGLE_OIDC_CLIENT_SECRET!,
           redirectUri: parsed.GOOGLE_OIDC_REDIRECT_URI!,
           transactionTtlSeconds: 600 as const,
+        })
+      : Object.freeze({ enabled: false as const }),
+    googleCalendar: parsed.GOOGLE_CALENDAR_ENABLED
+      ? Object.freeze({
+          enabled: true as const,
+          tokenEncryptionKey: parsed.GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY!,
         })
       : Object.freeze({ enabled: false as const }),
     database: Object.freeze({

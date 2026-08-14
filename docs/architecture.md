@@ -247,6 +247,8 @@ Phase 20 introduces the approval lifecycle `PENDING → CONSUMED` or `PENDING �
 
 Realtime voice emits `approval.required` and enters `AWAITING_APPROVAL`. Incoming PCM receives `VOICE_APPROVAL_PENDING`; speech, transcript text, disconnect, and reconnect have no decision authority. An active socket is notified after the authenticated HTTP decision, allowing approved Agent output to proceed through TTS or rejection to settle safely. The notifier is ephemeral while the approval record remains durable.
 
+Phase 21 keeps identity and Calendar authorization deliberate. With `GOOGLE_CALENDAR_ENABLED=true`, the existing standards-based Authorization Code + PKCE flow requests identity scopes plus only `https://www.googleapis.com/auth/calendar.readonly` and offline access. The stable Google `sub` remains the binding key. Gateway AES-256-GCM encrypts the refresh credential in PostgreSQL, refreshes access tokens against Google's fixed token endpoint, and attaches a short-lived token only to the authenticated Gateway→Tool execution context. Tool Service owns Calendar policy, strict schemas, fixed Google Calendar API URLs, normalization, and safe errors. Browser, Agent, Voice Service, and logs never receive provider credentials.
+
 Capabilities enter through small milestones: define the contract and ownership, implement the simplest viable path, test it, and then operationalize it. Shared packages stay narrow and are created around demonstrated reuse rather than speculation.
 
 Testing will use four layers:

@@ -7,6 +7,7 @@ import { createAccessTokenVerifier } from "../src/auth/token-verifier.js";
 import { createDatabaseClient, type DatabaseClient } from "../src/db/client.js";
 import {
   externalIdentities,
+  providerCredentials,
   refreshTokens,
   toolApprovals,
   users,
@@ -18,6 +19,10 @@ import {
   SessionService,
 } from "../src/identity/session-service.js";
 import { digestRefreshToken } from "../src/identity/token.js";
+import {
+  GOOGLE_CALENDAR_READ_SCOPE,
+  ProviderCredentialRepository,
+} from "../src/identity/provider-credentials.js";
 import { testConfig } from "./test-config.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -189,6 +194,36 @@ describe.sequential("PostgreSQL identity persistence", () => {
     });
     const [binding] = await database.db.select().from(externalIdentities);
     expect(binding?.emailAtLinkTime).toBeNull();
+  });
+
+  it("encrypts Calendar credentials and isolates them by linked user", async () => {
+    const subject = "calendar-google-subject";
+    const userId = await repository.resolveExternalIdentity({
+      provider: "google",
+      subject,
+      emailVerified: false,
+    });
+    const otherUserId = await repository.bootstrapDevelopmentUser();
+    const credentials = new ProviderCredentialRepository(
+      database,
+      Buffer.alloc(32, 7),
+    );
+    await credentials.storeGoogle(
+      userId,
+      subject,
+      "provider-refresh-token-must-stay-secret",
+      [GOOGLE_CALENDAR_READ_SCOPE],
+    );
+    await expect(credentials.getGoogle(userId)).resolves.toMatchObject({
+      subject,
+      refreshToken: "provider-refresh-token-must-stay-secret",
+      scopes: [GOOGLE_CALENDAR_READ_SCOPE],
+    });
+    await expect(credentials.getGoogle(otherUserId)).resolves.toBeUndefined();
+    const [stored] = await database.db.select().from(providerCredentials);
+    expect(stored?.encryptedRefreshToken).not.toContain(
+      "provider-refresh-token-must-stay-secret",
+    );
   });
 
   it("resolves concurrent first login and rolls back the losing partial user", async () => {

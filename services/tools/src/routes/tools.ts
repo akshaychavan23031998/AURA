@@ -33,6 +33,7 @@ const executionRequestSchema = z
         grantedPermissions: z.array(z.string().min(1).max(128)).max(100),
         approval: approvalSchema.optional(),
         idempotencyKey: z.string().min(1).max(256).optional(),
+        providerAccessToken: z.string().min(16).max(4096).optional(),
       })
       .strict(),
   })
@@ -116,6 +117,11 @@ export function registerToolRoutes(
           ...(parsed.data.context.idempotencyKey === undefined
             ? {}
             : { idempotencyKey: parsed.data.context.idempotencyKey }),
+          ...(parsed.data.context.providerAccessToken === undefined
+            ? {}
+            : {
+                providerAccessToken: parsed.data.context.providerAccessToken,
+              }),
         };
         const result = await dependencies.executor.execute({
           tool: parsed.data.tool,

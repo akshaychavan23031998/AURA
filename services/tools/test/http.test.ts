@@ -40,11 +40,15 @@ describe("Tool Service HTTP contract", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json<{ tools: Record<string, unknown>[] }>();
     expect(body.tools.map((tool) => tool.name)).toEqual([
+      "calendar.events.get",
+      "calendar.events.list",
       "system.echo",
       "utility.calculator",
       "utility.datetime",
     ]);
-    expect(body.tools[1]).toMatchObject({
+    expect(
+      body.tools.find((tool) => tool.name === "utility.calculator"),
+    ).toMatchObject({
       version: 1,
       category: "utility",
       requiredPermissions: ["utility.calculator"],
@@ -53,7 +57,9 @@ describe("Tool Service HTTP contract", () => {
       idempotency: "IDEMPOTENT",
       enabled: true,
     });
-    expect(body.tools[2]).toMatchObject({
+    expect(
+      body.tools.find((tool) => tool.name === "utility.datetime"),
+    ).toMatchObject({
       requiredPermissions: ["utility.datetime"],
       idempotency: "NON_IDEMPOTENT",
     });
@@ -69,6 +75,8 @@ describe("Tool Service HTTP contract", () => {
     });
     const tools = response.json<{ tools: Record<string, unknown>[] }>().tools;
     expect(tools.map((tool) => tool.name)).toEqual([
+      "calendar.events.get",
+      "calendar.events.list",
       "system.echo",
       "utility.calculator",
       "utility.datetime",

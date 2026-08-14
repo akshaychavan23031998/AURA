@@ -129,3 +129,33 @@ export const toolApprovals = pgTable(
     index("tool_approvals_expires_at_idx").on(table.expiresAt),
   ],
 );
+
+export const providerCredentials = pgTable(
+  "provider_credentials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: externalIdentityProvider("provider").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+    grantedScopes: text("granted_scopes").array().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("provider_credentials_user_provider_uidx").on(
+      table.userId,
+      table.provider,
+    ),
+    uniqueIndex("provider_credentials_provider_subject_uidx").on(
+      table.provider,
+      table.providerSubject,
+    ),
+  ],
+);

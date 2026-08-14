@@ -127,7 +127,13 @@ class _RespondOutputPlan(BaseModel):
 class _CatalogTool(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: Literal["system.echo", "utility.calculator", "utility.datetime"]
+    name: Literal[
+        "system.echo",
+        "utility.calculator",
+        "utility.datetime",
+        "calendar.events.list",
+        "calendar.events.get",
+    ]
     input: dict[str, JsonValue]
 
     @model_validator(mode="after")
@@ -146,7 +152,7 @@ class _CatalogTool(BaseModel):
                 and isinstance(value, str)
                 and 1 <= len(value) <= 256
             )
-        else:
+        elif self.name == "utility.datetime":
             operation = self.input.get("operation")
             timezone = self.input.get("timezone")
             valid = (
@@ -154,6 +160,26 @@ class _CatalogTool(BaseModel):
                 and operation in {"current_time", "current_date"}
                 and isinstance(timezone, str)
                 and 1 <= len(timezone) <= 64
+            )
+        elif self.name == "calendar.events.list":
+            time_min = self.input.get("timeMin")
+            time_max = self.input.get("timeMax")
+            max_results = self.input.get("maxResults", 10)
+            valid = (
+                set(self.input).issubset({"timeMin", "timeMax", "maxResults"})
+                and set(self.input).issuperset({"timeMin", "timeMax"})
+                and isinstance(time_min, str)
+                and isinstance(time_max, str)
+                and isinstance(max_results, int)
+                and not isinstance(max_results, bool)
+                and 1 <= max_results <= 50
+            )
+        else:
+            event_id = self.input.get("eventId")
+            valid = (
+                set(self.input) == {"eventId"}
+                and isinstance(event_id, str)
+                and 1 <= len(event_id) <= 1024
             )
         if not valid:
             raise ValueError("Tool input does not match the trusted catalog")

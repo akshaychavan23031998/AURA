@@ -41,4 +41,32 @@ describe("OpenID-certified Google adapter", () => {
     expect(url.searchParams.has("access_type")).toBe(false);
     expect(url.searchParams.toString()).not.toMatch(/gmail|calendar|drive/i);
   });
+  it("requests only the deliberate Calendar read scope when enabled", async () => {
+    const configuration = new Configuration(
+      {
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+      },
+      providerConfig.clientId,
+      providerConfig.clientSecret,
+    );
+    const url = await new OpenIdClientGoogleProvider(
+      providerConfig,
+      configuration,
+      true,
+    ).createAuthorizationUrl(createOidcTransaction());
+    expect(url.searchParams.get("scope")?.split(" ")).toEqual([
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/calendar.readonly",
+    ]);
+    expect(url.searchParams.get("access_type")).toBe("offline");
+    expect(url.searchParams.get("prompt")).toBe("consent");
+    expect(url.searchParams.toString()).not.toMatch(
+      /calendar\.events|gmail|drive/i,
+    );
+  });
 });

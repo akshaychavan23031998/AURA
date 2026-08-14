@@ -14,4 +14,5 @@ export interface ExecutionContext {
   readonly grantedPermissions: readonly string[];
   readonly approval?: ApprovalAssertion;
   readonly idempotencyKey?: string;
+  readonly providerAccessToken?: string;
 }

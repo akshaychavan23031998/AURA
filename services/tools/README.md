@@ -106,3 +106,5 @@ Calculator uses a local explicit arithmetic parser—never `eval`, dynamic JavaS
 Calendar, Gmail, Contacts, external SaaS integrations, durable idempotency, and multi-tool planning remain future work.
 
 Phase 20 strengthens REQUIRED-policy enforcement with an exact-action proof containing approval ID, actor, tool, version, and a server-computed canonical input digest. `/tools/prepare` validates input and returns authoritative policy metadata over the internal authenticated channel. The production registry still contains only the three approval-free tools; required approval is exercised only by test registries.
+
+Phase 21 registers `calendar.events.list` and `calendar.events.get`. Both use category `productivity`, risk `READ`, approval `NONE`, idempotent execution, and exact permission `calendar.events.read`. Inputs are strict and bounded to the authenticated user's primary calendar; list windows cannot exceed 31 days and results cannot exceed 50. The adapter uses only `https://www.googleapis.com/calendar/v3`, normalizes event output, and never exposes raw Google payloads or credentials. No Calendar write endpoint or tool exists.

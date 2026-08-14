@@ -97,6 +97,16 @@ const environmentSchema = z
     GOOGLE_OIDC_ENABLED: z
       .enum(["true", "false"])
       .transform((value) => value === "true"),
+    GOOGLE_CALENDAR_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .string()
+        .refine((value) => Buffer.from(value, "base64").length === 32)
+        .optional(),
+    ),
     GOOGLE_OIDC_CLIENT_ID: optionalCredential,
     GOOGLE_OIDC_CLIENT_SECRET: optionalCredential,
     GOOGLE_OIDC_REDIRECT_URI: z.preprocess(
@@ -125,6 +135,12 @@ const environmentSchema = z
         path: ["WEB_APP_ORIGIN"],
         message: "WEB_APP_ORIGIN must use HTTPS in production",
       });
+    if (value.GOOGLE_CALENDAR_ENABLED && !value.GOOGLE_OIDC_ENABLED)
+      context.addIssue({
+        code: "custom",
+        path: ["GOOGLE_CALENDAR_ENABLED"],
+        message: "Google Calendar requires Google OIDC",
+      });
     if (!value.GOOGLE_OIDC_ENABLED) return;
     for (const key of [
       "GOOGLE_OIDC_CLIENT_ID",
@@ -146,6 +162,15 @@ const environmentSchema = z
         code: "custom",
         path: ["GOOGLE_OIDC_REDIRECT_URI"],
         message: "Google OIDC redirect URI must use HTTP or HTTPS",
+      });
+    if (
+      value.GOOGLE_CALENDAR_ENABLED &&
+      value.GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY === undefined
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY"],
+        message: "A 32-byte base64 encryption key is required for Calendar",
       });
     if (
       value.NODE_ENV === "production" &&

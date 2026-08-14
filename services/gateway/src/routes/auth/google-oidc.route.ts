@@ -10,6 +10,7 @@ import { OidcTransactionCodec } from "../../identity/oidc-transaction.js";
 import type { AuthenticatedExternalIdentity } from "../../identity/repositories.js";
 import type { SessionManager } from "../../identity/session-service.js";
 import { appendCookie, readCookie, setRefreshCookie } from "./cookies.js";
+import type { ProviderCredentialRepository } from "../../identity/provider-credentials.js";
 
 const TRANSACTION_COOKIE = "aura_google_oidc";
 const CALLBACK_PATH = "/api/v1/auth/google/callback";
@@ -26,6 +27,7 @@ export function registerGoogleOidcRoutes(
   provider: GoogleOidcProvider | undefined,
   identities: ExternalIdentityResolver,
   sessions: SessionManager,
+  providerCredentials?: ProviderCredentialRepository,
 ): void {
   if (!config.googleOidc.enabled || provider === undefined) return;
   const oidc = config.googleOidc;
@@ -76,8 +78,19 @@ export function registerGoogleOidcRoutes(
     if (code === undefined)
       return redirectResult(reply, config, "invalid_callback");
     try {
-      const identity = await provider.verifyCallback(callbackUrl, transaction);
+      const verified = await provider.verifyCallback(callbackUrl, transaction);
+      const identity = "identity" in verified ? verified.identity : verified;
       const userId = await identities.resolveExternalIdentity(identity);
+      if ("identity" in verified) {
+        if (providerCredentials === undefined)
+          throw new Error("Provider credential storage unavailable");
+        await providerCredentials.storeGoogle(
+          userId,
+          identity.subject,
+          verified.refreshToken,
+          verified.grantedScopes,
+        );
+      }
       const auraSession = await sessions.create(userId);
       setRefreshCookie(reply, auraSession.refreshToken, config);
       return redirectResult(reply, config, "success");

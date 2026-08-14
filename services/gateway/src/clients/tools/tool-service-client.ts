@@ -47,6 +47,7 @@ export interface TrustedToolContext {
   readonly actorId: string;
   readonly grantedPermissions: readonly string[];
   readonly approval?: TrustedApprovalProof;
+  readonly providerAccessToken?: string;
 }
 
 const preparationSchema = z
@@ -90,6 +91,7 @@ export function createToolServiceClient(
   config: GatewayConfig,
   fetchImplementation: typeof fetch = fetch,
   logger?: ToolClientLogger,
+  providerTokens?: { getAccessToken(actorId: string): Promise<string> },
 ): ToolServiceClient {
   return {
     async prepare(request, requestId) {
@@ -119,6 +121,9 @@ export function createToolServiceClient(
     async execute(request, context, requestId) {
       const startedAt = performance.now();
       try {
+        const providerAccessToken = request.tool.startsWith("calendar.")
+          ? await providerTokens?.getAccessToken(context.actorId)
+          : undefined;
         const response = await fetchImplementation(
           `${config.toolsService.url}/tools/execute`,
           {
@@ -133,7 +138,10 @@ export function createToolServiceClient(
               tool: request.tool,
               version: 1,
               input: request.input,
-              context,
+              context:
+                providerAccessToken === undefined
+                  ? context
+                  : { ...context, providerAccessToken },
             }),
             signal: AbortSignal.timeout(config.toolsService.timeoutMs),
           },
@@ -168,7 +176,7 @@ export function createToolServiceClient(
 
         const parsedError = errorSchema.safeParse(body);
         if (!parsedError.success) throw protocolError();
-        const allowedStatus = [400, 403, 404, 409, 500, 504].includes(
+        const allowedStatus = [400, 403, 404, 409, 429, 500, 504].includes(
           response.status,
         );
         if (!allowedStatus) throw protocolError();
@@ -228,6 +236,9 @@ function clientSafeToolMessage(code: string): string {
     TOOL_EXECUTION_FAILED: "Tool execution failed",
     TOOL_TIMEOUT: "Tool execution timed out",
     CALCULATION_INVALID: "Expression is invalid",
+    PROVIDER_REAUTH_REQUIRED: "Google Calendar connection is required",
+    CALENDAR_REQUEST_FAILED: "Google Calendar request failed",
+    CALENDAR_RATE_LIMITED: "Google Calendar rate limit reached",
   };
   return messages[code] ?? "Tool request failed";
 }

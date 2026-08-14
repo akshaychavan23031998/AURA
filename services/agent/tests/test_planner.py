@@ -15,6 +15,8 @@ def test_safe_catalog_contains_exactly_three_capabilities() -> None:
         "system.echo",
         "utility.calculator",
         "utility.datetime",
+        "calendar.events.list",
+        "calendar.events.get",
     ]
     assert all(
         set(item) == {"name", "description", "category", "inputSchema"}

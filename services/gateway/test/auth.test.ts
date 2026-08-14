@@ -104,7 +104,12 @@ describe("access-token verification", () => {
     );
     await expect(verifier.verify(token)).resolves.toMatchObject({
       actorId: "developer-001",
-      permissions: ["system.echo", "utility.calculator", "utility.datetime"],
+      permissions: [
+        "system.echo",
+        "utility.calculator",
+        "utility.datetime",
+        "calendar.events.read",
+      ],
       tokenExpiresAt: now + 900,
     });
   });

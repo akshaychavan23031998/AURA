@@ -2,6 +2,7 @@ export const allowedPermissions = [
   "system.echo",
   "utility.calculator",
   "utility.datetime",
+  "calendar.events.read",
 ] as const;
 export type AllowedPermission = (typeof allowedPermissions)[number];
 

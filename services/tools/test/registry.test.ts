@@ -29,7 +29,13 @@ describe("ToolRegistry", () => {
       createToolRegistry()
         .listMetadata()
         .map((tool) => tool.name),
-    ).toEqual(["system.echo", "utility.calculator", "utility.datetime"]);
+    ).toEqual([
+      "calendar.events.get",
+      "calendar.events.list",
+      "system.echo",
+      "utility.calculator",
+      "utility.datetime",
+    ]);
   });
   it("registers and retrieves an explicit tool", () => {
     const registry = new ToolRegistry();

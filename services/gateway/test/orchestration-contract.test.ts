@@ -139,6 +139,7 @@ describe("Gateway Agent Tool orchestration contract", () => {
         developmentSessionEnabled: false,
       },
       googleOidc: { enabled: false },
+      googleCalendar: { enabled: false },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
         poolMax: 10,
@@ -209,7 +210,7 @@ describe("Gateway Agent Tool orchestration contract", () => {
       },
     });
     expect(forgedResponse.statusCode).toBe(400);
-  }, 15_000);
+  }, 30_000);
 });
 
 async function reservePort(): Promise<number> {

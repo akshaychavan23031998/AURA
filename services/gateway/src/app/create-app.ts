@@ -49,6 +49,10 @@ import {
 import type { ExternalIdentityResolver } from "../routes/auth/google-oidc.route.js";
 import { ApprovalRepository } from "../approvals/approval-repository.js";
 import { ApprovalRealtimeRegistry } from "../approvals/approval-realtime-registry.js";
+import {
+  GoogleProviderAccessTokenService,
+  ProviderCredentialRepository,
+} from "../identity/provider-credentials.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -96,6 +100,12 @@ export async function createApp(
   const database = options.database ?? createDatabaseClient(options.config);
   const identityRepository = new IdentityRepository(database);
   const approvalRepository = new ApprovalRepository(database);
+  const providerCredentials = options.config.googleCalendar.enabled
+    ? new ProviderCredentialRepository(
+        database,
+        Buffer.from(options.config.googleCalendar.tokenEncryptionKey, "base64"),
+      )
+    : undefined;
   const realtimeApprovals = new ApprovalRealtimeRegistry();
   const sessions =
     options.sessionService ??
@@ -103,11 +113,23 @@ export async function createApp(
   const googleOidcProvider =
     options.googleOidcProvider ??
     (options.config.googleOidc.enabled
-      ? new OpenIdClientGoogleProvider(options.config.googleOidc)
+      ? new OpenIdClientGoogleProvider(
+          options.config.googleOidc,
+          undefined,
+          options.config.googleCalendar.enabled,
+        )
       : undefined);
+  const providerTokens =
+    providerCredentials !== undefined && options.config.googleOidc.enabled
+      ? new GoogleProviderAccessTokenService(
+          providerCredentials,
+          options.config.googleOidc.clientId,
+          options.config.googleOidc.clientSecret,
+        )
+      : undefined;
   const toolClient =
     options.toolClient ??
-    createToolServiceClient(options.config, fetch, app.log);
+    createToolServiceClient(options.config, fetch, app.log, providerTokens);
   const agentClient =
     options.agentClient ??
     createAgentServiceClient(options.config, fetch, app.log);
@@ -158,6 +180,7 @@ export async function createApp(
     approvalRepository,
     options.config.approvals?.ttlSeconds ?? 300,
     realtimeApprovals,
+    providerCredentials,
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);

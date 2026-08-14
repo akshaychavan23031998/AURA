@@ -140,6 +140,10 @@ async def test_multilingual_utf8_output(text: str) -> None:
 
 def test_system_prompt_contains_only_safe_catalog_and_boundaries() -> None:
     assert "system.echo" in SYSTEM_PROMPT
+    assert "calendar.events.list" in SYSTEM_PROMPT
+    assert "calendar.events.get" in SYSTEM_PROMPT
+    assert "calendar.readonly" not in SYSTEM_PROMPT
+    assert "providerAccessToken" not in SYSTEM_PROMPT
     assert "shell.execute" not in SYSTEM_PROMPT
     assert "permission grants" not in SYSTEM_PROMPT
     assert "untrusted data" in SYSTEM_PROMPT

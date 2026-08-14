@@ -46,4 +46,37 @@ AGENT_TOOL_CATALOG: Final = (
             "required": ["operation", "timezone"],
         },
     },
+    {
+        "name": "calendar.events.list",
+        "description": (
+            "Lists events from the authenticated user's primary Google Calendar "
+            "within a bounded time window."
+        ),
+        "category": "productivity",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "timeMin": {"type": "string", "format": "date-time"},
+                "timeMax": {"type": "string", "format": "date-time"},
+                "maxResults": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            "required": ["timeMin", "timeMax"],
+        },
+    },
+    {
+        "name": "calendar.events.get",
+        "description": (
+            "Gets one event from the authenticated user's primary Google Calendar."
+        ),
+        "category": "productivity",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "eventId": {"type": "string", "minLength": 1, "maxLength": 1024}
+            },
+            "required": ["eventId"],
+        },
+    },
 )

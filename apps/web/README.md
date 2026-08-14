@@ -2,6 +2,8 @@
 
 Phase 20 integrates an accessible approval card into the live protocol-driven voice experience. `approval.required` supplies only the approval ID, safe title/preview, and expiry; deliberate Approve or Reject activation calls the fixed authenticated Gateway route. Loading, rejection, completion, expiry, session failure, and sanitized error states are represented. Transcript text—including “yes” or “approve”—never invokes the approval API, and the UI never resubmits tool arguments or trusted policy metadata.
 
+When the Gateway explicitly enables Phase 21 Calendar access, the existing Google navigation consent includes only Google Calendar read-only access and offline token issuance. The browser still receives only the AURA session cookie/access-token lifecycle; Google access and refresh tokens never enter frontend JavaScript, Redux, storage, URLs, or voice events.
+
 The Phase 16 web application provides Google account entry, browser session bootstrap, and the authenticated `aura.voice.v1` experience without owning identity, orchestration, or authorization decisions.
 
 ## Authentication and session lifecycle

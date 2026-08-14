@@ -16,8 +16,16 @@ export interface GoogleOidcProvider {
   verifyCallback(
     callbackUrl: URL,
     transaction: OidcTransaction,
-  ): Promise<AuthenticatedExternalIdentity>;
+  ): Promise<GoogleOidcCallbackResult>;
 }
+
+export type GoogleOidcCallbackResult =
+  | AuthenticatedExternalIdentity
+  | {
+      readonly identity: AuthenticatedExternalIdentity;
+      readonly refreshToken: string;
+      readonly grantedScopes: readonly string[];
+    };
 
 const claimsSchema = z.object({
   sub: z.string().min(1).max(255),
@@ -35,6 +43,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
       { enabled: true }
     >,
     configuration?: oidc.Configuration,
+    private readonly calendarEnabled = false,
   ) {
     if (configuration !== undefined)
       this.configuration = Promise.resolve(configuration);
@@ -47,7 +56,12 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
     return oidc.buildAuthorizationUrl(configuration, {
       redirect_uri: this.config.redirectUri,
       response_type: "code",
-      scope: "openid email profile",
+      scope: this.calendarEnabled
+        ? "openid email profile https://www.googleapis.com/auth/calendar.readonly"
+        : "openid email profile",
+      ...(this.calendarEnabled
+        ? { access_type: "offline", prompt: "consent" }
+        : {}),
       state: transaction.state,
       nonce: transaction.nonce,
       code_challenge: await oidc.calculatePKCECodeChallenge(
@@ -60,7 +74,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
   public async verifyCallback(
     callbackUrl: URL,
     transaction: OidcTransaction,
-  ): Promise<AuthenticatedExternalIdentity> {
+  ): Promise<GoogleOidcCallbackResult> {
     const tokens = await oidc.authorizationCodeGrant(
       await this.getConfiguration(),
       callbackUrl,
@@ -74,7 +88,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
     );
     const parsed = claimsSchema.safeParse(tokens.claims());
     if (!parsed.success) throw new Error("Invalid Google identity response");
-    return Object.freeze({
+    const identity = Object.freeze({
       provider: "google" as const,
       subject: parsed.data.sub,
       emailVerified: parsed.data.email_verified === true,
@@ -84,6 +98,17 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
       ...(parsed.data.name === undefined
         ? {}
         : { displayName: parsed.data.name }),
+    });
+    if (!this.calendarEnabled) return identity;
+    const refreshToken = tokens.refreshToken;
+    if (typeof refreshToken !== "string" || refreshToken.length < 16)
+      throw new Error("Google did not return an offline credential");
+    return Object.freeze({
+      identity,
+      refreshToken,
+      grantedScopes: Object.freeze([
+        "https://www.googleapis.com/auth/calendar.readonly",
+      ]),
     });
   }
 

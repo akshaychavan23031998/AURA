@@ -9,7 +9,7 @@ export interface ToolDefinition<Input, Output> {
   readonly version: number;
   readonly title: string;
   readonly description: string;
-  readonly category: "system" | "utility";
+  readonly category: "system" | "utility" | "productivity";
   readonly inputSchema: z.ZodType<Input>;
   readonly outputSchema: z.ZodType<Output>;
   readonly requiredPermissions: readonly ToolPermission[];
@@ -28,7 +28,7 @@ export interface ToolMetadata {
   readonly version: number;
   readonly title: string;
   readonly description: string;
-  readonly category: "system" | "utility";
+  readonly category: "system" | "utility" | "productivity";
   readonly requiredPermissions: readonly string[];
   readonly riskLevel: ToolRisk;
   readonly approvalPolicy: "NONE" | "REQUIRED";
@@ -40,6 +40,6 @@ export interface ToolMetadata {
 export interface AgentToolCapability {
   readonly name: string;
   readonly description: string;
-  readonly category: "system" | "utility";
+  readonly category: "system" | "utility" | "productivity";
   readonly inputSchema: unknown;
 }

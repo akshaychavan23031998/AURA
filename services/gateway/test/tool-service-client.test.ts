@@ -10,6 +10,47 @@ const context = {
 };
 
 describe("Tool Service client", () => {
+  it("resolves Calendar credentials by trusted actor and forwards only internally", async () => {
+    const getAccessToken = vi
+      .fn()
+      .mockResolvedValue("short-lived-google-access-token");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status: "success",
+        tool: "calendar.events.list",
+        version: 1,
+        data: { events: [] },
+      }),
+    );
+    await createToolServiceClient(testConfig, fetchMock, undefined, {
+      getAccessToken,
+    }).execute(
+      {
+        tool: "calendar.events.list",
+        input: {
+          timeMin: "2026-08-14T00:00:00Z",
+          timeMax: "2026-08-15T00:00:00Z",
+        },
+      },
+      {
+        actorId: "trusted-actor",
+        grantedPermissions: ["calendar.events.read"],
+      },
+      "calendar-request-1",
+    );
+    expect(getAccessToken).toHaveBeenCalledWith("trusted-actor");
+    const rawBody = fetchMock.mock.calls[0]?.[1]?.body;
+    expect(typeof rawBody).toBe("string");
+    const body = JSON.parse(typeof rawBody === "string" ? rawBody : "{}") as {
+      context: { providerAccessToken?: string };
+      input: Record<string, unknown>;
+    };
+    expect(body.context.providerAccessToken).toBe(
+      "short-lived-google-access-token",
+    );
+    expect(body.input).not.toHaveProperty("providerAccessToken");
+  });
+
   it("authenticates, propagates correlation, and validates success", async () => {
     const fetchMock = vi.fn<typeof fetch>(() =>
       Promise.resolve(
