@@ -5,6 +5,7 @@ export const TOOL_PERMISSIONS = [
   "calendar.events.read",
   "calendar.events.write",
   "gmail.messages.read",
+  "gmail.messages.send",
 ] as const;
 
 export type ToolPermission = (typeof TOOL_PERMISSIONS)[number];

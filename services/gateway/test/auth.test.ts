@@ -111,6 +111,7 @@ describe("access-token verification", () => {
         "calendar.events.read",
         "calendar.events.write",
         "gmail.messages.read",
+        "gmail.messages.send",
       ],
       tokenExpiresAt: now + 900,
     });

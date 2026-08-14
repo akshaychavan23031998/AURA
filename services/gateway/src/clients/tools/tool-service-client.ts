@@ -93,7 +93,10 @@ export function createToolServiceClient(
   fetchImplementation: typeof fetch = fetch,
   logger?: ToolClientLogger,
   providerTokens?: {
-    getAccessToken(actorId: string, requiredScope?: string): Promise<string>;
+    getAccessToken(
+      actorId: string,
+      requiredScope?: string | readonly string[],
+    ): Promise<string>;
   },
 ): ToolServiceClient {
   return {
@@ -226,7 +229,16 @@ export function createToolServiceClient(
   };
 }
 
-function requiredGoogleScope(toolName: string): string | undefined {
+function requiredGoogleScope(
+  toolName: string,
+): string | readonly string[] | undefined {
+  if (toolName === "gmail.messages.reply")
+    return [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+    ];
+  if (toolName === "gmail.messages.send")
+    return "https://www.googleapis.com/auth/gmail.send";
   if (toolName.startsWith("gmail."))
     return "https://www.googleapis.com/auth/gmail.readonly";
   return new Set([

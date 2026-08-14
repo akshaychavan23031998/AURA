@@ -68,7 +68,10 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
             ]
           : []),
         ...(this.gmailEnabled
-          ? ["https://www.googleapis.com/auth/gmail.readonly"]
+          ? [
+              "https://www.googleapis.com/auth/gmail.readonly",
+              "https://www.googleapis.com/auth/gmail.send",
+            ]
           : []),
       ].join(" "),
       ...(this.calendarEnabled || this.gmailEnabled
@@ -126,7 +129,10 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
             ]
           : []),
         ...(this.gmailEnabled
-          ? ["https://www.googleapis.com/auth/gmail.readonly"]
+          ? [
+              "https://www.googleapis.com/auth/gmail.readonly",
+              "https://www.googleapis.com/auth/gmail.send",
+            ]
           : []),
       ]),
     });

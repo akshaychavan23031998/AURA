@@ -138,6 +138,59 @@ describe("Tool Service client", () => {
     );
   });
 
+  it("resolves the narrow Gmail send scope for outbound messages", async () => {
+    const tool = "gmail.messages.send";
+    const getAccessToken = vi.fn().mockResolvedValue("gmail-access-token");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status: "success",
+        tool,
+        version: 1,
+        data: { messageId: "sent-1", threadId: "thread-1", sent: true },
+      }),
+    );
+    await createToolServiceClient(testConfig, fetchMock, undefined, {
+      getAccessToken,
+    }).execute(
+      { tool, input: {} },
+      {
+        actorId: "trusted-actor",
+        grantedPermissions: ["gmail.messages.send"],
+      },
+      "gmail-send-request",
+    );
+    expect(getAccessToken).toHaveBeenCalledWith(
+      "trusted-actor",
+      "https://www.googleapis.com/auth/gmail.send",
+    );
+  });
+
+  it("requires both Gmail read and send scopes before replying", async () => {
+    const getAccessToken = vi.fn().mockResolvedValue("gmail-access-token");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status: "success",
+        tool: "gmail.messages.reply",
+        version: 1,
+        data: { messageId: "reply-1", threadId: "thread-1", sent: true },
+      }),
+    );
+    await createToolServiceClient(testConfig, fetchMock, undefined, {
+      getAccessToken,
+    }).execute(
+      { tool: "gmail.messages.reply", input: {} },
+      {
+        actorId: "trusted-actor",
+        grantedPermissions: ["gmail.messages.send"],
+      },
+      "gmail-reply-request",
+    );
+    expect(getAccessToken).toHaveBeenCalledWith("trusted-actor", [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+    ]);
+  });
+
   it("maps trusted Tool errors without raw downstream messages", async () => {
     const fetchMock = vi.fn<typeof fetch>(() =>
       Promise.resolve(

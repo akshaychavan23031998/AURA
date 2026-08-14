@@ -70,7 +70,7 @@ describe("OpenID-certified Google adapter", () => {
       /gmail|drive|calendar\.acl/i,
     );
   });
-  it("adds only Gmail read-only scope when Gmail is enabled", async () => {
+  it("adds only Gmail read and narrow send scopes when Gmail is enabled", async () => {
     const configuration = new Configuration(
       {
         issuer: "https://accounts.google.com",
@@ -92,10 +92,11 @@ describe("OpenID-certified Google adapter", () => {
       "email",
       "profile",
       "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
     ]);
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.toString()).not.toMatch(
-      /gmail\.modify|gmail\.send|mail\.google|drive|calendar/i,
+      /gmail\.modify|mail\.google|drive|calendar/i,
     );
   });
 });

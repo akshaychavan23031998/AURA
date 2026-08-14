@@ -4,7 +4,7 @@ Phase 20 integrates an accessible approval card into the live protocol-driven vo
 
 When Calendar access is enabled, Google consent includes the official Calendar read and event-write scopes plus offline token issuance. The browser still receives only AURA session credentials; Google tokens never enter frontend JavaScript, Redux, storage, URLs, or voice events. Calendar create, update, and delete use the existing accessible `ApprovalCard`: merely rendering or reading an approval cannot execute, and voice phrases have no approval authority. Only an explicit authenticated Approve click can resume the exact persisted action; the browser never resubmits event data or policy metadata.
 
-When `GOOGLE_GMAIL_ENABLED` is configured, Google consent additionally requests only `gmail.readonly`. Gmail credentials and message API access remain server-side; the browser continues to receive only ordinary AURA responses. Existing users without Gmail consent receive a safe reconnect requirement rather than any client-side token flow.
+When `GOOGLE_GMAIL_ENABLED` is configured, Google consent requests only `gmail.readonly` and narrow `gmail.send`. Gmail credentials remain server-side. Send/reply proposals render through the existing generic ApprovalCard; the browser submits only the approval decision and never recipient, body, MIME, provider token, or proof. Existing users missing either required scope receive a safe reconnect requirement.
 
 The Phase 16 web application provides Google account entry, browser session bootstrap, and the authenticated `aura.voice.v1` experience without owning identity, orchestration, or authorization decisions.
 

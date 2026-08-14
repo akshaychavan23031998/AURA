@@ -4,7 +4,7 @@ The Agent Service is AURA's internal planning boundary. Phase 9 preserves the de
 
 Phase 18 centralizes the planner's tool knowledge in a sanitized capability catalog containing only name, description, category, and input schema. Security policy and execution authority are absent. Tool Service remains authoritative, Gateway orchestrates, and the Agent proposes at most one tool.
 
-The catalog permits the three local tools, five Calendar tools, and read-only `gmail.messages.list`/`gmail.messages.get`. Gmail capabilities expose only bounded list/get schemas—not OAuth scopes, permissions, credentials, provider state, or user IDs. The deterministic planner supports narrow latest/count/plain-search/read-by-ID phrases; ambiguous reads require an explicit message ID. All successful calls return through the existing one-tool continuation.
+The catalog permits the three local tools, five Calendar tools, and Gmail list/get/send/reply. Gmail capabilities expose only bounded action schemas—not OAuth scopes, permissions, approval policy, credentials, provider state, or user IDs. Deterministic development syntax supports bounded reads plus explicit single-recipient send and message-ID reply forms; incomplete actions require clarification. The Agent only proposes writes and cannot approve them. All successful calls return through the existing one-tool continuation.
 
 ## Planner modes
 

@@ -22,6 +22,8 @@ def test_safe_catalog_contains_exactly_three_capabilities() -> None:
         "calendar.events.delete",
         "gmail.messages.list",
         "gmail.messages.get",
+        "gmail.messages.send",
+        "gmail.messages.reply",
     ]
     assert all(
         set(item) == {"name", "description", "category", "inputSchema"}
@@ -258,6 +260,70 @@ async def test_gmail_results_continue_to_final_response() -> None:
     )
     assert isinstance(fetched.plan, RespondPlan)
     assert fetched.response == "The email subject is: Interview"
+
+
+@pytest.mark.asyncio
+async def test_gmail_send_and_reply_plans_are_explicit_and_narrow() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    send = await planner.plan(
+        AgentRequest(
+            message=(
+                "send email to alice@example.com subject Project update "
+                "body Deployment is complete"
+            )
+        )
+    )
+    assert isinstance(send.plan, ToolPlan)
+    assert send.plan.tool.name == "gmail.messages.send"
+    assert send.plan.tool.input == {
+        "to": "alice@example.com",
+        "subject": "Project update",
+        "body": "Deployment is complete",
+    }
+    reply = await planner.plan(
+        AgentRequest(message="reply to gmail message abc123 with Thanks")
+    )
+    assert isinstance(reply.plan, ToolPlan)
+    assert reply.plan.tool.name == "gmail.messages.reply"
+    assert reply.plan.tool.input == {"messageId": "abc123", "body": "Thanks"}
+    assert isinstance(
+        (await planner.plan(AgentRequest(message="send email"))).plan, RespondPlan
+    )
+    assert isinstance(
+        (
+            await planner.plan(AgentRequest(message="reply to gmail message abc123"))
+        ).plan,
+        RespondPlan,
+    )
+
+
+@pytest.mark.asyncio
+async def test_gmail_send_and_reply_results_continue_once() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    send = await planner.plan(
+        AgentRequest(
+            message="send email",
+            toolResult=ToolExecutionResultContext(
+                tool="gmail.messages.send",
+                status="success",
+                data={"messageId": "sent-1", "threadId": "thread-1", "sent": True},
+            ),
+        )
+    )
+    reply = await planner.plan(
+        AgentRequest(
+            message="reply",
+            toolResult=ToolExecutionResultContext(
+                tool="gmail.messages.reply",
+                status="success",
+                data={"messageId": "reply-1", "threadId": "thread-1", "sent": True},
+            ),
+        )
+    )
+    assert isinstance(send.plan, RespondPlan)
+    assert send.response == "The email was sent successfully."
+    assert isinstance(reply.plan, RespondPlan)
+    assert reply.response == "The reply was sent successfully."
 
 
 @pytest.mark.asyncio

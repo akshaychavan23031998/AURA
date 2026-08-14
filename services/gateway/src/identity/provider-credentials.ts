@@ -11,6 +11,8 @@ export const GOOGLE_CALENDAR_WRITE_SCOPE =
   "https://www.googleapis.com/auth/calendar.events";
 export const GOOGLE_GMAIL_READ_SCOPE =
   "https://www.googleapis.com/auth/gmail.readonly";
+export const GOOGLE_GMAIL_SEND_SCOPE =
+  "https://www.googleapis.com/auth/gmail.send";
 const tokenSchema = z
   .object({ access_token: z.string().min(16).max(4096) })
   .passthrough();
@@ -92,10 +94,15 @@ export class GoogleProviderAccessTokenService {
   ) {}
   public async getAccessToken(
     actorId: string,
-    requiredScope = GOOGLE_CALENDAR_READ_SCOPE,
+    requiredScope: string | readonly string[] = GOOGLE_CALENDAR_READ_SCOPE,
   ): Promise<string> {
     const credential = await this.credentials.getGoogle(actorId);
-    if (credential === undefined || !credential.scopes.includes(requiredScope))
+    const requiredScopes =
+      typeof requiredScope === "string" ? [requiredScope] : requiredScope;
+    if (
+      credential === undefined ||
+      requiredScopes.some((scope) => !credential.scopes.includes(scope))
+    )
       throw reauth();
     let response: Response;
     try {
@@ -152,6 +159,6 @@ function reauth(): AppError {
   return new AppError({
     code: "PROVIDER_REAUTH_REQUIRED",
     httpStatus: 409,
-    message: "Google Calendar connection is required",
+    message: "Google connection is required",
   });
 }

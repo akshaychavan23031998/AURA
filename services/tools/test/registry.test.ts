@@ -37,6 +37,8 @@ describe("ToolRegistry", () => {
       "calendar.events.update",
       "gmail.messages.get",
       "gmail.messages.list",
+      "gmail.messages.reply",
+      "gmail.messages.send",
       "system.echo",
       "utility.calculator",
       "utility.datetime",

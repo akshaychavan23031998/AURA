@@ -168,4 +168,39 @@ AGENT_TOOL_CATALOG: Final = (
             "required": ["messageId"],
         },
     },
+    {
+        "name": "gmail.messages.send",
+        "description": (
+            "Sends one plain-text email to one explicit email address after the user "
+            "confirms the action in the trusted approval interface."
+        ),
+        "category": "communication",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "to": {"type": "string", "format": "email", "maxLength": 320},
+                "subject": {"type": "string", "minLength": 1, "maxLength": 200},
+                "body": {"type": "string", "minLength": 1, "maxLength": 20000},
+            },
+            "required": ["to", "subject", "body"],
+        },
+    },
+    {
+        "name": "gmail.messages.reply",
+        "description": (
+            "Replies with plain text to one Gmail message identified by its exact "
+            "message ID after the user confirms the action."
+        ),
+        "category": "communication",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "messageId": {"type": "string", "minLength": 1, "maxLength": 256},
+                "body": {"type": "string", "minLength": 1, "maxLength": 20000},
+            },
+            "required": ["messageId", "body"],
+        },
+    },
 )

@@ -3,6 +3,7 @@ import {
   GOOGLE_CALENDAR_READ_SCOPE,
   GOOGLE_CALENDAR_WRITE_SCOPE,
   GOOGLE_GMAIL_READ_SCOPE,
+  GOOGLE_GMAIL_SEND_SCOPE,
   GoogleProviderAccessTokenService,
 } from "../src/identity/provider-credentials.js";
 
@@ -60,13 +61,22 @@ describe("GoogleProviderAccessTokenService", () => {
     );
     await expect(revoked.getAccessToken("actor-1")).rejects.toMatchObject({
       code: "PROVIDER_REAUTH_REQUIRED",
-      message: "Google Calendar connection is required",
+      message: "Google connection is required",
     });
     await expect(
       revoked.getAccessToken("actor-1", GOOGLE_CALENDAR_WRITE_SCOPE),
     ).rejects.toMatchObject({ code: "PROVIDER_REAUTH_REQUIRED" });
     await expect(
       revoked.getAccessToken("actor-1", GOOGLE_GMAIL_READ_SCOPE),
+    ).rejects.toMatchObject({ code: "PROVIDER_REAUTH_REQUIRED" });
+    await expect(
+      revoked.getAccessToken("actor-1", GOOGLE_GMAIL_SEND_SCOPE),
+    ).rejects.toMatchObject({ code: "PROVIDER_REAUTH_REQUIRED" });
+    await expect(
+      revoked.getAccessToken("actor-1", [
+        GOOGLE_GMAIL_READ_SCOPE,
+        GOOGLE_GMAIL_SEND_SCOPE,
+      ]),
     ).rejects.toMatchObject({ code: "PROVIDER_REAUTH_REQUIRED" });
   });
 });

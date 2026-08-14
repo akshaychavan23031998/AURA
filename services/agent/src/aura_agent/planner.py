@@ -93,6 +93,16 @@ class DeterministicDevelopmentPlanner:
                 ):
                     raise ValueError("Invalid Gmail message result")
                 response = f"The email subject is: {message['subject']}"
+            elif result.tool in {"gmail.messages.send", "gmail.messages.reply"}:
+                message_id = result.data.get("messageId")
+                sent = result.data.get("sent")
+                if not isinstance(message_id, str) or sent is not True:
+                    raise ValueError("Invalid Gmail send result")
+                response = (
+                    "The email was sent successfully."
+                    if result.tool == "gmail.messages.send"
+                    else "The reply was sent successfully."
+                )
             else:
                 response = "Your calendar request completed successfully."
             return AgentResult(
@@ -199,13 +209,31 @@ class DeterministicDevelopmentPlanner:
             tool_name, tool_input = gmail
             return AgentResult(
                 intent="propose_tool",
-                response="I can read that Gmail information.",
+                response=(
+                    "I can perform that Gmail action after your explicit approval."
+                    if tool_name in {"gmail.messages.send", "gmail.messages.reply"}
+                    else "I can read that Gmail information."
+                ),
                 plan=ToolPlan(tool=ToolProposal(name=tool_name, input=tool_input)),
             )
         if lowered in {"read email", "get email"}:
             return AgentResult(
                 intent="respond",
                 response="Please provide the exact Gmail message ID.",
+                plan=RespondPlan(),
+            )
+        if lowered.startswith("send email"):
+            return AgentResult(
+                intent="respond",
+                response=(
+                    "Please provide one exact recipient, subject, and plain-text body."
+                ),
+                plan=RespondPlan(),
+            )
+        if lowered.startswith("reply to gmail message"):
+            return AgentResult(
+                intent="respond",
+                response="Please provide the exact Gmail message ID and reply body.",
                 plan=RespondPlan(),
             )
 
@@ -236,6 +264,8 @@ class _CatalogTool(BaseModel):
         "calendar.events.delete",
         "gmail.messages.list",
         "gmail.messages.get",
+        "gmail.messages.send",
+        "gmail.messages.reply",
     ]
     input: dict[str, JsonValue]
 
@@ -348,12 +378,40 @@ class _CatalogTool(BaseModel):
                 and (query is None or 1 <= len(query.strip()) <= 200)
                 and (query is None or ":" not in query)
             )
-        else:
+        elif self.name == "gmail.messages.get":
             message_id = self.input.get("messageId")
             valid = (
                 set(self.input) == {"messageId"}
                 and isinstance(message_id, str)
                 and 1 <= len(message_id.strip()) <= 256
+            )
+        elif self.name == "gmail.messages.send":
+            to = self.input.get("to")
+            subject = self.input.get("subject")
+            body = self.input.get("body")
+            valid = (
+                set(self.input) == {"to", "subject", "body"}
+                and isinstance(to, str)
+                and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", to) is not None
+                and len(to) <= 320
+                and "\r" not in to
+                and "\n" not in to
+                and isinstance(subject, str)
+                and 1 <= len(subject.strip()) <= 200
+                and "\r" not in subject
+                and "\n" not in subject
+                and isinstance(body, str)
+                and 1 <= len(body) <= 20000
+            )
+        else:
+            message_id = self.input.get("messageId")
+            body = self.input.get("body")
+            valid = (
+                set(self.input) == {"messageId", "body"}
+                and isinstance(message_id, str)
+                and re.fullmatch(r"[A-Za-z0-9_-]{1,256}", message_id) is not None
+                and isinstance(body, str)
+                and 1 <= len(body) <= 20000
             )
         if not valid:
             raise ValueError("Tool input does not match the trusted catalog")
@@ -671,7 +729,15 @@ def _explicit_local_interval(match: re.Match[str]) -> tuple[str, str] | None:
 def _parse_deterministic_gmail(
     message: str,
 ) -> (
-    tuple[Literal["gmail.messages.list", "gmail.messages.get"], dict[str, JsonValue]]
+    tuple[
+        Literal[
+            "gmail.messages.list",
+            "gmail.messages.get",
+            "gmail.messages.send",
+            "gmail.messages.reply",
+        ],
+        dict[str, JsonValue],
+    ]
     | None
 ):
     lowered = message.casefold()
@@ -699,4 +765,27 @@ def _parse_deterministic_gmail(
     )
     if get_match is not None:
         return "gmail.messages.get", {"messageId": get_match.group("message_id")}
+    send_match = re.fullmatch(
+        r"send email to (?P<to>\S+@\S+\.\S+) subject "
+        r"(?P<subject>.+?) body (?P<body>.+)",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if send_match is not None:
+        return "gmail.messages.send", {
+            "to": send_match.group("to"),
+            "subject": send_match.group("subject").strip(),
+            "body": send_match.group("body"),
+        }
+    reply_match = re.fullmatch(
+        r"reply to gmail message (?P<message_id>[A-Za-z0-9_-]{1,256}) "
+        r"with (?P<body>.+)",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if reply_match is not None:
+        return "gmail.messages.reply", {
+            "messageId": reply_match.group("message_id"),
+            "body": reply_match.group("body"),
+        }
     return None
