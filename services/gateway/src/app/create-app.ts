@@ -58,6 +58,11 @@ import { MemoryRepository } from "../memory/memory-repository.js";
 import { MemoryService, type MemoryStore } from "../memory/memory-service.js";
 import { createMemoryEmbeddingClient } from "../memory/memory-embedding-client.js";
 import { MemoryEmbeddingRepository } from "../memory/memory-embedding-repository.js";
+import { KnowledgeRepository } from "../knowledge/knowledge-repository.js";
+import {
+  KnowledgeService,
+  type KnowledgeStore,
+} from "../knowledge/knowledge-service.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -72,6 +77,7 @@ export interface CreateAppOptions {
   readonly externalIdentityResolver?: ExternalIdentityResolver;
   readonly providerCredentialRepository?: GoogleCredentialStore;
   readonly memoryService?: MemoryStore;
+  readonly knowledgeService?: KnowledgeStore;
 }
 
 export async function createApp(
@@ -129,6 +135,9 @@ export async function createApp(
             log: app.log,
           },
     );
+  const knowledgeService =
+    options.knowledgeService ??
+    new KnowledgeService(new KnowledgeRepository(database), app.log);
   const googleIntegration = options.config.googleCalendar.enabled
     ? options.config.googleCalendar
     : options.config.googleGmail.enabled
@@ -221,6 +230,7 @@ export async function createApp(
     realtimeApprovals,
     providerCredentials,
     memoryService,
+    knowledgeService,
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);

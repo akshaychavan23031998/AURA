@@ -19,7 +19,7 @@ const claimsSchema = z
     nbf: z.number().int().nonnegative().optional(),
     permissions: z
       .array(z.enum(allowedPermissions))
-      .max(10)
+      .max(allowedPermissions.length)
       .refine(
         (permissions) => new Set(permissions).size === permissions.length,
       ),

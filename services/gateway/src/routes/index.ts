@@ -22,6 +22,8 @@ import type { ApprovalRealtimeRegistry } from "../approvals/approval-realtime-re
 import type { GoogleCredentialStore } from "../identity/provider-credentials.js";
 import type { MemoryStore } from "../memory/memory-service.js";
 import { registerMemoryRoutes } from "./memory/memory.route.js";
+import type { KnowledgeStore } from "../knowledge/knowledge-service.js";
+import { registerKnowledgeRoutes } from "./knowledge/knowledge.route.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -40,6 +42,7 @@ export function registerRoutes(
   realtimeApprovals?: ApprovalRealtimeRegistry,
   providerCredentials?: GoogleCredentialStore,
   memories?: MemoryStore,
+  knowledge?: KnowledgeStore,
 ): void {
   registerHealthRoutes(app, checkDatabase);
   if (config !== undefined)
@@ -82,4 +85,6 @@ export function registerRoutes(
       realtimeApprovals,
     );
   if (memories !== undefined) registerMemoryRoutes(app, authenticate, memories);
+  if (knowledge !== undefined)
+    registerKnowledgeRoutes(app, authenticate, knowledge);
 }

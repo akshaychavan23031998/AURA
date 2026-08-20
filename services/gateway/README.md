@@ -26,27 +26,31 @@ Phase 27 adds authenticated Google capability management. Status is derived from
 
 ## Endpoints
 
-| Method   | Path                                     | Authentication        | Purpose                                          |
-| -------- | ---------------------------------------- | --------------------- | ------------------------------------------------ |
-| `GET`    | `/health`                                | None                  | Process liveness                                 |
-| `GET`    | `/ready`                                 | None                  | Gateway and PostgreSQL readiness                 |
-| `POST`   | `/api/v1/auth/refresh`                   | Refresh cookie/body   | Rotate refresh token and issue access token      |
-| `POST`   | `/api/v1/auth/logout`                    | Bearer                | Revoke the caller's current session              |
-| `POST`   | `/api/v1/auth/development-session`       | Development only      | Create the fixed local development identity      |
-| `GET`    | `/api/v1/auth/google/start`              | None                  | Start Google OIDC with state, nonce, and PKCE    |
-| `GET`    | `/api/v1/auth/google/callback`           | Transaction cookie    | Validate Google identity and create AURA session |
-| `GET`    | `/api/v1/integrations/google`            | Bearer                | Read sanitized enabled Google capability state   |
-| `POST`   | `/api/v1/integrations/google/reconnect`  | Bearer + Origin       | Start explicit actor-bound Google re-consent     |
-| `POST`   | `/api/v1/integrations/google/disconnect` | Bearer + Origin       | Remove only the caller's local Google credential |
-| `GET`    | `/api/v1/memories`                       | Bearer + memory.read  | List active actor-owned memories                 |
-| `GET`    | `/api/v1/memories/:memoryId`             | Bearer + memory.read  | Get one active actor-owned memory                |
-| `POST`   | `/api/v1/memories`                       | Bearer + memory.write | Create one explicit actor-owned memory           |
-| `DELETE` | `/api/v1/memories/:memoryId`             | Bearer + memory.write | Soft-delete one actor-owned memory               |
-| `POST`   | `/api/v1/tools/execute`                  | Bearer                | Execute a validated Tool Service request         |
-| `POST`   | `/api/v1/agent/respond`                  | Bearer                | Produce an unexecuted planning response          |
-| `POST`   | `/api/v1/agent/run`                      | Bearer                | Run deterministic orchestration                  |
-| `POST`   | `/api/v1/voice/run`                      | Bearer                | Run one multipart voice turn                     |
-| `GET`    | `/api/v1/voice/session`                  | Bearer upgrade        | Open an `aura.voice.v1` WebSocket session        |
+| Method   | Path                                      | Authentication           | Purpose                                          |
+| -------- | ----------------------------------------- | ------------------------ | ------------------------------------------------ |
+| `GET`    | `/health`                                 | None                     | Process liveness                                 |
+| `GET`    | `/ready`                                  | None                     | Gateway and PostgreSQL readiness                 |
+| `POST`   | `/api/v1/auth/refresh`                    | Refresh cookie/body      | Rotate refresh token and issue access token      |
+| `POST`   | `/api/v1/auth/logout`                     | Bearer                   | Revoke the caller's current session              |
+| `POST`   | `/api/v1/auth/development-session`        | Development only         | Create the fixed local development identity      |
+| `GET`    | `/api/v1/auth/google/start`               | None                     | Start Google OIDC with state, nonce, and PKCE    |
+| `GET`    | `/api/v1/auth/google/callback`            | Transaction cookie       | Validate Google identity and create AURA session |
+| `GET`    | `/api/v1/integrations/google`             | Bearer                   | Read sanitized enabled Google capability state   |
+| `POST`   | `/api/v1/integrations/google/reconnect`   | Bearer + Origin          | Start explicit actor-bound Google re-consent     |
+| `POST`   | `/api/v1/integrations/google/disconnect`  | Bearer + Origin          | Remove only the caller's local Google credential |
+| `GET`    | `/api/v1/memories`                        | Bearer + memory.read     | List active actor-owned memories                 |
+| `GET`    | `/api/v1/memories/:memoryId`              | Bearer + memory.read     | Get one active actor-owned memory                |
+| `POST`   | `/api/v1/memories`                        | Bearer + memory.write    | Create one explicit actor-owned memory           |
+| `DELETE` | `/api/v1/memories/:memoryId`              | Bearer + memory.write    | Soft-delete one actor-owned memory               |
+| `POST`   | `/api/v1/knowledge/documents`             | Bearer + knowledge.write | Ingest one owned manual-text document            |
+| `GET`    | `/api/v1/knowledge/documents`             | Bearer + knowledge.read  | List owned active document metadata              |
+| `GET`    | `/api/v1/knowledge/documents/:documentId` | Bearer + knowledge.read  | Get one owned active document                    |
+| `DELETE` | `/api/v1/knowledge/documents/:documentId` | Bearer + knowledge.write | Soft-delete one owned document                   |
+| `POST`   | `/api/v1/tools/execute`                   | Bearer                   | Execute a validated Tool Service request         |
+| `POST`   | `/api/v1/agent/respond`                   | Bearer                   | Produce an unexecuted planning response          |
+| `POST`   | `/api/v1/agent/run`                       | Bearer                   | Run deterministic orchestration                  |
+| `POST`   | `/api/v1/voice/run`                       | Bearer                   | Run one multipart voice turn                     |
+| `GET`    | `/api/v1/voice/session`                   | Bearer upgrade           | Open an `aura.voice.v1` WebSocket session        |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
@@ -64,7 +68,17 @@ Phase 29 started V1.5 with manual persistence. Phase 30 reuses that same MemoryS
 
 Deletion is an owner-scoped atomic soft delete. Active list/get operations exclude deleted rows, and absent, deleted, and foreign-owned identifiers use the same `MEMORY_NOT_FOUND` response to avoid existence disclosure. Request logs contain no bodies or memory content. Agent continuation receives only bounded `id`, `kind`, and `content` fields in a dedicated context explicitly framed as untrusted user data; it never receives actor, source, lifecycle, or database metadata. Tool Service remains uninvolved and its production registry remains at 14 entries.
 
-Only clear requests such as “remember that …”, explicit saved-memory reads, and deletion by exact UUID are eligible. Ordinary statements, fuzzy deletion, automatic extraction, transcript persistence, RAG, embeddings, vector databases, document ingestion, semantic search, restoration, and scheduled cleanup are deliberately not implemented. Voice may carry a finalized explicit memory request through the same authenticated path, but background, stale, and interrupted transcripts have no persistence authority.
+Only clear requests such as “remember that …”, explicit saved-memory reads, and deletion by exact UUID are eligible. Ordinary statements, fuzzy deletion, automatic extraction, transcript persistence, general RAG, automatic personalization, memory restoration, and scheduled cleanup are deliberately not implemented. Voice may carry a finalized explicit memory request through the same authenticated path, but background, stale, and interrupted transcripts have no persistence authority.
+
+## Knowledge ingestion foundation
+
+Phase 32 adds Gateway-owned manual plaintext ingestion only. `knowledge.read` and `knowledge.write` are independent exact permissions, actor identity is always derived from the verified principal, and foreign-owned IDs use the same `KNOWLEDGE_NOT_FOUND` behavior as missing or deleted IDs. Creation accepts only strict `{ title, content }` JSON; the server assigns `manual_text`, lifecycle, hashes, chunk ordinals, timestamps, and ownership.
+
+Content is deterministically normalized from CRLF/CR to LF, trimmed only at its boundary, rejected when empty or control-unsafe, and limited to 128 KiB after UTF-8 encoding. SHA-256 covers normalized content. Paragraph-aware local chunking targets 1,200 characters, never exceeds 2,000 characters per chunk, uses zero-based stable ordinals with no overlap, and fails above 128 chunks. A single PostgreSQL transaction inserts the document and complete chunk set, so chunk failure leaves no partial document.
+
+Documents transition atomically from `ACTIVE` to `DELETED`. Chunk rows are retained for future lifecycle work but every internal access joins through the owner-scoped active document; deleted chunks therefore become immediately inaccessible. Lists are newest-first, limited to 20 by default and 50 maximum, and expose metadata only. Explicit owner-scoped GET may return the bounded normalized content; no public chunk endpoint exists. Titles, content, chunks, and hashes are excluded from logs.
+
+This phase adds no Knowledge ToolDefinition and changes no Agent or Voice contract. There is no multipart/file, PDF/DOCX, URL, Drive, Gmail attachment, automatic, document-embedding, semantic-search, citation, or RAG path.
 
 ## Configuration
 

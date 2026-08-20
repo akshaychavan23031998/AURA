@@ -32,6 +32,13 @@ export const memoryKind = pgEnum("memory_kind", [
 ]);
 export const memorySource = pgEnum("memory_source", ["user_explicit"]);
 export const memoryStatus = pgEnum("memory_status", ["ACTIVE", "DELETED"]);
+export const knowledgeSourceType = pgEnum("knowledge_source_type", [
+  "manual_text",
+]);
+export const knowledgeStatus = pgEnum("knowledge_status", [
+  "ACTIVE",
+  "DELETED",
+]);
 const vector384 = customType<{ data: number[]; driverData: string }>({
   dataType: () => "vector(384)",
   toDriver: (value) => `[${value.join(",")}]`,
@@ -231,5 +238,86 @@ export const userMemoryEmbeddings = pgTable(
       "user_memory_embeddings_model_length_check",
       sql`char_length(${table.model}) between 1 and 128`,
     ),
+  ],
+);
+
+export const knowledgeDocuments = pgTable(
+  "knowledge_documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    sourceType: knowledgeSourceType("source_type")
+      .notNull()
+      .default("manual_text"),
+    status: knowledgeStatus("status").notNull().default("ACTIVE"),
+    normalizedContent: text("normalized_content").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "knowledge_documents_title_length_check",
+      sql`char_length(${table.title}) between 1 and 200`,
+    ),
+    check(
+      "knowledge_documents_content_bytes_check",
+      sql`octet_length(${table.normalizedContent}) between 1 and 131072`,
+    ),
+    check(
+      "knowledge_documents_content_hash_check",
+      sql`char_length(${table.contentHash}) = 64`,
+    ),
+    index("knowledge_documents_actor_created_idx").on(
+      table.actorId,
+      table.createdAt,
+    ),
+    index("knowledge_documents_actor_status_idx").on(
+      table.actorId,
+      table.status,
+    ),
+  ],
+);
+
+export const knowledgeChunks = pgTable(
+  "knowledge_chunks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => knowledgeDocuments.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    content: text("content").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("knowledge_chunks_document_ordinal_uidx").on(
+      table.documentId,
+      table.ordinal,
+    ),
+    check(
+      "knowledge_chunks_ordinal_check",
+      sql`${table.ordinal} between 0 and 127`,
+    ),
+    check(
+      "knowledge_chunks_content_length_check",
+      sql`char_length(${table.content}) between 1 and 2000`,
+    ),
+    check(
+      "knowledge_chunks_content_hash_check",
+      sql`char_length(${table.contentHash}) = 64`,
+    ),
+    index("knowledge_chunks_document_idx").on(table.documentId),
   ],
 );

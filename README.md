@@ -8,13 +8,17 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## V1.5 — Started
 
+Phase 32 adds explicit authenticated manual-text knowledge ingestion. Gateway normalizes at most 128 KiB of UTF-8 text, hashes it with SHA-256, creates deterministic paragraph-aware chunks, and persists the actor-owned document and all chunks in one PostgreSQL transaction. `knowledge.read` and `knowledge.write` are independent exact permissions; list/get/delete queries scope ownership directly in SQL and soft-deleted documents are indistinguishable from missing or foreign-owned records.
+
+Knowledge ingestion is an account-data API, not an Agent Tool. Agent, Tool Service, and Voice receive no document or chunk access. List responses contain metadata only, raw content is returned only by an explicit owner-scoped GET, and request logs contain neither titles nor document/chunk content. Phase 32 adds no file/URL ingestion, document embeddings, semantic document search, citations, or RAG answers.
+
 Phase 31 adds semantic retrieval over explicit memories only. Gateway calls a separately provisioned local OpenAI-compatible embedding endpoint with a fixed server-configured 384-dimensional model, persists vectors in PostgreSQL/pgvector, and performs cosine search with actor ownership and `ACTIVE` lifecycle predicates inside the ranking query. Search is explicit, requires `memory.read`, returns at most five qualifying memories by default, and never exposes vectors or similarity scores to Agent or browser.
 
 Memory persistence remains available when embeddings are disabled or temporarily unavailable. A saved memory can exist without a vector until the bounded `pnpm --filter @aura/gateway memory:backfill -- 25` command embeds it. Backfill skips deleted and already-embedded memories and never runs automatically at startup. Semantic results remain untrusted user-authored context. Phase 31 adds no automatic personalization, document ingestion, citations, or general RAG.
 
 Phase 29 added the persistent user-memory foundation. Phase 30 adds explicit conversational memory actions: the Agent may propose one bounded read, create, or delete operation, while Gateway derives the actor, checks exact `memory.read`/`memory.write` permissions, and uses the same PostgreSQL MemoryService as the manual API. Supported kinds remain `preference`, `fact`, `instruction`, and `note`; creation always records `user_explicit` as the trusted source. Content is trimmed at its boundary, must be non-empty, and is limited to 4096 characters.
 
-Memory content is privacy-sensitive and is never written to structured logs. Ownership comes only from the verified AURA principal, non-owned and deleted records are indistinguishable from missing records, and all repository operations scope directly by actor. Memory is read only for explicit saved-memory requests and is forwarded in a dedicated bounded context marked as untrusted user data. Ordinary statements are never persisted; there is no automatic extraction, profiling, transcript storage, RAG, embeddings, vector search, document ingestion, or semantic search. The production Tool registry remains unchanged at 14 tools.
+Memory content is privacy-sensitive and is never written to structured logs. Ownership comes only from the verified AURA principal, non-owned and deleted records are indistinguishable from missing records, and all repository operations scope directly by actor. Memory is read only for explicit saved-memory requests and is forwarded in a dedicated bounded context marked as untrusted user data. Ordinary statements are never persisted; there is no automatic extraction, profiling, transcript storage, or automatic personalization. The production Tool registry remains unchanged at 14 tools.
 
 ## V1 — Complete
 
@@ -22,7 +26,7 @@ Phase 28 formally closes V1. The sealed production registry contains exactly 14 
 
 Google credentials stay encrypted behind Gateway. Capability status and explicit re-consent cover Calendar, Gmail, and Contacts while preserving stable-subject binding and AURA-session independence. Provider failure, reconnect, browser refresh, WebSocket reconnect, voice input, and consumed approval state never replay a Tool action.
 
-V1 intentionally excluded memory. V1.5 now includes explicit persistence and one explicit memory action per turn, while RAG, embeddings/vector storage, document ingestion, multi-step planning, autonomous or scheduled workflows, Drive/Tasks, arbitrary HTTP, browser control, shell/filesystem access, and production deployment execution remain excluded.
+V1 intentionally excluded memory. V1.5 now includes explicit memory persistence/actions, semantic memory retrieval, and manual text knowledge ingestion. Document embeddings/search, Agent RAG, multi-step planning, autonomous or scheduled workflows, Drive/Tasks, arbitrary HTTP, browser control, shell/filesystem access, and production deployment execution remain excluded.
 
 **Phase 17 — production deployment foundation.** AURA now has non-root production images, an explicit migration job, a private service network, and a Caddy HTTPS/WSS edge for a repeatable production-like stack. Models and secrets remain external to images, and llama.cpp remains a separately managed inference runtime.
 

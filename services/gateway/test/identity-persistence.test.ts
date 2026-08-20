@@ -7,6 +7,8 @@ import { createAccessTokenVerifier } from "../src/auth/token-verifier.js";
 import { createDatabaseClient, type DatabaseClient } from "../src/db/client.js";
 import {
   externalIdentities,
+  knowledgeChunks,
+  knowledgeDocuments,
   providerCredentials,
   refreshTokens,
   toolApprovals,
@@ -27,6 +29,8 @@ import {
 import { testConfig } from "./test-config.js";
 import { MemoryRepository } from "../src/memory/memory-repository.js";
 import { MemoryEmbeddingRepository } from "../src/memory/memory-embedding-repository.js";
+import { KnowledgeRepository } from "../src/knowledge/knowledge-repository.js";
+import { sha256 } from "../src/knowledge/knowledge-service.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) {
@@ -50,6 +54,7 @@ const sessions = new SessionService(repository, testConfig.auth);
 const approvals = new ApprovalRepository(database);
 const memories = new MemoryRepository(database);
 const memoryEmbeddings = new MemoryEmbeddingRepository(database);
+const knowledge = new KnowledgeRepository(database);
 
 beforeAll(async () => {
   await database.db.execute(sql`drop schema if exists public cascade`);
@@ -406,5 +411,112 @@ describe.sequential("PostgreSQL identity persistence", () => {
         content: "Cannot belong to an absent user",
       }),
     ).rejects.toBeDefined();
+  });
+
+  it("transactionally persists owner-scoped knowledge and deterministic chunks", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const [otherActor] = await database.db.insert(users).values({}).returning();
+    const created = await knowledge.createTransactional(actorId, {
+      title: "Architecture",
+      normalizedContent: "First paragraph.\n\nSecond paragraph.",
+      contentHash: sha256("First paragraph.\n\nSecond paragraph."),
+      chunks: [
+        {
+          ordinal: 0,
+          content: "First paragraph.",
+          contentHash: sha256("First paragraph."),
+        },
+        {
+          ordinal: 1,
+          content: "Second paragraph.",
+          contentHash: sha256("Second paragraph."),
+        },
+      ],
+    });
+    await expect(
+      knowledge.getOwned(actorId, created.id),
+    ).resolves.toMatchObject({
+      actorId,
+      sourceType: "manual_text",
+      status: "ACTIVE",
+      chunkCount: 2,
+    });
+    await expect(
+      knowledge.getOwned(otherActor!.id, created.id),
+    ).resolves.toBeUndefined();
+    await expect(knowledge.listOwned(otherActor!.id, 20)).resolves.toEqual([]);
+    await expect(
+      knowledge.listOwnedActiveChunks(actorId, created.id),
+    ).resolves.toEqual([
+      expect.objectContaining({ ordinal: 0, content: "First paragraph." }),
+      expect.objectContaining({ ordinal: 1, content: "Second paragraph." }),
+    ]);
+  });
+
+  it("rolls back the document when any chunk insert fails", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    await expect(
+      knowledge.createTransactional(actorId, {
+        title: "Rollback",
+        normalizedContent: "Valid normalized document",
+        contentHash: sha256("Valid normalized document"),
+        chunks: [
+          {
+            ordinal: 0,
+            content: "x".repeat(2001),
+            contentHash: sha256("x".repeat(2001)),
+          },
+        ],
+      }),
+    ).rejects.toBeDefined();
+    await expect(
+      database.db.select().from(knowledgeDocuments),
+    ).resolves.toEqual([]);
+    await expect(database.db.select().from(knowledgeChunks)).resolves.toEqual(
+      [],
+    );
+  });
+
+  it("soft-deletes owned knowledge and makes retained chunks inaccessible", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const [otherActor] = await database.db.insert(users).values({}).returning();
+    const create = (title: string) =>
+      knowledge.createTransactional(actorId, {
+        title,
+        normalizedContent: title,
+        contentHash: sha256(title),
+        chunks: [{ ordinal: 0, content: title, contentHash: sha256(title) }],
+      });
+    const older = await create("Older");
+    const newer = await create("Newer");
+    const olderAt = new Date("2026-08-19T00:00:00Z");
+    const newerAt = new Date("2026-08-20T00:00:00Z");
+    await database.db
+      .update(knowledgeDocuments)
+      .set({ createdAt: olderAt })
+      .where(eq(knowledgeDocuments.id, older.id));
+    await database.db
+      .update(knowledgeDocuments)
+      .set({ createdAt: newerAt })
+      .where(eq(knowledgeDocuments.id, newer.id));
+    await expect(knowledge.listOwned(actorId, 1)).resolves.toEqual([
+      expect.objectContaining({ id: newer.id }),
+    ]);
+    await expect(
+      knowledge.deleteOwned(otherActor!.id, newer.id, new Date()),
+    ).resolves.toBeUndefined();
+    await expect(
+      knowledge.deleteOwned(actorId, newer.id, newerAt),
+    ).resolves.toEqual({ id: newer.id });
+    await expect(
+      knowledge.deleteOwned(actorId, newer.id, newerAt),
+    ).resolves.toBeUndefined();
+    await expect(
+      knowledge.getOwned(actorId, newer.id),
+    ).resolves.toBeUndefined();
+    await expect(
+      knowledge.listOwnedActiveChunks(actorId, newer.id),
+    ).resolves.toEqual([]);
+    expect(await database.db.select().from(knowledgeChunks)).toHaveLength(2);
   });
 });

@@ -18,6 +18,8 @@ export async function issueAccessToken(
     "contacts.people.read",
     "memory.read",
     "memory.write",
+    "knowledge.read",
+    "knowledge.write",
   ],
   now = Math.floor(Date.now() / 1000),
 ): Promise<string> {

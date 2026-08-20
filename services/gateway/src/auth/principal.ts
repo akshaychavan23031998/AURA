@@ -9,6 +9,8 @@ export const allowedPermissions = [
   "contacts.people.read",
   "memory.read",
   "memory.write",
+  "knowledge.read",
+  "knowledge.write",
 ] as const;
 export type AllowedPermission = (typeof allowedPermissions)[number];
 

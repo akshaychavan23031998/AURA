@@ -115,6 +115,8 @@ describe("access-token verification", () => {
         "contacts.people.read",
         "memory.read",
         "memory.write",
+        "knowledge.read",
+        "knowledge.write",
       ],
       tokenExpiresAt: now + 900,
     });

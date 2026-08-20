@@ -161,6 +161,16 @@ Gateway owns a narrow local embedding client and a dedicated pgvector repository
 
 The database ranks with cosine distance only within `actor_id = authenticated actor`, `status = ACTIVE`, and configured-model predicates. Results are thresholded, top-k bounded, and stripped to `id`, `kind`, and `content`. `memory_search` is a distinct one-action Agent proposal used only when the user explicitly asks about particular saved information. Retrieved content remains untrusted and cannot authorize Tools or override policy. There is still no document ingestion, chunking, citations, automatic personalization, or general RAG.
 
+### V1.5 Phase 32: knowledge ingestion foundation
+
+Gateway exposes explicit authenticated manual-text CRUD at `/api/v1/knowledge/documents`. `knowledge.read` and `knowledge.write` remain independent, ownership comes only from the verified principal, and repository predicates combine document ID, actor ID, and `ACTIVE` lifecycle. Foreign-owned, missing, and deleted identifiers share `KNOWLEDGE_NOT_FOUND` semantics.
+
+Creation accepts only title and plaintext content. Gateway normalizes CRLF/CR to LF, trims boundary whitespace, rejects unsafe controls and content above 128 KiB UTF-8, and computes SHA-256 over the normalized document. Deterministic paragraph-aware chunking targets 1,200 characters with a 2,000-character hard maximum, zero-based ordinals, no overlap, and at most 128 chunks. PostgreSQL inserts `knowledge_documents` and its complete `knowledge_chunks` set in one transaction; any chunk failure rolls back the document.
+
+Deletion is a soft transition to `DELETED`. Chunks remain stored but internal access always joins through the owner-scoped active document, making deleted chunks unavailable immediately. Public lists expose metadata only and explicit get returns bounded normalized content, never raw chunks or hashes. Logging contains request IDs, operation, document ID, byte length, chunk count, and outcome only—not title, content, chunks, hashes, or request bodies.
+
+Knowledge remains isolated from Agent, Tool Service, Voice, and the Phase 31 embedding runtime. The production registry stays at 14 tools. Phase 32 provides no file/multipart, PDF/DOCX, URL, provider, automatic ingestion, document embeddings, semantic document retrieval, citations, or RAG answers.
+
 ## 7. Security, errors, and observability
 
 ### Agent orchestration boundary
