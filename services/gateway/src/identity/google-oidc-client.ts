@@ -45,6 +45,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
     configuration?: oidc.Configuration,
     private readonly calendarEnabled = false,
     private readonly gmailEnabled = false,
+    private readonly contactsEnabled = false,
   ) {
     if (configuration !== undefined)
       this.configuration = Promise.resolve(configuration);
@@ -73,8 +74,11 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
               "https://www.googleapis.com/auth/gmail.send",
             ]
           : []),
+        ...(this.contactsEnabled
+          ? ["https://www.googleapis.com/auth/contacts.readonly"]
+          : []),
       ].join(" "),
-      ...(this.calendarEnabled || this.gmailEnabled
+      ...(this.calendarEnabled || this.gmailEnabled || this.contactsEnabled
         ? { access_type: "offline", prompt: "consent" }
         : {}),
       state: transaction.state,
@@ -114,7 +118,8 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
         ? {}
         : { displayName: parsed.data.name }),
     });
-    if (!this.calendarEnabled && !this.gmailEnabled) return identity;
+    if (!this.calendarEnabled && !this.gmailEnabled && !this.contactsEnabled)
+      return identity;
     const refreshToken = tokens.refreshToken;
     if (typeof refreshToken !== "string" || refreshToken.length < 16)
       throw new Error("Google did not return an offline credential");
@@ -133,6 +138,9 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
               "https://www.googleapis.com/auth/gmail.readonly",
               "https://www.googleapis.com/auth/gmail.send",
             ]
+          : []),
+        ...(this.contactsEnabled
+          ? ["https://www.googleapis.com/auth/contacts.readonly"]
           : []),
       ]),
     });

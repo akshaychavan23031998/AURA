@@ -2,6 +2,8 @@
 
 The Tool Service is AURA's controlled action-execution boundary. It treats Agent and LLM output as untrusted, resolves only statically registered tools, validates every input, and centrally enforces permission and approval policy before invoking trusted code.
 
+Contacts registers only `contacts.people.list` and `contacts.people.get`. Both are read-only, approval-free, idempotent, and require exact `contacts.people.read`. Pagination, search, photos, addresses, and writes are unavailable.
+
 ## Implemented through Phase 18
 
 - Fastify runtime with validated immutable configuration

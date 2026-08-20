@@ -131,7 +131,8 @@ export function createToolServiceClient(
       try {
         const providerAccessToken =
           request.tool.startsWith("calendar.") ||
-          request.tool.startsWith("gmail.")
+          request.tool.startsWith("gmail.") ||
+          request.tool.startsWith("contacts.")
             ? await providerTokens?.getAccessToken(
                 context.actorId,
                 requiredGoogleScope(request.tool),
@@ -232,6 +233,8 @@ export function createToolServiceClient(
 function requiredGoogleScope(
   toolName: string,
 ): string | readonly string[] | undefined {
+  if (toolName.startsWith("contacts."))
+    return "https://www.googleapis.com/auth/contacts.readonly";
   if (toolName === "gmail.messages.reply")
     return [
       "https://www.googleapis.com/auth/gmail.readonly",
@@ -301,6 +304,8 @@ function clientSafeToolMessage(code: string): string {
     CALENDAR_RATE_LIMITED: "Google Calendar rate limit reached",
     GMAIL_REQUEST_FAILED: "Google Gmail request failed",
     GMAIL_RATE_LIMITED: "Google Gmail rate limit reached",
+    CONTACTS_REQUEST_FAILED: "Google Contacts request failed",
+    CONTACTS_RATE_LIMITED: "Google Contacts rate limit reached",
   };
   return messages[code] ?? "Tool request failed";
 }

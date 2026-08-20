@@ -103,6 +103,18 @@ class DeterministicDevelopmentPlanner:
                     if result.tool == "gmail.messages.send"
                     else "The reply was sent successfully."
                 )
+            elif result.tool == "contacts.people.list":
+                contacts = result.data.get("contacts")
+                if not isinstance(contacts, list):
+                    raise ValueError("Invalid Contacts list result")
+                response = f"I found {len(contacts)} contacts."
+            elif result.tool == "contacts.people.get":
+                contact = result.data.get("contact")
+                if not isinstance(contact, dict) or not isinstance(
+                    contact.get("displayName"), str
+                ):
+                    raise ValueError("Invalid Contacts result")
+                response = f"The contact is {contact['displayName']}."
             else:
                 response = "Your calendar request completed successfully."
             return AgentResult(
@@ -236,6 +248,38 @@ class DeterministicDevelopmentPlanner:
                 response="Please provide the exact Gmail message ID and reply body.",
                 plan=RespondPlan(),
             )
+        if lowered in {"list my contacts", "show my contacts"}:
+            return AgentResult(
+                intent="propose_tool",
+                response="I can list your contacts.",
+                plan=ToolPlan(
+                    tool=ToolProposal(
+                        name="contacts.people.list", input={"maxResults": 10}
+                    )
+                ),
+            )
+        contact_match = re.fullmatch(
+            r"(?:get|show) contact (people/[A-Za-z0-9_-]+)",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if contact_match is not None:
+            return AgentResult(
+                intent="propose_tool",
+                response="I can get that contact.",
+                plan=ToolPlan(
+                    tool=ToolProposal(
+                        name="contacts.people.get",
+                        input={"resourceName": contact_match.group(1)},
+                    )
+                ),
+            )
+        if lowered.startswith(("get contact", "show contact", "find ")):
+            return AgentResult(
+                intent="respond",
+                response="Please provide the exact Google People resource name.",
+                plan=RespondPlan(),
+            )
 
         return AgentResult(
             intent="respond",
@@ -266,6 +310,8 @@ class _CatalogTool(BaseModel):
         "gmail.messages.get",
         "gmail.messages.send",
         "gmail.messages.reply",
+        "contacts.people.list",
+        "contacts.people.get",
     ]
     input: dict[str, JsonValue]
 
@@ -403,7 +449,7 @@ class _CatalogTool(BaseModel):
                 and isinstance(body, str)
                 and 1 <= len(body) <= 20000
             )
-        else:
+        elif self.name == "gmail.messages.reply":
             message_id = self.input.get("messageId")
             body = self.input.get("body")
             valid = (
@@ -412,6 +458,22 @@ class _CatalogTool(BaseModel):
                 and re.fullmatch(r"[A-Za-z0-9_-]{1,256}", message_id) is not None
                 and isinstance(body, str)
                 and 1 <= len(body) <= 20000
+            )
+        elif self.name == "contacts.people.list":
+            maximum = self.input.get("maxResults", 10)
+            valid = (
+                set(self.input).issubset({"maxResults"})
+                and isinstance(maximum, int)
+                and not isinstance(maximum, bool)
+                and 1 <= maximum <= 25
+            )
+        else:
+            resource_name = self.input.get("resourceName")
+            valid = (
+                set(self.input) == {"resourceName"}
+                and isinstance(resource_name, str)
+                and re.fullmatch(r"people/[A-Za-z0-9_-]+", resource_name) is not None
+                and len(resource_name) <= 256
             )
         if not valid:
             raise ValueError("Tool input does not match the trusted catalog")

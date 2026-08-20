@@ -203,4 +203,37 @@ AGENT_TOOL_CATALOG: Final = (
             "required": ["messageId", "body"],
         },
     },
+    {
+        "name": "contacts.people.list",
+        "description": (
+            "Lists a bounded set of the authenticated user's Google contacts."
+        ),
+        "category": "productivity",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "maxResults": {"type": "integer", "minimum": 1, "maximum": 25}
+            },
+        },
+    },
+    {
+        "name": "contacts.people.get",
+        "description": (
+            "Gets one Google contact by an explicit People API resource name."
+        ),
+        "category": "productivity",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "resourceName": {
+                    "type": "string",
+                    "pattern": "^people/[A-Za-z0-9_-]+$",
+                    "maxLength": 256,
+                }
+            },
+            "required": ["resourceName"],
+        },
+    },
 )

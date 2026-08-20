@@ -6,6 +6,8 @@ import { createGoogleCalendarClient } from "../providers/google-calendar-client.
 import { createCalendarTools } from "../tools/calendar/events.tool.js";
 import { createGoogleGmailClient } from "../providers/google-gmail-client.js";
 import { createGmailTools } from "../tools/gmail/messages.tool.js";
+import { createGoogleContactsClient } from "../providers/google-contacts-client.js";
+import { createContactsTools } from "../tools/contacts/people.tool.js";
 
 export function createToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -15,6 +17,8 @@ export function createToolRegistry(): ToolRegistry {
   for (const tool of createCalendarTools(createGoogleCalendarClient()))
     registry.register(tool);
   for (const tool of createGmailTools(createGoogleGmailClient()))
+    registry.register(tool);
+  for (const tool of createContactsTools(createGoogleContactsClient()))
     registry.register(tool);
   registry.seal();
   return registry;

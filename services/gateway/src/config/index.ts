@@ -37,6 +37,7 @@ const DEVELOPMENT_DEFAULTS = {
   GOOGLE_OIDC_ENABLED: "false",
   GOOGLE_CALENDAR_ENABLED: "false",
   GOOGLE_GMAIL_ENABLED: "false",
+  GOOGLE_CONTACTS_ENABLED: "false",
 } as const;
 
 export interface AuthConfig {
@@ -120,6 +121,9 @@ export interface GatewayConfig {
         readonly enabled: true;
         readonly tokenEncryptionKey: string;
       };
+  readonly googleContacts:
+    | { readonly enabled: false }
+    | { readonly enabled: true; readonly tokenEncryptionKey: string };
   readonly database: {
     readonly url: string;
     readonly poolMax: number;
@@ -239,6 +243,12 @@ export function loadConfig(
         })
       : Object.freeze({ enabled: false as const }),
     googleGmail: parsed.GOOGLE_GMAIL_ENABLED
+      ? Object.freeze({
+          enabled: true as const,
+          tokenEncryptionKey: parsed.GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY!,
+        })
+      : Object.freeze({ enabled: false as const }),
+    googleContacts: parsed.GOOGLE_CONTACTS_ENABLED
       ? Object.freeze({
           enabled: true as const,
           tokenEncryptionKey: parsed.GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY!,

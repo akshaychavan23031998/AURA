@@ -138,6 +138,32 @@ describe("Tool Service client", () => {
     );
   });
 
+  it("resolves Contacts tokens with the exact read-only provider scope", async () => {
+    const getAccessToken = vi.fn().mockResolvedValue("contacts-token");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status: "success",
+        tool: "contacts.people.list",
+        version: 1,
+        data: { contacts: [] },
+      }),
+    );
+    await createToolServiceClient(testConfig, fetchMock, undefined, {
+      getAccessToken,
+    }).execute(
+      { tool: "contacts.people.list", input: { maxResults: 10 } },
+      {
+        actorId: "trusted-actor",
+        grantedPermissions: ["contacts.people.read"],
+      },
+      "contacts-request",
+    );
+    expect(getAccessToken).toHaveBeenCalledWith(
+      "trusted-actor",
+      "https://www.googleapis.com/auth/contacts.readonly",
+    );
+  });
+
   it("resolves the narrow Gmail send scope for outbound messages", async () => {
     const tool = "gmail.messages.send";
     const getAccessToken = vi.fn().mockResolvedValue("gmail-access-token");

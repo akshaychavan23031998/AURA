@@ -102,7 +102,9 @@ export async function createApp(
   const approvalRepository = new ApprovalRepository(database);
   const googleIntegration = options.config.googleCalendar.enabled
     ? options.config.googleCalendar
-    : options.config.googleGmail;
+    : options.config.googleGmail.enabled
+      ? options.config.googleGmail
+      : options.config.googleContacts;
   const providerCredentials = googleIntegration.enabled
     ? new ProviderCredentialRepository(
         database,
@@ -121,6 +123,7 @@ export async function createApp(
           undefined,
           options.config.googleCalendar.enabled,
           options.config.googleGmail.enabled,
+          options.config.googleContacts.enabled,
         )
       : undefined);
   const providerTokens =

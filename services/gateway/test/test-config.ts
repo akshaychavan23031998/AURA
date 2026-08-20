@@ -55,6 +55,7 @@ export const testConfig: GatewayConfig = {
   googleOidc: { enabled: false },
   googleCalendar: { enabled: false },
   googleGmail: { enabled: false },
+  googleContacts: { enabled: false },
   database: {
     url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
     poolMax: 10,

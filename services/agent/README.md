@@ -2,6 +2,8 @@
 
 The Agent Service is AURA's internal planning boundary. Phase 9 preserves the deterministic planner and adds an explicitly selected self-hosted LLM planner backed by a local llama.cpp HTTP server. It proposes plans but never authorizes or executes actions.
 
+The sanitized catalog includes Contacts list/get. Deterministic mode supports list/show contacts and exact `people/...` lookup; human-name requests require clarification rather than guessed identifiers.
+
 Phase 18 centralizes the planner's tool knowledge in a sanitized capability catalog containing only name, description, category, and input schema. Security policy and execution authority are absent. Tool Service remains authoritative, Gateway orchestrates, and the Agent proposes at most one tool.
 
 The catalog permits the three local tools, five Calendar tools, and Gmail list/get/send/reply. Gmail capabilities expose only bounded action schemas—not OAuth scopes, permissions, approval policy, credentials, provider state, or user IDs. Deterministic development syntax supports bounded reads plus explicit single-recipient send and message-ID reply forms; incomplete actions require clarification. The Agent only proposes writes and cannot approve them. All successful calls return through the existing one-tool continuation.

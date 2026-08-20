@@ -6,6 +6,8 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## Current status
 
+Phase 26 adds read-only `contacts.people.list` and `contacts.people.get`, using conditional `contacts.readonly` consent, exact `contacts.people.read`, fixed People API endpoints, and normalized contact summaries. Contact writes are not implemented.
+
 **Phase 17 — production deployment foundation.** AURA now has non-root production images, an explicit migration job, a private service network, and a Caddy HTTPS/WSS edge for a repeatable production-like stack. Models and secrets remain external to images, and llama.cpp remains a separately managed inference runtime.
 
 Implemented application capabilities include Google OIDC account entry, PostgreSQL sessions and refresh rotation, authenticated realtime voice, VAD and safe interruption, local Whisper/Piper speech, self-hosted Qwen through llama.cpp, and server-authoritative Tool execution. Kubernetes, RAG, memory, new tools, and autonomous workflows remain outside the current scope.

@@ -24,6 +24,8 @@ def test_safe_catalog_contains_exactly_three_capabilities() -> None:
         "gmail.messages.get",
         "gmail.messages.send",
         "gmail.messages.reply",
+        "contacts.people.list",
+        "contacts.people.get",
     ]
     assert all(
         set(item) == {"name", "description", "category", "inputSchema"}
@@ -324,6 +326,28 @@ async def test_gmail_send_and_reply_results_continue_once() -> None:
     assert send.response == "The email was sent successfully."
     assert isinstance(reply.plan, RespondPlan)
     assert reply.response == "The reply was sent successfully."
+
+
+@pytest.mark.asyncio
+async def test_contacts_plans_and_continuation_are_narrow() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    listed = await planner.plan(AgentRequest(message="list my contacts"))
+    assert isinstance(listed.plan, ToolPlan)
+    assert listed.plan.tool.name == "contacts.people.list"
+    fetched = await planner.plan(AgentRequest(message="get contact people/c123"))
+    assert isinstance(fetched.plan, ToolPlan)
+    assert fetched.plan.tool.input == {"resourceName": "people/c123"}
+    ambiguous = await planner.plan(AgentRequest(message="find John"))
+    assert isinstance(ambiguous.plan, RespondPlan)
+    continued = await planner.plan(
+        AgentRequest(
+            message="list",
+            toolResult=ToolExecutionResultContext(
+                tool="contacts.people.list", status="success", data={"contacts": []}
+            ),
+        )
+    )
+    assert continued.response == "I found 0 contacts."
 
 
 @pytest.mark.asyncio

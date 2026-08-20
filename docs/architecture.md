@@ -6,6 +6,8 @@ AURA aims to become a self-hosted multilingual autonomous voice agent with natur
 
 ### Implemented
 
+Google Contacts is optional and read-only. Gateway owns encrypted credentials and verifies `contacts.readonly`; Tool Service calls only fixed People API list/get endpoints and exposes bounded names, email addresses, and phone numbers. Raw provider objects, photos, tokens, and Contacts writes remain excluded.
+
 - Phase 1 monorepo and web foundation
 - Phase 2 Fastify Gateway runtime with validated configuration, operational endpoints, request correlation, structured logging, security headers, stable external errors, and graceful shutdown
 - Phase 3 Tool Service execution foundation with a trusted registry, typed contracts, input validation, permission enforcement, approval policy, and the local `system.echo` tool

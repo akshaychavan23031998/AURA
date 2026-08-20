@@ -13,6 +13,8 @@ export const GOOGLE_GMAIL_READ_SCOPE =
   "https://www.googleapis.com/auth/gmail.readonly";
 export const GOOGLE_GMAIL_SEND_SCOPE =
   "https://www.googleapis.com/auth/gmail.send";
+export const GOOGLE_CONTACTS_READ_SCOPE =
+  "https://www.googleapis.com/auth/contacts.readonly";
 const tokenSchema = z
   .object({ access_token: z.string().min(16).max(4096) })
   .passthrough();

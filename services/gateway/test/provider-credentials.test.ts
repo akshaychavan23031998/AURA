@@ -4,6 +4,7 @@ import {
   GOOGLE_CALENDAR_WRITE_SCOPE,
   GOOGLE_GMAIL_READ_SCOPE,
   GOOGLE_GMAIL_SEND_SCOPE,
+  GOOGLE_CONTACTS_READ_SCOPE,
   GoogleProviderAccessTokenService,
 } from "../src/identity/provider-credentials.js";
 
@@ -77,6 +78,9 @@ describe("GoogleProviderAccessTokenService", () => {
         GOOGLE_GMAIL_READ_SCOPE,
         GOOGLE_GMAIL_SEND_SCOPE,
       ]),
+    ).rejects.toMatchObject({ code: "PROVIDER_REAUTH_REQUIRED" });
+    await expect(
+      revoked.getAccessToken("actor-1", GOOGLE_CONTACTS_READ_SCOPE),
     ).rejects.toMatchObject({ code: "PROVIDER_REAUTH_REQUIRED" });
   });
 });

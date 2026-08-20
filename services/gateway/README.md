@@ -2,6 +2,8 @@
 
 The Gateway is AURA's external HTTP and WebSocket entry point. Phase 16 adds Google OIDC account entry while preserving AURA-owned users, sessions, tokens, permissions, and voice transport.
 
+`GOOGLE_CONTACTS_ENABLED=true` adds only `contacts.readonly` consent. Existing users require re-consent. Provider credentials remain encrypted and only an ephemeral access token crosses the internal Tool Service boundary.
+
 ## Implemented
 
 - Fastify lifecycle, validated immutable configuration, structured/redacted logging, request correlation, Helmet headers, stable errors, and graceful shutdown

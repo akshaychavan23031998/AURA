@@ -35,6 +35,8 @@ describe("ToolRegistry", () => {
       "calendar.events.get",
       "calendar.events.list",
       "calendar.events.update",
+      "contacts.people.get",
+      "contacts.people.list",
       "gmail.messages.get",
       "gmail.messages.list",
       "gmail.messages.reply",
