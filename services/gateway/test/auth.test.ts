@@ -113,6 +113,8 @@ describe("access-token verification", () => {
         "gmail.messages.read",
         "gmail.messages.send",
         "contacts.people.read",
+        "memory.read",
+        "memory.write",
       ],
       tokenExpiresAt: now + 900,
     });

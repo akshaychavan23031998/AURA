@@ -54,6 +54,8 @@ import {
   type GoogleCredentialStore,
   ProviderCredentialRepository,
 } from "../identity/provider-credentials.js";
+import { MemoryRepository } from "../memory/memory-repository.js";
+import { MemoryService, type MemoryStore } from "../memory/memory-service.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -67,6 +69,7 @@ export interface CreateAppOptions {
   readonly googleOidcProvider?: GoogleOidcProvider;
   readonly externalIdentityResolver?: ExternalIdentityResolver;
   readonly providerCredentialRepository?: GoogleCredentialStore;
+  readonly memoryService?: MemoryStore;
 }
 
 export async function createApp(
@@ -102,6 +105,8 @@ export async function createApp(
   const database = options.database ?? createDatabaseClient(options.config);
   const identityRepository = new IdentityRepository(database);
   const approvalRepository = new ApprovalRepository(database);
+  const memoryService =
+    options.memoryService ?? new MemoryService(new MemoryRepository(database));
   const googleIntegration = options.config.googleCalendar.enabled
     ? options.config.googleCalendar
     : options.config.googleGmail.enabled
@@ -192,6 +197,7 @@ export async function createApp(
     options.config.approvals?.ttlSeconds ?? 300,
     realtimeApprovals,
     providerCredentials,
+    memoryService,
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);

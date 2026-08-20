@@ -10,6 +10,7 @@ import {
   providerCredentials,
   refreshTokens,
   toolApprovals,
+  userMemories,
   users,
 } from "../src/db/schema.js";
 import { ApprovalRepository } from "../src/approvals/approval-repository.js";
@@ -24,6 +25,7 @@ import {
   ProviderCredentialRepository,
 } from "../src/identity/provider-credentials.js";
 import { testConfig } from "./test-config.js";
+import { MemoryRepository } from "../src/memory/memory-repository.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) {
@@ -45,6 +47,7 @@ const database: DatabaseClient = createDatabaseClient({
 const repository = new IdentityRepository(database);
 const sessions = new SessionService(repository, testConfig.auth);
 const approvals = new ApprovalRepository(database);
+const memories = new MemoryRepository(database);
 
 beforeAll(async () => {
   await database.db.execute(sql`drop schema if exists public cascade`);
@@ -304,5 +307,65 @@ describe.sequential("PostgreSQL identity persistence", () => {
     ]);
     expect([approvedRace, rejectedRace].filter(Boolean)).toHaveLength(1);
     expect(await database.db.select().from(toolApprovals)).toHaveLength(4);
+  });
+
+  it("persists owner-scoped memories and preserves them across repository recreation", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const [otherActor] = await database.db.insert(users).values({}).returning();
+    const created = await memories.create(actorId, {
+      kind: "preference",
+      content: "Prefer concise answers",
+    });
+
+    await expect(
+      new MemoryRepository(database).getOwned(actorId, created.id),
+    ).resolves.toMatchObject({
+      actorId,
+      source: "user_explicit",
+      status: "ACTIVE",
+    });
+    await expect(
+      memories.getOwned(otherActor!.id, created.id),
+    ).resolves.toBeUndefined();
+    await expect(
+      memories.listOwned(otherActor!.id, { limit: 20 }),
+    ).resolves.toEqual([]);
+    await expect(
+      memories.deleteOwned(otherActor!.id, created.id, new Date()),
+    ).resolves.toBeUndefined();
+  });
+
+  it("soft-deletes memories atomically and excludes terminal records", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await memories.create(actorId, {
+      kind: "note",
+      content: "A private note",
+    });
+    const now = new Date();
+    await expect(
+      memories.deleteOwned(actorId, created.id, now),
+    ).resolves.toEqual({
+      id: created.id,
+    });
+    await expect(
+      memories.deleteOwned(actorId, created.id, now),
+    ).resolves.toBeUndefined();
+    await expect(
+      memories.getOwned(actorId, created.id),
+    ).resolves.toBeUndefined();
+    await expect(memories.listOwned(actorId, { limit: 20 })).resolves.toEqual(
+      [],
+    );
+    const [stored] = await database.db.select().from(userMemories);
+    expect(stored).toMatchObject({ status: "DELETED", deletedAt: now });
+  });
+
+  it("enforces the memory user foreign key", async () => {
+    await expect(
+      memories.create("00000000-0000-4000-8000-000000000099", {
+        kind: "fact",
+        content: "Cannot belong to an absent user",
+      }),
+    ).rejects.toBeDefined();
   });
 });

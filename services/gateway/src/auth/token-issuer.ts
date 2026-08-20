@@ -16,6 +16,8 @@ export async function issueAccessToken(
     "gmail.messages.read",
     "gmail.messages.send",
     "contacts.people.read",
+    "memory.read",
+    "memory.write",
   ],
   now = Math.floor(Date.now() / 1000),
 ): Promise<string> {

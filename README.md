@@ -6,13 +6,19 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## Current status
 
+## V1.5 — Started
+
+Phase 29 adds the persistent user-memory foundation. Explicit authenticated REST calls can create, list, retrieve, and soft-delete actor-owned PostgreSQL memories with exact `memory.read` and `memory.write` permissions. Supported kinds are `preference`, `fact`, `instruction`, and `note`; public creation always records `user_explicit` as the trusted source. Content is trimmed at its boundary, must be non-empty, and is limited to 4096 characters.
+
+Memory content is privacy-sensitive and is never written to structured logs. Ownership comes only from the verified AURA principal, non-owned and deleted records are indistinguishable from missing records, and all repository operations scope directly by actor. Phase 29 does not expose memory to Agent, Voice, or the Tool registry and does not implement automatic extraction, transcript storage, RAG, embeddings, vector search, document ingestion, or semantic search.
+
 ## V1 — Complete
 
 Phase 28 formally closes V1. The sealed production registry contains exactly 14 tools: `system.echo`; `utility.calculator`; `utility.datetime`; Calendar event list/get/create/update/delete; Gmail message list/get/send/reply; and Contacts people list/get. Read tools are bounded and approval-free. Calendar mutations and Gmail send/reply are exact-action, owner-bound, expiring, single-use approved writes with no automatic retry.
 
 Google credentials stay encrypted behind Gateway. Capability status and explicit re-consent cover Calendar, Gmail, and Contacts while preserving stable-subject binding and AURA-session independence. Provider failure, reconnect, browser refresh, WebSocket reconnect, voice input, and consumed approval state never replay a Tool action.
 
-V1 intentionally excludes memory, RAG, embeddings/vector storage, document ingestion, multi-step planning, autonomous or scheduled workflows, Drive/Tasks, arbitrary HTTP, browser control, shell/filesystem access, and production deployment execution. V1.5 begins after this checkpoint.
+V1 intentionally excludes memory, RAG, embeddings/vector storage, document ingestion, multi-step planning, autonomous or scheduled workflows, Drive/Tasks, arbitrary HTTP, browser control, shell/filesystem access, and production deployment execution. V1.5 now begins with explicit memory persistence only.
 
 **Phase 17 — production deployment foundation.** AURA now has non-root production images, an explicit migration job, a private service network, and a Caddy HTTPS/WSS edge for a repeatable production-like stack. Models and secrets remain external to images, and llama.cpp remains a separately managed inference runtime.
 

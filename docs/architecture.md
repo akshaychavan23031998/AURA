@@ -139,11 +139,19 @@ flowchart LR
 
 ## 6. Datastore responsibilities
 
-- **PostgreSQL:** Transactional system of record, including future users, authentication metadata, integration metadata, permissions, action/audit metadata, and conversation metadata.
+- **PostgreSQL:** Transactional system of record for users, sessions, provider credentials, approvals, and actor-owned explicit memories.
 - **CognoDB:** Graph-oriented context: people, projects, systems, relationships, memories, incidents, and knowledge links.
 - **Redis:** Transient sessions, cache, rate-limit state, short-lived voice state, and coordination.
 
 The Agent Service will not directly access OAuth credentials, execute external actions, or receive unrestricted transactional database access. The Tool Service controls sensitive integrations; the Knowledge Service controls graph and retrieval access. Exact table and dataset ownership will be decided with each implemented domain.
+
+### V1.5 Phase 29: persistent memory foundation
+
+`user_memories` stores manually submitted user data under a PostgreSQL foreign key to `users`. Its deliberately small kinds are `preference`, `fact`, `instruction`, and `note`; the only public source is the server-assigned `user_explicit`. Normal reads require `ACTIVE` status and direct `(actor_id, id)` ownership predicates. Deletion is an atomic owner-scoped transition to `DELETED` with a timestamp, and deleted or cross-owner identifiers both resolve as `MEMORY_NOT_FOUND`.
+
+Gateway exposes bounded authenticated CRUD at `/api/v1/memories`. `memory.read` and `memory.write` are independent exact permissions, caller-supplied ownership/lifecycle/source fields fail strict validation, list results are bounded and newest-first, and content is limited to 4096 characters. Memory content is never logged.
+
+This persistence boundary is intentionally disconnected from Agent, Voice, and Tool Service. Phase 29 performs no transcript scanning, automatic profiling, LLM-controlled writes, prompt injection, embeddings, semantic retrieval, vector storage, document ingestion, or RAG.
 
 ## 7. Security, errors, and observability
 

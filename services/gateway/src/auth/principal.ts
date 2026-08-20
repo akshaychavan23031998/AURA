@@ -7,6 +7,8 @@ export const allowedPermissions = [
   "gmail.messages.read",
   "gmail.messages.send",
   "contacts.people.read",
+  "memory.read",
+  "memory.write",
 ] as const;
 export type AllowedPermission = (typeof allowedPermissions)[number];
 

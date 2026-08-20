@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   jsonb,
@@ -21,6 +23,14 @@ export const approvalStatus = pgEnum("approval_status", [
   "CONSUMED",
   "EXPIRED",
 ]);
+export const memoryKind = pgEnum("memory_kind", [
+  "preference",
+  "fact",
+  "instruction",
+  "note",
+]);
+export const memorySource = pgEnum("memory_source", ["user_explicit"]);
+export const memoryStatus = pgEnum("memory_status", ["ACTIVE", "DELETED"]);
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -157,5 +167,34 @@ export const providerCredentials = pgTable(
       table.provider,
       table.providerSubject,
     ),
+  ],
+);
+
+export const userMemories = pgTable(
+  "user_memories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: memoryKind("kind").notNull(),
+    content: text("content").notNull(),
+    source: memorySource("source").notNull().default("user_explicit"),
+    status: memoryStatus("status").notNull().default("ACTIVE"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "user_memories_content_length_check",
+      sql`char_length(${table.content}) between 1 and 4096`,
+    ),
+    index("user_memories_actor_created_idx").on(table.actorId, table.createdAt),
+    index("user_memories_actor_status_idx").on(table.actorId, table.status),
   ],
 );

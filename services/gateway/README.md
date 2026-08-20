@@ -26,25 +26,37 @@ Phase 27 adds authenticated Google capability management. Status is derived from
 
 ## Endpoints
 
-| Method | Path                                     | Authentication      | Purpose                                          |
-| ------ | ---------------------------------------- | ------------------- | ------------------------------------------------ |
-| `GET`  | `/health`                                | None                | Process liveness                                 |
-| `GET`  | `/ready`                                 | None                | Gateway and PostgreSQL readiness                 |
-| `POST` | `/api/v1/auth/refresh`                   | Refresh cookie/body | Rotate refresh token and issue access token      |
-| `POST` | `/api/v1/auth/logout`                    | Bearer              | Revoke the caller's current session              |
-| `POST` | `/api/v1/auth/development-session`       | Development only    | Create the fixed local development identity      |
-| `GET`  | `/api/v1/auth/google/start`              | None                | Start Google OIDC with state, nonce, and PKCE    |
-| `GET`  | `/api/v1/auth/google/callback`           | Transaction cookie  | Validate Google identity and create AURA session |
-| `GET`  | `/api/v1/integrations/google`            | Bearer              | Read sanitized enabled Google capability state   |
-| `POST` | `/api/v1/integrations/google/reconnect`  | Bearer + Origin     | Start explicit actor-bound Google re-consent     |
-| `POST` | `/api/v1/integrations/google/disconnect` | Bearer + Origin     | Remove only the caller's local Google credential |
-| `POST` | `/api/v1/tools/execute`                  | Bearer              | Execute a validated Tool Service request         |
-| `POST` | `/api/v1/agent/respond`                  | Bearer              | Produce an unexecuted planning response          |
-| `POST` | `/api/v1/agent/run`                      | Bearer              | Run deterministic orchestration                  |
-| `POST` | `/api/v1/voice/run`                      | Bearer              | Run one multipart voice turn                     |
-| `GET`  | `/api/v1/voice/session`                  | Bearer upgrade      | Open an `aura.voice.v1` WebSocket session        |
+| Method   | Path                                     | Authentication        | Purpose                                          |
+| -------- | ---------------------------------------- | --------------------- | ------------------------------------------------ |
+| `GET`    | `/health`                                | None                  | Process liveness                                 |
+| `GET`    | `/ready`                                 | None                  | Gateway and PostgreSQL readiness                 |
+| `POST`   | `/api/v1/auth/refresh`                   | Refresh cookie/body   | Rotate refresh token and issue access token      |
+| `POST`   | `/api/v1/auth/logout`                    | Bearer                | Revoke the caller's current session              |
+| `POST`   | `/api/v1/auth/development-session`       | Development only      | Create the fixed local development identity      |
+| `GET`    | `/api/v1/auth/google/start`              | None                  | Start Google OIDC with state, nonce, and PKCE    |
+| `GET`    | `/api/v1/auth/google/callback`           | Transaction cookie    | Validate Google identity and create AURA session |
+| `GET`    | `/api/v1/integrations/google`            | Bearer                | Read sanitized enabled Google capability state   |
+| `POST`   | `/api/v1/integrations/google/reconnect`  | Bearer + Origin       | Start explicit actor-bound Google re-consent     |
+| `POST`   | `/api/v1/integrations/google/disconnect` | Bearer + Origin       | Remove only the caller's local Google credential |
+| `GET`    | `/api/v1/memories`                       | Bearer + memory.read  | List active actor-owned memories                 |
+| `GET`    | `/api/v1/memories/:memoryId`             | Bearer + memory.read  | Get one active actor-owned memory                |
+| `POST`   | `/api/v1/memories`                       | Bearer + memory.write | Create one explicit actor-owned memory           |
+| `DELETE` | `/api/v1/memories/:memoryId`             | Bearer + memory.write | Soft-delete one actor-owned memory               |
+| `POST`   | `/api/v1/tools/execute`                  | Bearer                | Execute a validated Tool Service request         |
+| `POST`   | `/api/v1/agent/respond`                  | Bearer                | Produce an unexecuted planning response          |
+| `POST`   | `/api/v1/agent/run`                      | Bearer                | Run deterministic orchestration                  |
+| `POST`   | `/api/v1/voice/run`                      | Bearer                | Run one multipart voice turn                     |
+| `GET`    | `/api/v1/voice/session`                  | Bearer upgrade        | Open an `aura.voice.v1` WebSocket session        |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
+
+## Persistent memory foundation
+
+Phase 29 starts V1.5 with manual persistence only. Gateway derives ownership from the authenticated principal and stores bounded `preference`, `fact`, `instruction`, or `note` content in PostgreSQL. Public creation cannot select ownership, lifecycle, or source; the source is always `user_explicit`. `memory.read` and `memory.write` are independent exact permissions, list limits default to 20 and cannot exceed 50, and content cannot exceed 4096 characters.
+
+Deletion is an owner-scoped atomic soft delete. Active list/get operations exclude deleted rows, and absent, deleted, and foreign-owned identifiers use the same `MEMORY_NOT_FOUND` response to avoid existence disclosure. Request logs contain no bodies or memory content. Agent, Voice, and Tool Service receive no memory data, and the production Tool registry remains at 14 entries.
+
+Automatic extraction, transcript persistence, Agent memory tools/context, RAG, embeddings, vector databases, document ingestion, semantic search, restoration, and scheduled cleanup are deliberately not implemented.
 
 ## Configuration
 
