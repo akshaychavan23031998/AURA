@@ -52,7 +52,28 @@ const agentResponseSchema = z
           memoryId: z.uuid(),
         })
         .strict(),
+      z
+        .object({
+          type: z.literal("knowledge_search"),
+          query: z
+            .string()
+            .trim()
+            .min(1)
+            .max(1024)
+            .refine((value) => !hasUnsafeControl(value)),
+        })
+        .strict(),
     ]),
+    citationIds: z
+      .array(
+        z
+          .string()
+          .regex(/^K[1-9][0-9]?$/)
+          .max(3),
+      )
+      .max(10)
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -71,6 +92,14 @@ export interface AgentRequest {
   readonly toolResult?: ToolExecutionResultContext;
   readonly memoryContext?: readonly MemoryContextItem[];
   readonly memoryResult?: MemoryMutationResultContext;
+  readonly knowledgeContext?: readonly KnowledgeContextItem[];
+}
+
+export interface KnowledgeContextItem {
+  readonly reference: string;
+  readonly title: string;
+  readonly content: string;
+  readonly ordinal: number;
 }
 
 export interface MemoryContextItem {
@@ -211,4 +240,14 @@ function safeAgentMessage(code: string): string {
     INTERNAL_SERVER_ERROR: "Agent Service request failed",
   };
   return messages[code] ?? "Agent Service request failed";
+}
+
+function hasUnsafeControl(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (
+      (code < 32 && code !== 9 && code !== 10 && code !== 13) ||
+      (code >= 127 && code <= 159)
+    );
+  });
 }

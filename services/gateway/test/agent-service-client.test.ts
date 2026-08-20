@@ -125,6 +125,86 @@ describe("Agent Service client", () => {
     expect(body).not.toHaveProperty("permissions");
   });
 
+  it("accepts strict knowledge search and forwards only bounded evidence context", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          requestId: "request-knowledge",
+          intent: "propose_knowledge_search",
+          response: "I can search saved knowledge.",
+          plan: { type: "knowledge_search", query: "deployment" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          requestId: "request-knowledge",
+          intent: "respond",
+          response: "Use the documented process. [K1]",
+          plan: { type: "respond" },
+          citationIds: ["K1"],
+        }),
+      );
+    const client = createAgentServiceClient(testConfig, fetchMock);
+    await expect(
+      client.respond({ message: "saved deployment" }, "request-knowledge"),
+    ).resolves.toMatchObject({ plan: { type: "knowledge_search" } });
+    await expect(
+      client.respond(
+        {
+          message: "saved deployment",
+          knowledgeContext: [
+            {
+              reference: "K1",
+              title: "Deployment",
+              content: "Use the documented process.",
+              ordinal: 0,
+            },
+          ],
+        },
+        "request-knowledge",
+      ),
+    ).resolves.toMatchObject({ citationIds: ["K1"] });
+    const body = JSON.parse(
+      fetchMock.mock.calls[1]?.[1]?.body as string,
+    ) as Record<string, unknown>;
+    expect(body["knowledgeContext"]).toEqual([
+      {
+        reference: "K1",
+        title: "Deployment",
+        content: "Use the documented process.",
+        ordinal: 0,
+      },
+    ]);
+    expect(body).not.toHaveProperty("actorId");
+    expect(body).not.toHaveProperty("model");
+    expect(body).not.toHaveProperty("similarity");
+  });
+
+  it.each([
+    { type: "knowledge_search", query: "deployment", actorId: "attacker" },
+    { type: "knowledge_search", query: "deployment", limit: 10 },
+    { type: "knowledge_search", query: "deployment\u0000" },
+    { type: "knowledge_search", query: "x".repeat(1025) },
+  ])("rejects unsafe knowledge plans from the Agent", async (plan) => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        Response.json({
+          requestId: "request-1",
+          intent: "knowledge",
+          response: "",
+          plan,
+        }),
+      ),
+    );
+    await expect(
+      createAgentServiceClient(testConfig, fetchMock).respond(
+        { message: "hello" },
+        "request-1",
+      ),
+    ).rejects.toMatchObject({ code: "UPSTREAM_PROTOCOL_ERROR" });
+  });
+
   it.each([
     { type: "memory_create", kind: "unknown", content: "x" },
     { type: "memory_create", kind: "note", content: "x", actorId: "attacker" },

@@ -285,6 +285,14 @@ The Compose topology is a production-like validation target, not a high-availabi
 
 ## 9. Evolution and testing strategy
 
+### Phase 35 grounded knowledge answers
+
+An explicit saved-knowledge question may produce exactly one `knowledge_search` proposal. Gateway—not Agent—derives the actor and `knowledge.read` permission and invokes `KnowledgeService.searchOwned` directly, preserving Phase 34's SQL-level actor, `ACTIVE` lifecycle, configured-model, threshold, and top-k controls. Public search security is unchanged and the Tool registry remains sealed at 14 tools.
+
+Gateway converts deterministic ranked chunks into response-local `K1` through `K10` references and caps aggregate title/content context at 16,000 Unicode characters, retaining higher-ranked evidence first. Agent receives no vectors, similarity, model, ownership, lifecycle, hashes, permissions, or database metadata. The grounded continuation schema accepts only a final response and bounded citation IDs; it cannot return another Tool, memory action, OAuth/approval action, or recursive retrieval.
+
+Citation metadata is trusted because Gateway maps model-supplied reference IDs back to the retrieved document/chunk records. Unknown IDs cause `KNOWLEDGE_GROUNDING_FAILED`; duplicates are normalized in source order. Empty retrieval bypasses continuation and returns a truthful no-match response with no citations. Retrieved content is explicitly untrusted evidence and cannot act as instructions or authorization. Knowledge queries, source content/titles, generated answers, vectors, and scores remain outside logs; only correlation and count/duration metadata are recorded.
+
 Phase 18 establishes the V1 Tool Platform boundary. Tool Service owns statically registered immutable definitions and centrally enforces identifier/version resolution, enabled state, permissions, risk/approval policy, strict input validation, bounded one-shot execution, and output validation. Normalized results are versioned and failures never expose implementation exceptions.
 
 The Agent-facing catalog contains only capability data: name, description, category, and input schema. It excludes actor identity, granted permissions, risk, approval, timeout, and implementation details. Gateway continues to derive trusted authorization context and orchestrate a single proposed tool.

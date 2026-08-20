@@ -138,7 +138,9 @@ def create_app(
     )
     async def respond(payload: AgentRequest, request: Request) -> AgentResponse:
         result = await service.respond(payload)
-        return AgentResponse(**result.model_dump(), requestId=request.state.request_id)
+        return AgentResponse(
+            **result.model_dump(by_alias=True), requestId=request.state.request_id
+        )
 
     register_error_handlers(app)
     return app

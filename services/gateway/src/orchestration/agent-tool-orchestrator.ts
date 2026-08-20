@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 
 import type { ApprovalRepository } from "../approvals/approval-repository.js";
 import type {
+  KnowledgeContextItem,
   AgentRequest,
   AgentResult,
   AgentServiceClient,
@@ -18,6 +19,18 @@ import type {
   MemoryContextView,
   MemoryStore,
 } from "../memory/memory-service.js";
+import type {
+  KnowledgeSearchResultView,
+  KnowledgeStore,
+} from "../knowledge/knowledge-service.js";
+
+export interface KnowledgeCitation {
+  readonly id: string;
+  readonly documentId: string;
+  readonly chunkId: string;
+  readonly title: string;
+  readonly ordinal: number;
+}
 
 export interface AgentRunRequest {
   readonly message: string;
@@ -26,7 +39,10 @@ export interface AgentRunRequest {
 }
 export interface CompletedAgentRunResult {
   readonly status: "completed";
-  readonly response: { readonly text: string };
+  readonly response: {
+    readonly text: string;
+    readonly citations?: readonly KnowledgeCitation[];
+  };
   readonly steps: 1 | 2;
 }
 export interface ApprovalRequiredAgentRunResult {
@@ -51,6 +67,7 @@ export interface AgentToolOrchestratorDependencies {
   readonly approvalTtlSeconds?: number;
   readonly logger?: OrchestrationLogger;
   readonly memories?: MemoryStore;
+  readonly knowledge?: Pick<KnowledgeStore, "searchOwned">;
 }
 export interface OrchestrationControl {
   readonly signal?: AbortSignal;
@@ -66,6 +83,12 @@ type MemoryPlan = Extract<
       "memory_read" | "memory_search" | "memory_create" | "memory_delete";
   }
 >;
+type KnowledgePlan = Extract<
+  AgentResult["plan"],
+  { readonly type: "knowledge_search" }
+>;
+
+export const KNOWLEDGE_RAG_CONTEXT_MAX_CHARACTERS = 16_000;
 
 export class AgentToolOrchestrator {
   public constructor(
@@ -81,10 +104,20 @@ export class AgentToolOrchestrator {
     const startedAt = performance.now();
     control.onPhaseChange?.("AGENT_INITIAL");
     const initial = await this.respond(request, requestId, control.signal);
+    if (initial.citationIds != null) throw groundingFailed();
     if (initial.plan.type === "respond") {
       this.logCompleted(requestId, "respond", 1, startedAt);
       return completed(initial.response, 1);
     }
+    if (initial.plan.type === "knowledge_search")
+      return this.executeKnowledge(
+        request,
+        initial.plan,
+        requestId,
+        authorizationContext,
+        startedAt,
+        control,
+      );
     if (initial.plan.type !== "tool")
       return this.executeMemory(
         request,
@@ -101,6 +134,94 @@ export class AgentToolOrchestrator {
       authorizationContext,
       startedAt,
       control,
+    );
+  }
+
+  private async executeKnowledge(
+    request: AgentRunRequest,
+    plan: KnowledgePlan,
+    requestId: string,
+    context: TrustedToolContext,
+    startedAt: number,
+    control: OrchestrationControl,
+  ): Promise<CompletedAgentRunResult> {
+    const knowledge = this.dependencies.knowledge;
+    if (knowledge === undefined)
+      throw new AppError({
+        code: "KNOWLEDGE_SEARCH_UNAVAILABLE",
+        httpStatus: 503,
+        message: "Knowledge search is unavailable",
+      });
+    if (!context.grantedPermissions.includes("knowledge.read"))
+      throw new AppError({
+        code: "PERMISSION_DENIED",
+        httpStatus: 403,
+        message: "Permission denied",
+      });
+    control.signal?.throwIfAborted();
+    const retrieved = await knowledge.searchOwned(
+      context.actorId,
+      plan.query,
+      requestId,
+    );
+    control.signal?.throwIfAborted();
+    if (retrieved.length === 0) {
+      this.logKnowledge(requestId, startedAt, 0, 0, 0, "no_match");
+      return completed(
+        "I couldn't find relevant information in your saved knowledge.",
+        1,
+        [],
+      );
+    }
+    const sources = buildKnowledgeContext(retrieved);
+    if (sources.length === 0) throw groundingFailed();
+    let final: AgentResult;
+    try {
+      control.onPhaseChange?.("AGENT_FINALIZATION");
+      final = await this.respond(
+        {
+          ...request,
+          knowledgeContext: sources.map((source) => source.context),
+        },
+        requestId,
+        control.signal,
+      );
+    } catch {
+      throw groundingFailed();
+    }
+    if (final.plan.type !== "respond" || !Array.isArray(final.citationIds))
+      throw groundingFailed();
+    const citations = resolveCitations(sources, final.citationIds);
+    this.logKnowledge(
+      requestId,
+      startedAt,
+      retrieved.length,
+      sources.length,
+      citations.length,
+      "completed",
+    );
+    return completed(final.response, 2, citations);
+  }
+
+  private logKnowledge(
+    requestId: string,
+    startedAt: number,
+    retrievedCount: number,
+    contextCount: number,
+    citationCount: number,
+    outcome: "completed" | "no_match",
+  ): void {
+    this.dependencies.logger?.info(
+      {
+        requestId,
+        operation: "knowledge_rag",
+        retrievedCount,
+        contextCount,
+        citationCount,
+        durationMs: performance.now() - startedAt,
+        outcome,
+      },
+      "Knowledge grounding completed",
     );
   }
 
@@ -396,7 +517,8 @@ export class AgentToolOrchestrator {
       | "memory_read"
       | "memory_search"
       | "memory_create"
-      | "memory_delete",
+      | "memory_delete"
+      | "knowledge_search",
     step: 1 | 2,
     startedAt: number,
     toolName?: string,
@@ -433,10 +555,90 @@ function sanitizeMemory(memory: MemoryContextView) {
   });
 }
 
-function completed(text: string, steps: 1 | 2): CompletedAgentRunResult {
+function completed(
+  text: string,
+  steps: 1 | 2,
+  citations?: readonly KnowledgeCitation[],
+): CompletedAgentRunResult {
   return {
     status: "completed",
-    response: { text },
+    response: {
+      text,
+      ...(citations === undefined ? {} : { citations }),
+    },
     steps,
   };
+}
+
+interface TrustedKnowledgeSource {
+  readonly context: KnowledgeContextItem;
+  readonly citation: KnowledgeCitation;
+}
+
+function buildKnowledgeContext(
+  rows: readonly KnowledgeSearchResultView[],
+): TrustedKnowledgeSource[] {
+  const sources: TrustedKnowledgeSource[] = [];
+  let remaining = KNOWLEDGE_RAG_CONTEXT_MAX_CHARACTERS;
+  for (const row of rows.slice(0, 10)) {
+    const title = truncateUnicode(row.title, 200);
+    const availableContent = remaining - unicodeLength(title);
+    if (availableContent < 1) break;
+    const content = truncateUnicode(
+      row.content,
+      Math.min(2000, availableContent),
+    );
+    if (content.length === 0) break;
+    const reference = `K${sources.length + 1}`;
+    sources.push({
+      context: Object.freeze({
+        reference,
+        title,
+        content,
+        ordinal: row.ordinal,
+      }),
+      citation: Object.freeze({
+        id: reference,
+        documentId: row.documentId,
+        chunkId: row.chunkId,
+        title,
+        ordinal: row.ordinal,
+      }),
+    });
+    remaining -= unicodeLength(title) + unicodeLength(content);
+    if (remaining < 1) break;
+  }
+  return sources;
+}
+
+function resolveCitations(
+  sources: readonly TrustedKnowledgeSource[],
+  citationIds: readonly string[],
+): KnowledgeCitation[] {
+  const requested = new Set(citationIds);
+  if (
+    citationIds.some(
+      (id) => !sources.some((source) => source.citation.id === id),
+    )
+  )
+    throw groundingFailed();
+  return sources
+    .filter((source) => requested.has(source.citation.id))
+    .map((source) => source.citation);
+}
+
+function truncateUnicode(value: string, maximum: number): string {
+  return Array.from(value).slice(0, maximum).join("");
+}
+
+function unicodeLength(value: string): number {
+  return Array.from(value).length;
+}
+
+function groundingFailed(): AppError {
+  return new AppError({
+    code: "KNOWLEDGE_GROUNDING_FAILED",
+    httpStatus: 502,
+    message: "Knowledge grounding failed",
+  });
 }

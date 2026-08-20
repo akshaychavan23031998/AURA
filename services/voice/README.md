@@ -45,6 +45,10 @@ Run deterministic checks with `pnpm voice:lint`, `voice:typecheck`, `voice:test`
 
 There is no WebSocket/WebRTC transport, partial transcript, VAD boundary, barge-in, wake word, retry, frontend, continuous conversation, or automatic transliteration. The public response uses bounded base64 WAV in JSON. CPU LLM latency still dominates complete voice turns.
 
+## Grounded knowledge answers
+
+An explicit saved-knowledge question uses the same generic STT → Gateway orchestration → Agent continuation → TTS path. Gateway owns retrieval and citation validation; Voice receives and synthesizes final response text only. It never receives vectors, similarity, embedding model, permissions, evidence chunks, or citation database metadata, and it has no direct knowledge-search authority. Phase 35 does not persist transcripts or enable automatic RAG for ordinary speech.
+
 ## Explicit memory requests
 
 Voice uses the generic authenticated Agent/Gateway path for a finalized explicit request such as “remember that I prefer morning meetings.” Voice Service has no database or memory authority, stores no transcripts, and cannot infer or extract memories from background speech. A stale or interrupted turn cannot start a second mutation; after a memory mutation crosses the dispatch boundary it is not aborted or retried, and stale completion output is suppressed using the existing interruption semantics.

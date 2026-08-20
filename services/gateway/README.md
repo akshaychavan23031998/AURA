@@ -188,6 +188,14 @@ The fixed Phase 8 permission is `system.echo`; persistent RBAC is not implemente
 
 ## Boundaries
 
+## Agent grounded knowledge flow
+
+For an explicit saved-knowledge question, Agent may propose strict `{ "type": "knowledge_search", "query": "..." }`. Gateway requires exact `knowledge.read` and calls the existing owner-scoped `KnowledgeService` directly; callers and Agent cannot choose actor, model, vector, threshold, top-k, lifecycle, or document filters. The public `POST /api/v1/knowledge/search` endpoint keeps its Phase 34 contract and is not used as an internal hop.
+
+Ranked chunks become local `K1`...`K10` evidence references. Aggregate title/content context is capped at 16,000 Unicode characters and higher-ranked results are retained first. Agent receives only reference, bounded title/content, and ordinal. Its continuation must be a final response with bounded citation IDs. Gateway rejects unknown IDs, removes duplicates deterministically, and returns trusted citation metadata containing only reference ID, document ID, chunk ID, title, and ordinal. No chunk content, vector, score, model, actor, hash, or lifecycle state appears in citation metadata.
+
+No-match retrieval returns a fixed answer with empty citations and avoids a second Agent call. Search/grounding failures are sanitized; `KNOWLEDGE_GROUNDING_FAILED` never exposes model output or evidence. Logs contain request ID, operation, counts, duration, and outcome only—not query, title, chunk content, generated response, vector, or score. The response's optional citations preserve existing non-RAG browser clients, and Voice continues synthesizing only `response.text`.
+
 The Gateway owns HTTP ingress, identity/session persistence, request lifecycle, external errors, correlation, edge hardening, trusted downstream calls, and orchestration. It does not own LLM inference, audio processing, retrieval, tool execution, external integrations, Kafka analytics, or Agent/Tool database access. Passwords, additional providers, RBAC expansion, rate limiting, Redis, and Kubernetes remain future milestones.
 
 ## Turn-based voice API

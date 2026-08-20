@@ -58,6 +58,17 @@ class MemoryMutationResultContext(BaseModel):
         return self
 
 
+class KnowledgeContextItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reference: Annotated[
+        str, StringConstraints(pattern=r"^K[1-9][0-9]?$", max_length=3)
+    ]
+    title: Annotated[str, StringConstraints(min_length=1, max_length=200)]
+    content: Annotated[str, StringConstraints(min_length=1, max_length=2000)]
+    ordinal: Annotated[int, Field(ge=0, le=127)]
+
+
 class AgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -83,10 +94,18 @@ class AgentRequest(BaseModel):
     memory_result: MemoryMutationResultContext | None = Field(
         default=None, alias="memoryResult"
     )
+    knowledge_context: (
+        Annotated[list[KnowledgeContextItem], Field(min_length=1, max_length=10)] | None
+    ) = Field(default=None, alias="knowledgeContext")
 
     @model_validator(mode="after")
     def validate_single_continuation(self) -> "AgentRequest":
-        continuations = (self.tool_result, self.memory_context, self.memory_result)
+        continuations = (
+            self.tool_result,
+            self.memory_context,
+            self.memory_result,
+            self.knowledge_context,
+        )
         if sum(item is not None for item in continuations) > 1:
             raise ValueError("Only one continuation context is allowed")
         return self
@@ -143,13 +162,29 @@ class MemoryDeletePlan(BaseModel):
     )
 
 
+class KnowledgeSearchPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["knowledge_search"] = "knowledge_search"
+    query: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=1,
+            max_length=1024,
+            pattern=r"^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]+$",
+        ),
+    ]
+
+
 Plan = Annotated[
     RespondPlan
     | ToolPlan
     | MemoryReadPlan
     | MemorySearchPlan
     | MemoryCreatePlan
-    | MemoryDeletePlan,
+    | MemoryDeletePlan
+    | KnowledgeSearchPlan,
     Field(discriminator="type"),
 ]
 
@@ -160,6 +195,22 @@ class AgentResult(BaseModel):
     intent: str
     response: str
     plan: Plan
+    citation_ids: (
+        Annotated[
+            list[
+                Annotated[
+                    str,
+                    StringConstraints(pattern=r"^K[1-9][0-9]?$", max_length=3),
+                ]
+            ],
+            Field(max_length=10),
+        ]
+        | None
+    ) = Field(
+        default=None,
+        alias="citationIds",
+        exclude_if=lambda value: value is None,
+    )
 
 
 class AgentResponse(AgentResult):

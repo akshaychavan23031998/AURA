@@ -2,6 +2,8 @@ import pytest
 
 from aura_agent.contracts import (
     AgentRequest,
+    KnowledgeContextItem,
+    KnowledgeSearchPlan,
     MemoryContextItem,
     MemoryCreatePlan,
     MemoryDeletePlan,
@@ -405,6 +407,54 @@ async def test_unrelated_requests_do_not_search_memory() -> None:
         AgentRequest(message="What's the weather?")
     )
     assert not isinstance(result.plan, MemorySearchPlan)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "query"),
+    [
+        (
+            "Search my knowledge for the authentication architecture.",
+            "the authentication architecture",
+        ),
+        ("Based on my knowledge base, PostgreSQL migrations?", "PostgreSQL migrations"),
+        ("What does my saved document say about OAuth?", "OAuth"),
+    ],
+)
+async def test_saved_knowledge_requests_propose_bounded_search(
+    message: str, query: str
+) -> None:
+    result = await DeterministicDevelopmentPlanner().plan(AgentRequest(message=message))
+    assert isinstance(result.plan, KnowledgeSearchPlan)
+    assert result.plan.query == query
+
+
+@pytest.mark.asyncio
+async def test_ordinary_question_does_not_search_knowledge() -> None:
+    result = await DeterministicDevelopmentPlanner().plan(
+        AgentRequest(message="Explain OAuth in general")
+    )
+    assert not isinstance(result.plan, KnowledgeSearchPlan)
+
+
+@pytest.mark.asyncio
+async def test_knowledge_continuation_is_final_and_cites_supplied_reference() -> None:
+    result = await DeterministicDevelopmentPlanner().plan(
+        AgentRequest(
+            message="What does my saved document say about OAuth?",
+            knowledgeContext=[
+                KnowledgeContextItem(
+                    reference="K1",
+                    title="Architecture",
+                    content="OAuth uses PKCE.",
+                    ordinal=0,
+                )
+            ],
+        )
+    )
+    assert isinstance(result.plan, RespondPlan)
+    assert result.citation_ids == ["K1"]
+    assert "[K1]" in result.response
 
 
 @pytest.mark.asyncio

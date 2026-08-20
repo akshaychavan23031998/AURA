@@ -225,6 +225,7 @@ export async function createApp(
     approvalTtlSeconds: options.config.approvals?.ttlSeconds ?? 300,
     logger: app.log,
     memories: memoryService,
+    knowledge: knowledgeService,
   });
   registerRoutes(
     app,
