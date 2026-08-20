@@ -18,6 +18,9 @@ from pydantic import (
 from aura_agent.contracts import (
     AgentRequest,
     AgentResult,
+    MemoryCreatePlan,
+    MemoryDeletePlan,
+    MemoryReadPlan,
     RespondPlan,
     ToolPlan,
     ToolProposal,
@@ -35,6 +38,26 @@ class Planner(Protocol):
 
 class DeterministicDevelopmentPlanner:
     async def plan(self, request: AgentRequest) -> AgentResult:
+        if request.memory_context is not None:
+            if not request.memory_context:
+                response = "You have no explicit saved memories."
+            else:
+                rendered = "; ".join(
+                    f"[{item.id}] {item.kind}: {item.content}"
+                    for item in request.memory_context
+                )
+                response = f"Your explicit saved memories are: {rendered}"
+            return AgentResult(intent="respond", response=response, plan=RespondPlan())
+
+        if request.memory_result is not None:
+            result = request.memory_result
+            response = (
+                f"I saved that {result.memory.kind} memory with ID {result.memory.id}."
+                if result.operation == "created" and result.memory is not None
+                else f"I deleted memory {result.memory_id}."
+            )
+            return AgentResult(intent="respond", response=response, plan=RespondPlan())
+
         if request.tool_result is not None:
             result = request.tool_result
             known_tools = {cast(str, item["name"]) for item in AGENT_TOOL_CATALOG}
@@ -137,6 +160,19 @@ class DeterministicDevelopmentPlanner:
 
         normalized = request.message.strip()
         lowered = normalized.casefold()
+        memory_plan = _parse_deterministic_memory(normalized)
+        if memory_plan is not None:
+            return AgentResult(
+                intent=f"propose_{memory_plan.type}",
+                response="I can perform that explicit memory operation.",
+                plan=memory_plan,
+            )
+        if lowered.startswith(("forget ", "delete the saved", "remove memory")):
+            return AgentResult(
+                intent="respond",
+                response="Please provide the exact saved memory ID to forget.",
+                plan=RespondPlan(),
+            )
         expression = None
         if lowered.startswith("calculate "):
             expression = normalized[len("calculate ") :].strip()
@@ -503,6 +539,39 @@ class _ToolOutput(BaseModel):
     plan: _ToolOutputPlan
 
 
+class _MemoryReadOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["propose_memory_read"]
+    response: str = Field(min_length=1, max_length=8192)
+    plan: MemoryReadPlan
+
+
+class _MemoryCreateOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["propose_memory_create"]
+    response: str = Field(min_length=1, max_length=8192)
+    plan: MemoryCreatePlan
+
+
+class _MemoryDeleteOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["propose_memory_delete"]
+    response: str = Field(min_length=1, max_length=8192)
+    plan: MemoryDeletePlan
+
+
+InitialOutput = (
+    _RespondOutput
+    | _ToolOutput
+    | _MemoryReadOutput
+    | _MemoryCreateOutput
+    | _MemoryDeleteOutput
+)
+
+
 class SelfHostedLlmPlanner:
     def __init__(self, inference: InferenceClient, model_name: str) -> None:
         self._inference = inference
@@ -511,7 +580,15 @@ class SelfHostedLlmPlanner:
     async def plan(self, request: AgentRequest) -> AgentResult:
         started = time.perf_counter()
         messages = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
-        if request.tool_result is None:
+        continuation = any(
+            item is not None
+            for item in (
+                request.tool_result,
+                request.memory_context,
+                request.memory_result,
+            )
+        )
+        if not continuation:
             messages.append(
                 ChatMessage(
                     role="user",
@@ -524,36 +601,41 @@ class SelfHostedLlmPlanner:
                     ),
                 )
             )
-            output_type: type[_RespondOutput] | type[_ToolOutput] = _ToolOutput
             schema = _initial_output_schema()
         else:
+            continuation_data: dict[str, object] = {
+                "untrustedUserMessage": request.message,
+                "instruction": (
+                    "Return the final response. Do not propose another action."
+                ),
+            }
+            if request.tool_result is not None:
+                continuation_data["successfulToolResultData"] = (
+                    request.tool_result.model_dump(by_alias=True)
+                )
+            elif request.memory_context is not None:
+                continuation_data["untrustedMemoryContext"] = [
+                    item.model_dump(by_alias=True) for item in request.memory_context
+                ]
+            elif request.memory_result is not None:
+                continuation_data["successfulMemoryResult"] = (
+                    request.memory_result.model_dump(by_alias=True, exclude_none=True)
+                )
             messages.append(
                 ChatMessage(
                     role="user",
-                    content=json.dumps(
-                        {
-                            "untrustedUserMessage": request.message,
-                            "successfulToolResultData": request.tool_result.model_dump(
-                                by_alias=True
-                            ),
-                            "instruction": (
-                                "Return the final response. Do not propose a tool."
-                            ),
-                        },
-                        ensure_ascii=False,
-                    ),
+                    content=json.dumps(continuation_data, ensure_ascii=False),
                 )
             )
-            output_type = _RespondOutput
             schema = _respond_output_schema()
 
         raw = await self._inference.complete(messages, schema)
         try:
             decoded = json.loads(raw)
-            if request.tool_result is None:
+            if not continuation:
                 output = _parse_initial_output(decoded)
             else:
-                output = output_type.model_validate(decoded)
+                output = _RespondOutput.model_validate(decoded)
         except (json.JSONDecodeError, ValidationError) as error:
             raise ValueError("Invalid structured model output") from error
 
@@ -603,6 +685,9 @@ def _initial_output_schema() -> dict[str, object]:
                 },
                 "required": ["intent", "response", "plan"],
             },
+            _memory_output_schema("memory_read"),
+            _memory_output_schema("memory_create"),
+            _memory_output_schema("memory_delete"),
         ]
     }
 
@@ -637,30 +722,78 @@ def _tool_schema(capability: Mapping[str, object]) -> dict[str, object]:
     }
 
 
-def _parse_initial_output(value: object) -> _RespondOutput | _ToolOutput:
-    try:
-        return _RespondOutput.model_validate(value)
-    except ValidationError:
-        return _ToolOutput.model_validate(value)
+def _memory_output_schema(operation: str) -> dict[str, object]:
+    plan_properties: dict[str, object] = {"type": {"const": operation}}
+    required = ["type"]
+    if operation == "memory_read":
+        plan_properties["kind"] = {
+            "type": ["string", "null"],
+            "enum": ["preference", "fact", "instruction", "note", None],
+        }
+        required.append("kind")
+    elif operation == "memory_create":
+        plan_properties.update(
+            {
+                "kind": {"enum": ["preference", "fact", "instruction", "note"]},
+                "content": {"type": "string", "minLength": 1, "maxLength": 4096},
+            }
+        )
+        required.extend(["kind", "content"])
+    else:
+        plan_properties["memoryId"] = {
+            "type": "string",
+            "pattern": "^[0-9a-f-]{36}$",
+        }
+        required.append("memoryId")
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "intent": {"const": f"propose_{operation}"},
+            "response": {"type": "string", "minLength": 1},
+            "plan": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": plan_properties,
+                "required": required,
+            },
+        },
+        "required": ["intent", "response", "plan"],
+    }
 
 
-def _to_agent_result(output: _RespondOutput | _ToolOutput) -> AgentResult:
+def _parse_initial_output(value: object) -> InitialOutput:
+    for output_type in (
+        _RespondOutput,
+        _ToolOutput,
+        _MemoryReadOutput,
+        _MemoryCreateOutput,
+        _MemoryDeleteOutput,
+    ):
+        try:
+            return output_type.model_validate(value)
+        except ValidationError:
+            pass
+    raise ValueError("Invalid structured model output")
+
+
+def _to_agent_result(output: InitialOutput) -> AgentResult:
     if isinstance(output, _RespondOutput):
         return AgentResult(
             intent=output.intent,
             response=output.response,
             plan=RespondPlan(),
         )
-    return AgentResult(
-        intent=output.intent,
-        response=output.response,
-        plan=ToolPlan(
+    if isinstance(output, _ToolOutput):
+        plan = ToolPlan(
             tool=ToolProposal(
                 name=output.plan.tool.name,
                 input=output.plan.tool.input,
             )
-        ),
-    )
+        )
+    else:
+        plan = output.plan
+    return AgentResult(intent=output.intent, response=output.response, plan=plan)
 
 
 class AgentPlanningError(Exception):
@@ -676,6 +809,63 @@ class AgentService:
             return await self._planner.plan(request)
         except Exception as error:
             raise AgentPlanningError from error
+
+
+def _parse_deterministic_memory(
+    message: str,
+) -> MemoryReadPlan | MemoryCreatePlan | MemoryDeletePlan | None:
+    lowered = message.casefold().strip()
+    if lowered in {
+        "what do you remember about me?",
+        "what do you remember about me",
+        "use my saved preferences",
+    }:
+        return MemoryReadPlan(kind=None)
+    if lowered in {
+        "what preferences have i asked you to remember?",
+        "what preferences have i asked you to remember",
+    }:
+        return MemoryReadPlan(kind="preference")
+    if lowered in {
+        "what timezone did i ask you to remember?",
+        "what timezone did i ask you to remember",
+    }:
+        return MemoryReadPlan(kind="fact")
+
+    delete_match = re.fullmatch(
+        r"(?:forget memory|delete (?:the )?saved "
+        r"(?:preference|fact|instruction|note)(?: with id)?|"
+        r"forget that saved note|remove memory) "
+        r"(?P<id>[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if delete_match is not None:
+        return MemoryDeletePlan(memoryId=delete_match.group("id").lower())
+
+    content: str | None = None
+    for pattern in (
+        r"remember that (?P<content>.+)",
+        r"remember (?P<content>.+)",
+        r"save this:\s*(?P<content>.+)",
+        r"keep in mind for future conversations that (?P<content>.+)",
+    ):
+        match = re.fullmatch(pattern, message, flags=re.IGNORECASE)
+        if match is not None:
+            content = match.group("content").strip()
+            break
+    if content is None or not content or len(content) > 4096:
+        return None
+    content_lower = content.casefold()
+    if "prefer" in content_lower or "preference" in content_lower:
+        kind = "preference"
+    elif content_lower.startswith(("always ", "never ", "please ")):
+        kind = "instruction"
+    elif content_lower.startswith(("i use ", "my ", "i am ", "i work ")):
+        kind = "fact"
+    else:
+        kind = "note"
+    return MemoryCreatePlan(kind=kind, content=content)
 
 
 def _parse_deterministic_calendar_create(message: str) -> dict[str, JsonValue] | None:

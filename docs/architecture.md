@@ -145,13 +145,15 @@ flowchart LR
 
 The Agent Service will not directly access OAuth credentials, execute external actions, or receive unrestricted transactional database access. The Tool Service controls sensitive integrations; the Knowledge Service controls graph and retrieval access. Exact table and dataset ownership will be decided with each implemented domain.
 
-### V1.5 Phase 29: persistent memory foundation
+### V1.5 Phases 29–30: persistent and explicit memory
 
 `user_memories` stores manually submitted user data under a PostgreSQL foreign key to `users`. Its deliberately small kinds are `preference`, `fact`, `instruction`, and `note`; the only public source is the server-assigned `user_explicit`. Normal reads require `ACTIVE` status and direct `(actor_id, id)` ownership predicates. Deletion is an atomic owner-scoped transition to `DELETED` with a timestamp, and deleted or cross-owner identifiers both resolve as `MEMORY_NOT_FOUND`.
 
 Gateway exposes bounded authenticated CRUD at `/api/v1/memories`. `memory.read` and `memory.write` are independent exact permissions, caller-supplied ownership/lifecycle/source fields fail strict validation, list results are bounded and newest-first, and content is limited to 4096 characters. Memory content is never logged.
 
-This persistence boundary is intentionally disconnected from Agent, Voice, and Tool Service. Phase 29 performs no transcript scanning, automatic profiling, LLM-controlled writes, prompt injection, embeddings, semantic retrieval, vector storage, document ingestion, or RAG.
+Phase 30 adds a distinct strict Agent plan union for explicit memory read/create/delete. Gateway—not the Agent—checks `memory.read` or `memory.write`, derives ownership, calls the shared MemoryService, and returns a dedicated sanitized continuation result. Reads are intentional, newest-first, and capped at 10; creates require explicit remember/save language; deletes require an exact UUID. One turn may contain only one response, Tool, or memory action.
+
+Memory context is untrusted persisted user content, structurally separated from system policy and never treated as authorization or executable instruction. Voice can carry a finalized explicit request through the same path, but background, stale, and interrupted transcripts are not persisted. Tool Service and its 14-tool registry are unchanged. Transcript scanning, automatic profiling/extraction, fuzzy deletion, prompt injection as authority, embeddings, semantic retrieval, vector storage, document ingestion, and RAG remain absent.
 
 ## 7. Security, errors, and observability
 

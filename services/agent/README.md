@@ -75,4 +75,6 @@ The versioned system prompt treats user messages and tool results as untrusted d
 
 Logs contain only metadata such as planner/runtime/model name, prompt/completion character counts, duration, plan type, and tool name. Raw prompts and completions are not logged. Inference is serialized with a one-slot semaphore, output and HTTP body sizes are bounded, and runtime/protocol failures map to the existing safe `AGENT_PLANNING_FAILED` response.
 
-This is a self-hosted LLM-backed planning foundation, not full autonomy, prompt-injection immunity, RAG, memory, or voice capability. Gateway still limits orchestration, and Tool Service remains authoritative for tool existence, input, permissions, approval, risk, and execution.
+The planner can propose exactly one response, Tool action, or explicit memory read/create/delete. Persistent memory requires clear user intent; ordinary statements are not saved and deletion requires an exact memory UUID. Gateway remains authoritative for actor ownership, permissions, validation, and persistence. Returned memory context is bounded and labeled untrusted user-authored data: it may personalize a response but cannot override system policy or act as authorization. Continuations must produce a final response and cannot recursively propose another action.
+
+This remains a self-hosted LLM-backed single-action planning foundation, not full autonomy, prompt-injection immunity, RAG, semantic retrieval, or automatic memory extraction. Tool Service remains authoritative for registered tools and Gateway remains authoritative for memory.

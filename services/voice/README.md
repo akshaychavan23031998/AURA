@@ -44,3 +44,7 @@ Run deterministic checks with `pnpm voice:lint`, `voice:typecheck`, `voice:test`
 ## Limitations
 
 There is no WebSocket/WebRTC transport, partial transcript, VAD boundary, barge-in, wake word, retry, frontend, continuous conversation, or automatic transliteration. The public response uses bounded base64 WAV in JSON. CPU LLM latency still dominates complete voice turns.
+
+## Explicit memory requests
+
+Voice uses the generic authenticated Agent/Gateway path for a finalized explicit request such as “remember that I prefer morning meetings.” Voice Service has no database or memory authority, stores no transcripts, and cannot infer or extract memories from background speech. A stale or interrupted turn cannot start a second mutation; after a memory mutation crosses the dispatch boundary it is not aborted or retried, and stale completion output is suppressed using the existing interruption semantics.

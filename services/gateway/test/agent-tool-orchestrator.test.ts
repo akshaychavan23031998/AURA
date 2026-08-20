@@ -7,6 +7,7 @@ import type {
 import type { ToolServiceClient } from "../src/clients/tools/tool-service-client.js";
 import { AppError } from "../src/errors/app-error.js";
 import { AgentToolOrchestrator } from "../src/orchestration/agent-tool-orchestrator.js";
+import type { MemoryStore } from "../src/memory/memory-service.js";
 
 const requestId = "orchestration-test-1";
 const request = { message: "echo AURA" };
@@ -29,6 +30,24 @@ const finalPlan: AgentResult = {
   response: "Echo completed successfully: AURA",
   plan: { type: "respond" },
 };
+const memoryId = "00000000-0000-4000-8000-000000000010";
+const memory = {
+  id: memoryId,
+  kind: "preference" as const,
+  content: "Prefers dark mode",
+  source: "user_explicit" as const,
+  createdAt: "2026-08-20T00:00:00.000Z",
+  updatedAt: "2026-08-20T00:00:00.000Z",
+};
+
+function memoryStore(): MemoryStore {
+  return {
+    create: vi.fn().mockResolvedValue(memory),
+    getOwned: vi.fn().mockResolvedValue(memory),
+    listOwned: vi.fn().mockResolvedValue([memory]),
+    deleteOwned: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
 function dependencies(agentResults: readonly AgentResult[] = [finalPlan]) {
   const respond = vi.fn<AgentServiceClient["respond"]>();
@@ -220,5 +239,149 @@ describe("AgentToolOrchestrator", () => {
     });
     expect(respond).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("creates one explicit owner-scoped memory and continues once", async () => {
+    const memories = memoryStore();
+    const respond = vi
+      .fn<AgentServiceClient["respond"]>()
+      .mockResolvedValueOnce({
+        requestId,
+        intent: "propose_memory_create",
+        response: "I can remember that.",
+        plan: {
+          type: "memory_create",
+          kind: "preference",
+          content: "Prefers dark mode",
+        },
+      })
+      .mockResolvedValueOnce(finalPlan);
+    const orchestrator = new AgentToolOrchestrator({
+      agentClient: { respond },
+      toolClient: { execute: vi.fn() },
+      memories,
+    });
+    await expect(
+      orchestrator.run(
+        { message: "Remember that I prefer dark mode" },
+        requestId,
+        {
+          actorId: "actor-1",
+          grantedPermissions: ["memory.write"],
+        },
+      ),
+    ).resolves.toMatchObject({ status: "completed", steps: 2 });
+    expect(memories.create).toHaveBeenCalledOnce();
+    expect(memories.create).toHaveBeenCalledWith("actor-1", {
+      kind: "preference",
+      content: "Prefers dark mode",
+    });
+    expect(respond).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        memoryResult: {
+          operation: "created",
+          memory: {
+            id: memoryId,
+            kind: "preference",
+            content: "Prefers dark mode",
+          },
+        },
+      }),
+      requestId,
+    );
+  });
+
+  it("bounds and sanitizes owner-scoped memory context", async () => {
+    const memories = memoryStore();
+    vi.mocked(memories.listOwned).mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => ({
+        ...memory,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      })),
+    );
+    const respond = vi
+      .fn<AgentServiceClient["respond"]>()
+      .mockResolvedValueOnce({
+        requestId,
+        intent: "propose_memory_read",
+        response: "I can read your saved preferences.",
+        plan: { type: "memory_read", kind: "preference" },
+      })
+      .mockResolvedValueOnce(finalPlan);
+    const orchestrator = new AgentToolOrchestrator({
+      agentClient: { respond },
+      toolClient: { execute: vi.fn() },
+      memories,
+    });
+    await orchestrator.run({ message: "Use my saved preferences" }, requestId, {
+      actorId: "actor-1",
+      grantedPermissions: ["memory.read"],
+    });
+    expect(memories.listOwned).toHaveBeenCalledWith("actor-1", {
+      limit: 10,
+      kind: "preference",
+    });
+    const context = respond.mock.calls[1]?.[0].memoryContext;
+    expect(context).toHaveLength(10);
+    expect(context?.[0]).toEqual({
+      id: "00000000-0000-4000-8000-000000000000",
+      kind: "preference",
+      content: "Prefers dark mode",
+    });
+    expect(JSON.stringify(context)).not.toMatch(
+      /source|createdAt|actorId|status/,
+    );
+  });
+
+  it("requires independent memory permissions and never invokes persistence on denial", async () => {
+    const memories = memoryStore();
+    const createPlan: AgentResult = {
+      requestId,
+      intent: "propose_memory_create",
+      response: "remember",
+      plan: { type: "memory_create", kind: "note", content: "safe" },
+    };
+    const orchestrator = new AgentToolOrchestrator({
+      agentClient: {
+        respond: vi.fn().mockResolvedValue(createPlan),
+      },
+      toolClient: { execute: vi.fn() },
+      memories,
+    });
+    await expect(
+      orchestrator.run({ message: "Remember safe" }, requestId, {
+        actorId: "actor-1",
+        grantedPermissions: ["memory.read"],
+      }),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED", httpStatus: 403 });
+    expect(memories.create).not.toHaveBeenCalled();
+  });
+
+  it("deletes exactly one explicit owned memory and rejects a recursive action", async () => {
+    const memories = memoryStore();
+    const deletePlan: AgentResult = {
+      requestId,
+      intent: "propose_memory_delete",
+      response: "forget",
+      plan: { type: "memory_delete", memoryId },
+    };
+    const respond = vi
+      .fn<AgentServiceClient["respond"]>()
+      .mockResolvedValueOnce(deletePlan)
+      .mockResolvedValueOnce(deletePlan);
+    const orchestrator = new AgentToolOrchestrator({
+      agentClient: { respond },
+      toolClient: { execute: vi.fn() },
+      memories,
+    });
+    await expect(
+      orchestrator.run({ message: `Forget memory ${memoryId}` }, requestId, {
+        actorId: "actor-1",
+        grantedPermissions: ["memory.write"],
+      }),
+    ).rejects.toMatchObject({ code: "ORCHESTRATION_STEP_LIMIT_EXCEEDED" });
+    expect(memories.deleteOwned).toHaveBeenCalledOnce();
+    expect(memories.deleteOwned).toHaveBeenCalledWith("actor-1", memoryId);
   });
 });

@@ -123,7 +123,7 @@ describe("memory routes", () => {
       method: "POST",
       url: "/api/v1/memories",
       headers: authorization,
-      payload: { kind: "preference", content: "  Prefer concise answers  " },
+      payload: { kind: "preference", content: "Prefer concise answers" },
     });
     expect(accepted.statusCode).toBe(200);
     expect(memories.create).toHaveBeenCalledWith(

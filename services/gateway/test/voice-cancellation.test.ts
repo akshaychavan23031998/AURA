@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentServiceClient } from "../src/clients/agent/agent-service-client.js";
 import type { ToolServiceClient } from "../src/clients/tools/tool-service-client.js";
 import type { VoiceServiceClient } from "../src/clients/voice/voice-service-client.js";
+import type { MemoryStore } from "../src/memory/memory-service.js";
 import { AgentToolOrchestrator } from "../src/orchestration/agent-tool-orchestrator.js";
 import { VoiceTurnService } from "../src/orchestration/voice-turn-service.js";
 import {
@@ -59,13 +60,14 @@ describe("safe voice turn cancellation", () => {
         ),
     );
     const execute = vi.fn<ToolServiceClient["execute"]>();
+    const synthesize = vi.fn();
     const voice: VoiceServiceClient = {
       transcribe: vi.fn().mockResolvedValue({
         text: "first",
         detectedLanguage: "en",
         durationMs: 40,
       }),
-      synthesize: vi.fn(),
+      synthesize,
     };
     const { session, events } = fixture(voice, { respond }, { execute });
     session.start();
@@ -301,22 +303,82 @@ describe("safe voice turn cancellation", () => {
     expect(execute).toHaveBeenCalledOnce();
     expect(respond).toHaveBeenCalledOnce();
   });
+
+  it("disconnects during an explicit memory write without duplicating or continuing it", async () => {
+    const persisted = deferred<Awaited<ReturnType<MemoryStore["create"]>>>();
+    const respond = vi.fn<AgentServiceClient["respond"]>().mockResolvedValue({
+      requestId: "r",
+      intent: "memory",
+      response: "",
+      plan: {
+        type: "memory_create",
+        kind: "preference",
+        content: "Prefers morning meetings",
+      },
+    });
+    const create = vi.fn<MemoryStore["create"]>(() => persisted.promise);
+    const memories: MemoryStore = {
+      create,
+      getOwned: vi.fn(),
+      listOwned: vi.fn(),
+      deleteOwned: vi.fn(),
+    };
+    const synthesize = vi.fn();
+    const voice: VoiceServiceClient = {
+      transcribe: vi.fn().mockResolvedValue({
+        text: "remember that I prefer morning meetings",
+        detectedLanguage: "en",
+        durationMs: 40,
+      }),
+      synthesize,
+    };
+    const { session } = fixture(
+      voice,
+      { respond },
+      { execute: vi.fn() },
+      memories,
+    );
+    session.start();
+    sendTurn(session);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    session.close();
+    persisted.resolve({
+      id: "00000000-0000-4000-8000-000000000010",
+      kind: "preference",
+      content: "Prefers morning meetings",
+      source: "user_explicit",
+      createdAt: "2026-08-20T00:00:00.000Z",
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(create).toHaveBeenCalledOnce();
+    expect(respond).toHaveBeenCalledOnce();
+    expect(synthesize).not.toHaveBeenCalled();
+  });
 });
 
 function fixture(
   voice: VoiceServiceClient,
   agent: AgentServiceClient,
   tools: ToolServiceClient,
+  memories?: MemoryStore,
 ) {
   const events: Array<{ type: string; turnId?: string }> = [];
   const audio: Buffer[] = [];
   const turns = new VoiceTurnService(
     voice,
-    new AgentToolOrchestrator({ agentClient: agent, toolClient: tools }),
+    new AgentToolOrchestrator({
+      agentClient: agent,
+      toolClient: tools,
+      ...(memories === undefined ? {} : { memories }),
+    }),
   );
   const session = new VoiceSessionCoordinator(
     "root",
-    { actorId: "actor", grantedPermissions: ["system.echo"] },
+    {
+      actorId: "actor",
+      grantedPermissions: ["system.echo", "memory.write"],
+    },
     turns,
     {
       event: (event) => events.push(event),

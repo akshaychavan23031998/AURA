@@ -180,6 +180,7 @@ export async function createApp(
     approvals: approvalRepository,
     approvalTtlSeconds: options.config.approvals?.ttlSeconds ?? 300,
     logger: app.log,
+    memories: memoryService,
   });
   registerRoutes(
     app,

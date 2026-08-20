@@ -25,6 +25,27 @@ const agentResponseSchema = z
     plan: z.discriminatedUnion("type", [
       z.object({ type: z.literal("respond") }).strict(),
       z.object({ type: z.literal("tool"), tool: toolProposalSchema }).strict(),
+      z
+        .object({
+          type: z.literal("memory_read"),
+          kind: z
+            .enum(["preference", "fact", "instruction", "note"])
+            .nullable(),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("memory_create"),
+          kind: z.enum(["preference", "fact", "instruction", "note"]),
+          content: z.string().trim().min(1).max(4096),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("memory_delete"),
+          memoryId: z.uuid(),
+        })
+        .strict(),
     ]),
   })
   .strict();
@@ -42,7 +63,19 @@ export interface AgentRequest {
   readonly conversationId?: string;
   readonly locale?: string;
   readonly toolResult?: ToolExecutionResultContext;
+  readonly memoryContext?: readonly MemoryContextItem[];
+  readonly memoryResult?: MemoryMutationResultContext;
 }
+
+export interface MemoryContextItem {
+  readonly id: string;
+  readonly kind: "preference" | "fact" | "instruction" | "note";
+  readonly content: string;
+}
+
+export type MemoryMutationResultContext =
+  | { readonly operation: "created"; readonly memory: MemoryContextItem }
+  | { readonly operation: "deleted"; readonly memoryId: string };
 
 export interface ToolExecutionResultContext {
   readonly tool: string;

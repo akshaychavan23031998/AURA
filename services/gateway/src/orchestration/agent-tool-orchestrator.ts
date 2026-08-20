@@ -14,6 +14,7 @@ import type {
 } from "../clients/tools/tool-service-client.js";
 import { AppError } from "../errors/app-error.js";
 import type { TurnExecutionPhase } from "../voice/cancellation.js";
+import type { MemoryStore, MemoryView } from "../memory/memory-service.js";
 
 export interface AgentRunRequest {
   readonly message: string;
@@ -46,6 +47,7 @@ export interface AgentToolOrchestratorDependencies {
   readonly approvals?: Pick<ApprovalRepository, "create">;
   readonly approvalTtlSeconds?: number;
   readonly logger?: OrchestrationLogger;
+  readonly memories?: MemoryStore;
 }
 export interface OrchestrationControl {
   readonly signal?: AbortSignal;
@@ -54,6 +56,10 @@ export interface OrchestrationControl {
   readonly onToolCompleted?: () => void;
 }
 type ToolPlan = Extract<AgentResult["plan"], { readonly type: "tool" }>;
+type MemoryPlan = Extract<
+  AgentResult["plan"],
+  { readonly type: "memory_read" | "memory_create" | "memory_delete" }
+>;
 
 export class AgentToolOrchestrator {
   public constructor(
@@ -73,6 +79,15 @@ export class AgentToolOrchestrator {
       this.logCompleted(requestId, "respond", 1, startedAt);
       return completed(initial.response, 1);
     }
+    if (initial.plan.type !== "tool")
+      return this.executeMemory(
+        request,
+        initial.plan,
+        requestId,
+        authorizationContext,
+        startedAt,
+        control,
+      );
     return this.executeToolOrSuspend(
       request,
       initial.plan,
@@ -81,6 +96,130 @@ export class AgentToolOrchestrator {
       startedAt,
       control,
     );
+  }
+
+  private async executeMemory(
+    request: AgentRunRequest,
+    plan: MemoryPlan,
+    requestId: string,
+    context: TrustedToolContext,
+    startedAt: number,
+    control: OrchestrationControl,
+  ): Promise<CompletedAgentRunResult> {
+    const memories = this.dependencies.memories;
+    if (memories === undefined)
+      throw new AppError({
+        code: "INTERNAL_SERVER_ERROR",
+        httpStatus: 500,
+        message: "Memory service unavailable",
+      });
+    const requiredPermission =
+      plan.type === "memory_read" ? "memory.read" : "memory.write";
+    if (!context.grantedPermissions.includes(requiredPermission))
+      throw new AppError({
+        code: "PERMISSION_DENIED",
+        httpStatus: 403,
+        message: "Permission denied",
+      });
+    control.signal?.throwIfAborted();
+
+    if (plan.type === "memory_read") {
+      const rows = await memories.listOwned(
+        context.actorId,
+        plan.kind === null ? { limit: 10 } : { limit: 10, kind: plan.kind },
+      );
+      control.signal?.throwIfAborted();
+      return this.finalizeMemory(
+        request,
+        { memoryContext: rows.slice(0, 10).map(sanitizeMemory) },
+        requestId,
+        startedAt,
+        control,
+        "memory_read",
+      );
+    }
+
+    control.onPhaseChange?.("TOOL_EXECUTION");
+    control.onToolDispatched?.();
+    if (plan.type === "memory_create") {
+      const created = await memories.create(context.actorId, {
+        kind: plan.kind,
+        content: plan.content,
+      });
+      control.onToolCompleted?.();
+      control.signal?.throwIfAborted();
+      return this.finalizeMemory(
+        request,
+        {
+          memoryResult: {
+            operation: "created",
+            memory: sanitizeMemory(created),
+          },
+        },
+        requestId,
+        startedAt,
+        control,
+        "memory_create",
+      );
+    }
+
+    await memories.deleteOwned(context.actorId, plan.memoryId);
+    control.onToolCompleted?.();
+    control.signal?.throwIfAborted();
+    return this.finalizeMemory(
+      request,
+      { memoryResult: { operation: "deleted", memoryId: plan.memoryId } },
+      requestId,
+      startedAt,
+      control,
+      "memory_delete",
+    );
+  }
+
+  private async finalizeMemory(
+    request: AgentRunRequest,
+    continuation: Pick<AgentRequest, "memoryContext" | "memoryResult">,
+    requestId: string,
+    startedAt: number,
+    control: OrchestrationControl,
+    planType: "memory_read" | "memory_create" | "memory_delete",
+  ): Promise<CompletedAgentRunResult> {
+    let final: AgentResult;
+    try {
+      control.onPhaseChange?.("AGENT_FINALIZATION");
+      final = await this.respond(
+        { ...request, ...continuation },
+        requestId,
+        control.signal,
+      );
+    } catch {
+      this.dependencies.logger?.error(
+        {
+          requestId,
+          phase: "agent-finalization",
+          memoryOperation: planType,
+          memoryMutationSucceeded: planType !== "memory_read",
+          duration: performance.now() - startedAt,
+        },
+        "Agent finalization failed after memory operation",
+      );
+      throw new AppError({
+        code: "AGENT_FINALIZATION_FAILED",
+        httpStatus: 502,
+        message:
+          planType === "memory_read"
+            ? "Memory was read, but the final agent response could not be generated"
+            : "The memory operation may have completed, but the final agent response could not be generated",
+      });
+    }
+    if (final.plan.type !== "respond")
+      throw new AppError({
+        code: "ORCHESTRATION_STEP_LIMIT_EXCEEDED",
+        httpStatus: 500,
+        message: "Agent orchestration step limit exceeded",
+      });
+    this.logCompleted(requestId, planType, 2, startedAt);
+    return completed(final.response, 2);
   }
 
   public async resumeApproved(
@@ -206,7 +345,7 @@ export class AgentToolOrchestrator {
         cause: error,
       });
     }
-    if (final.plan.type === "tool")
+    if (final.plan.type !== "respond")
       throw new AppError({
         code: "ORCHESTRATION_STEP_LIMIT_EXCEEDED",
         httpStatus: 500,
@@ -218,7 +357,8 @@ export class AgentToolOrchestrator {
 
   private logCompleted(
     requestId: string,
-    planType: "respond" | "tool",
+    planType:
+      "respond" | "tool" | "memory_read" | "memory_create" | "memory_delete",
     step: 1 | 2,
     startedAt: number,
     toolName?: string,
@@ -245,6 +385,14 @@ export class AgentToolOrchestrator {
       ? this.dependencies.agentClient.respond(request, requestId)
       : this.dependencies.agentClient.respond(request, requestId, signal);
   }
+}
+
+function sanitizeMemory(memory: MemoryView) {
+  return Object.freeze({
+    id: memory.id,
+    kind: memory.kind,
+    content: memory.content.slice(0, 4096),
+  });
 }
 
 function completed(text: string, steps: 1 | 2): CompletedAgentRunResult {

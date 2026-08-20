@@ -83,6 +83,71 @@ describe("Agent Service client", () => {
     ).rejects.toMatchObject({ code: "UPSTREAM_SERVICE_TIMEOUT" });
   });
 
+  it("accepts strict memory plans and forwards sanitized continuation context", async () => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        Response.json({
+          requestId: "request-memory",
+          intent: "memory",
+          response: "",
+          plan: { type: "memory_read", kind: "preference" },
+        }),
+      ),
+    );
+    const client = createAgentServiceClient(testConfig, fetchMock);
+    await expect(
+      client.respond({ message: "what do you remember?" }, "request-memory"),
+    ).resolves.toMatchObject({ plan: { type: "memory_read" } });
+    await client.respond(
+      {
+        message: "what do you remember?",
+        memoryContext: [
+          {
+            id: "00000000-0000-4000-8000-000000000010",
+            kind: "preference",
+            content: "Prefers concise answers",
+          },
+        ],
+      },
+      "request-memory",
+    );
+    const sentBody = fetchMock.mock.calls[1]?.[1]?.body;
+    expect(typeof sentBody).toBe("string");
+    const body = JSON.parse(sentBody as string) as Record<string, unknown>;
+    expect(body["memoryContext"]).toEqual([
+      {
+        id: "00000000-0000-4000-8000-000000000010",
+        kind: "preference",
+        content: "Prefers concise answers",
+      },
+    ]);
+    expect(body).not.toHaveProperty("actorId");
+    expect(body).not.toHaveProperty("permissions");
+  });
+
+  it.each([
+    { type: "memory_create", kind: "unknown", content: "x" },
+    { type: "memory_create", kind: "note", content: "x", actorId: "attacker" },
+    { type: "memory_delete", memoryId: "not-a-uuid" },
+  ])("rejects unsafe memory plans from the Agent", async (plan) => {
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        Response.json({
+          requestId: "request-1",
+          intent: "memory",
+          response: "",
+          plan,
+        }),
+      ),
+    );
+    await expect(
+      createAgentServiceClient(testConfig, fetchMock).respond(
+        { message: "hello" },
+        "request-1",
+      ),
+    ).rejects.toMatchObject({ code: "UPSTREAM_PROTOCOL_ERROR" });
+  });
+
   it("composes caller cancellation with the configured timeout", async () => {
     const fetchMock = vi.fn<typeof fetch>(
       (_input, init) =>

@@ -2,6 +2,11 @@ import pytest
 
 from aura_agent.contracts import (
     AgentRequest,
+    MemoryContextItem,
+    MemoryCreatePlan,
+    MemoryDeletePlan,
+    MemoryMutationResultContext,
+    MemoryReadPlan,
     RespondPlan,
     ToolExecutionResultContext,
     ToolPlan,
@@ -361,3 +366,78 @@ async def test_unexpected_tool_result_fails_safely() -> None:
                 ),
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_memory_create_requires_explicit_intent() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    explicit = await planner.plan(
+        AgentRequest(message="Remember that I prefer dark mode.")
+    )
+    assert isinstance(explicit.plan, MemoryCreatePlan)
+    assert explicit.plan.kind == "preference"
+    assert explicit.plan.content == "I prefer dark mode."
+    ordinary = await planner.plan(AgentRequest(message="I prefer dark mode."))
+    assert isinstance(ordinary.plan, RespondPlan)
+
+
+@pytest.mark.asyncio
+async def test_memory_read_and_exact_delete_require_explicit_intent() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    read = await planner.plan(AgentRequest(message="What do you remember about me?"))
+    assert isinstance(read.plan, MemoryReadPlan)
+    assert read.plan.kind is None
+    preference = await planner.plan(
+        AgentRequest(message="What preferences have I asked you to remember?")
+    )
+    assert isinstance(preference.plan, MemoryReadPlan)
+    assert preference.plan.kind == "preference"
+    memory_id = "00000000-0000-4000-8000-000000000010"
+    deleted = await planner.plan(AgentRequest(message=f"Forget memory {memory_id}"))
+    assert isinstance(deleted.plan, MemoryDeletePlan)
+    assert deleted.plan.memory_id == memory_id
+    ambiguous = await planner.plan(
+        AgentRequest(message="Forget my preference about dark mode")
+    )
+    assert isinstance(ambiguous.plan, RespondPlan)
+
+
+@pytest.mark.asyncio
+async def test_memory_continuations_are_final_and_use_only_returned_context() -> None:
+    planner = DeterministicDevelopmentPlanner()
+    memory_id = "00000000-0000-4000-8000-000000000010"
+    listed = await planner.plan(
+        AgentRequest(
+            message="What do you remember about me?",
+            memoryContext=[
+                MemoryContextItem(
+                    id=memory_id, kind="note", content="User-provided context"
+                )
+            ],
+        )
+    )
+    assert isinstance(listed.plan, RespondPlan)
+    assert memory_id in listed.response
+    empty = await planner.plan(
+        AgentRequest(message="What do you remember?", memoryContext=[])
+    )
+    assert empty.response == "You have no explicit saved memories."
+    created = await planner.plan(
+        AgentRequest(
+            message="Remember this",
+            memoryResult=MemoryMutationResultContext(
+                operation="created",
+                memory=MemoryContextItem(id=memory_id, kind="note", content="safe"),
+            ),
+        )
+    )
+    assert isinstance(created.plan, RespondPlan)
+    deleted = await planner.plan(
+        AgentRequest(
+            message="Forget memory",
+            memoryResult=MemoryMutationResultContext(
+                operation="deleted", memoryId=memory_id
+            ),
+        )
+    )
+    assert isinstance(deleted.plan, RespondPlan)

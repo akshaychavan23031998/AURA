@@ -31,8 +31,9 @@ export class MemoryService implements MemoryStore {
   public constructor(private readonly repository: MemoryRepository) {}
 
   public async create(actorId: string, value: CreateMemoryValue) {
+    const normalized = normalizeCreate(value);
     try {
-      return view(await this.repository.create(actorId, value));
+      return view(await this.repository.create(actorId, normalized));
     } catch {
       throw storageFailed();
     }
@@ -50,6 +51,13 @@ export class MemoryService implements MemoryStore {
   }
 
   public async listOwned(actorId: string, options: ListMemoryOptions) {
+    if (
+      !Number.isInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > 50 ||
+      (options.kind !== undefined && !memoryKinds.has(options.kind))
+    )
+      throw inputInvalid();
     try {
       return (await this.repository.listOwned(actorId, options)).map(view);
     } catch {
@@ -70,6 +78,42 @@ export class MemoryService implements MemoryStore {
     }
     if (deleted === undefined) throw notFound();
   }
+}
+
+const memoryKinds = new Set<CreateMemoryValue["kind"]>([
+  "preference",
+  "fact",
+  "instruction",
+  "note",
+]);
+
+function normalizeCreate(value: CreateMemoryValue): CreateMemoryValue {
+  const content = value.content.trim();
+  if (
+    !memoryKinds.has(value.kind) ||
+    content.length < 1 ||
+    content.length > 4096 ||
+    hasForbiddenControlCharacter(content)
+  )
+    throw inputInvalid();
+  return { kind: value.kind, content };
+}
+
+function hasForbiddenControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (
+      (code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127
+    );
+  });
+}
+
+function inputInvalid(): AppError {
+  return new AppError({
+    code: "MEMORY_INPUT_INVALID",
+    httpStatus: 400,
+    message: "Memory input is invalid",
+  });
 }
 
 function view(row: {
