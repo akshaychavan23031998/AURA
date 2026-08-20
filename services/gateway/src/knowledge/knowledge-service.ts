@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 
 import { AppError } from "../errors/app-error.js";
-import type { EmbeddingClient } from "../memory/memory-embedding-client.js";
+import {
+  type EmbeddingClient,
+  validateEmbedding,
+} from "../memory/memory-embedding-client.js";
 import type {
   KnowledgeChunkForEmbedding,
   KnowledgeEmbeddingRepository,
@@ -34,6 +37,14 @@ export interface KnowledgeDocumentView extends KnowledgeDocumentMetadataView {
   readonly content: string;
 }
 
+export interface KnowledgeSearchResultView {
+  readonly documentId: string;
+  readonly chunkId: string;
+  readonly title: string;
+  readonly content: string;
+  readonly ordinal: number;
+}
+
 export interface KnowledgeStore {
   readonly create: (
     actorId: string,
@@ -53,12 +64,19 @@ export interface KnowledgeStore {
     documentId: string,
     requestId?: string,
   ) => Promise<void>;
+  readonly searchOwned: (
+    actorId: string,
+    query: string,
+    requestId?: string,
+  ) => Promise<KnowledgeSearchResultView[]>;
 }
 
 export interface KnowledgeEmbeddingRuntime {
   readonly client: EmbeddingClient;
   readonly repository: KnowledgeEmbeddingRepository;
   readonly concurrency?: number;
+  readonly searchLimit: number;
+  readonly minimumSimilarity: number;
 }
 
 export interface KnowledgeBackfillResult {
@@ -174,6 +192,54 @@ export class KnowledgeService implements KnowledgeStore {
     const result = await this.embedChunks(chunks, requestId);
     this.logIndexing(requestId, undefined, result, "backfill");
     return Object.freeze({ processed: chunks.length, ...result });
+  }
+
+  public async searchOwned(
+    actorId: string,
+    query: string,
+    requestId = "knowledge-search",
+  ): Promise<KnowledgeSearchResultView[]> {
+    const runtime = this.embeddings;
+    if (runtime === undefined) throw searchUnavailable();
+    const normalized = normalizeSearchQuery(query);
+    const startedAt = Date.now();
+    let vector: readonly number[];
+    try {
+      vector = await runtime.client.embed(normalized, requestId);
+      validateEmbedding(vector, runtime.client.dimensions);
+    } catch {
+      throw searchUnavailable();
+    }
+    try {
+      const rows = await runtime.repository.searchOwned(
+        actorId,
+        runtime.client.model,
+        vector,
+        runtime.searchLimit,
+        runtime.minimumSimilarity,
+      );
+      this.log?.info(
+        {
+          requestId,
+          operation: "knowledge_search",
+          resultCount: rows.length,
+          durationMs: Date.now() - startedAt,
+          outcome: "completed",
+        },
+        "Semantic knowledge search completed",
+      );
+      return rows.map((row) =>
+        Object.freeze({
+          documentId: row.documentId,
+          chunkId: row.chunkId,
+          title: row.title,
+          content: row.content,
+          ordinal: row.ordinal,
+        }),
+      );
+    } catch {
+      throw searchFailed();
+    }
   }
 
   private async indexBestEffort(
@@ -330,5 +396,32 @@ function embeddingUnavailable(): AppError {
     code: "KNOWLEDGE_EMBEDDING_UNAVAILABLE",
     httpStatus: 503,
     message: "Knowledge embedding service is unavailable",
+  });
+}
+
+function normalizeSearchQuery(query: string): string {
+  const normalized = query.trim();
+  if (
+    normalized.length < 1 ||
+    normalized.length > 1024 ||
+    hasForbiddenControlCharacter(normalized)
+  )
+    throw inputInvalid();
+  return normalized;
+}
+
+function searchUnavailable(): AppError {
+  return new AppError({
+    code: "KNOWLEDGE_SEARCH_UNAVAILABLE",
+    httpStatus: 503,
+    message: "Knowledge search is unavailable",
+  });
+}
+
+function searchFailed(): AppError {
+  return new AppError({
+    code: "KNOWLEDGE_SEARCH_FAILED",
+    httpStatus: 500,
+    message: "Knowledge search failed",
   });
 }

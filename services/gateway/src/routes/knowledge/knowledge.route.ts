@@ -31,6 +31,21 @@ const createDocumentSchema = z
 const listDocumentSchema = z
   .object({ limit: z.coerce.number().int().min(1).max(50).default(20) })
   .strict();
+const searchKnowledgeSchema = z
+  .object({
+    query: z
+      .string()
+      .max(1024)
+      .transform((value) => value.trim())
+      .pipe(
+        z
+          .string()
+          .min(1)
+          .max(1024)
+          .refine((value) => !hasUnsafeContentCharacter(value)),
+      ),
+  })
+  .strict();
 
 export function registerKnowledgeRoutes(
   app: FastifyInstance,
@@ -63,6 +78,22 @@ export function registerKnowledgeRoutes(
       const query = parse(listDocumentSchema, request.query);
       return {
         documents: await knowledge.listOwned(principal.actorId, query.limit),
+      };
+    },
+  );
+
+  app.post(
+    "/api/v1/knowledge/search",
+    { preHandler: authenticate },
+    async (request) => {
+      const principal = requirePermission(request, "knowledge.read");
+      const input = parse(searchKnowledgeSchema, request.body);
+      return {
+        results: await knowledge.searchOwned(
+          principal.actorId,
+          input.query,
+          request.id,
+        ),
       };
     },
   );

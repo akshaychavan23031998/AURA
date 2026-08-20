@@ -147,6 +147,8 @@ export async function createApp(
             client: embeddingRuntime.client,
             repository: new KnowledgeEmbeddingRepository(database),
             concurrency: 2,
+            searchLimit: options.config.knowledgeSearch.limit,
+            minimumSimilarity: options.config.knowledgeSearch.minimumSimilarity,
           },
     );
   const googleIntegration = options.config.googleCalendar.enabled

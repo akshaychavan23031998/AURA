@@ -177,6 +177,12 @@ After the Phase 32 document/chunk transaction commits, Gateway best-effort embed
 
 The operator-only `knowledge:backfill` command processes at most 100 missing chunks per invocation in deterministic order. Its SQL selection joins through `ACTIVE` documents and excludes existing rows for the current model, so deleted documents are never indexed. Chunk text, vectors, request/response bodies, and model endpoints are not logged or exposed through HTTP. The Phase 32 public API is unchanged, and Phase 33 deliberately adds no cosine search, knowledge Agent plan, retrieval context, citations, or RAG response generation.
 
+### V1.5 Phase 34: semantic knowledge retrieval foundation
+
+Authenticated callers with exact `knowledge.read` permission may explicitly call `POST /api/v1/knowledge/search` with only a bounded query string. Gateway trims and validates the query, embeds it with the fixed current model, and issues one parameterized pgvector cosine query. The SQL candidate set itself joins embeddings to chunks and documents while enforcing actor ownership, `ACTIVE` lifecycle, current model, minimum similarity, deterministic tie ordering, and the configured limit. There is no global nearest-neighbor pool or application-side ownership filtering.
+
+Cosine similarity is `1 - (embedding <=> query_vector)`. `KNOWLEDGE_SEARCH_LIMIT` is server-controlled from 1–10 (default 5), while `KNOWLEDGE_SEARCH_MIN_SIMILARITY` is constrained to -1–1 (default 0.5). Public results contain document ID, chunk ID, title, bounded chunk content, and ordinal only. Queries, titles, chunks, vectors, and scores are excluded from logs; unembedded or nonqualifying chunks produce an empty result without fallback. This remains a retrieval API only: Agent, Tool Service, and Voice contracts are unchanged, with no automatic retrieval, RAG answer, citation, or full-document synthesis.
+
 ## 7. Security, errors, and observability
 
 ### Agent orchestration boundary

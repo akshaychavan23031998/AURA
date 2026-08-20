@@ -43,6 +43,8 @@ const DEVELOPMENT_DEFAULTS = {
   MEMORY_EMBEDDING_TIMEOUT_MS: "5000",
   MEMORY_SEARCH_LIMIT: "5",
   MEMORY_SEARCH_MIN_SIMILARITY: "0.5",
+  KNOWLEDGE_SEARCH_LIMIT: "5",
+  KNOWLEDGE_SEARCH_MIN_SIMILARITY: "0.5",
 } as const;
 
 export interface AuthConfig {
@@ -140,6 +142,10 @@ export interface GatewayConfig {
         readonly searchLimit: number;
         readonly minimumSimilarity: number;
       };
+  readonly knowledgeSearch: {
+    readonly limit: number;
+    readonly minimumSimilarity: number;
+  };
   readonly database: {
     readonly url: string;
     readonly poolMax: number;
@@ -281,6 +287,10 @@ export function loadConfig(
           minimumSimilarity: parsed.MEMORY_SEARCH_MIN_SIMILARITY,
         })
       : Object.freeze({ enabled: false as const }),
+    knowledgeSearch: Object.freeze({
+      limit: parsed.KNOWLEDGE_SEARCH_LIMIT,
+      minimumSimilarity: parsed.KNOWLEDGE_SEARCH_MIN_SIMILARITY,
+    }),
     database: Object.freeze({
       url: parsed.DATABASE_URL,
       poolMax: parsed.DATABASE_POOL_MAX,

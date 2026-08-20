@@ -126,6 +126,8 @@ const environmentSchema = z
     MEMORY_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000),
     MEMORY_SEARCH_LIMIT: z.coerce.number().int().min(1).max(10),
     MEMORY_SEARCH_MIN_SIMILARITY: z.coerce.number().min(-1).max(1),
+    KNOWLEDGE_SEARCH_LIMIT: z.coerce.number().int().min(1).max(10),
+    KNOWLEDGE_SEARCH_MIN_SIMILARITY: z.coerce.number().min(-1).max(1),
     GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z

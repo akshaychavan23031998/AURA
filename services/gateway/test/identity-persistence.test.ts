@@ -560,4 +560,94 @@ describe.sequential("PostgreSQL identity persistence", () => {
       knowledgeEmbeddings.upsert(activeChunk.id, "model-a", [1, 2]),
     ).rejects.toThrow("Invalid knowledge embedding vector");
   });
+
+  it("performs cosine knowledge retrieval inside owner, lifecycle, and model boundaries", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const [otherActor] = await database.db.insert(users).values({}).returning();
+    const create = (owner: string, title: string) =>
+      knowledge.createTransactional(owner, {
+        title,
+        normalizedContent: title,
+        contentHash: sha256(title),
+        chunks: [{ ordinal: 0, content: title, contentHash: sha256(title) }],
+      });
+    const exactA = await create(actorId, "Exact A");
+    const exactB = await create(actorId, "Exact B");
+    const related = await create(actorId, "Related");
+    const unrelated = await create(actorId, "Unrelated");
+    const wrongModel = await create(actorId, "Wrong model");
+    const unembedded = await create(actorId, "Unembedded");
+    const deleted = await create(actorId, "Deleted");
+    const foreign = await create(otherActor!.id, "Foreign");
+    const axis = (first: number, second = 0) => [
+      first,
+      second,
+      ...Array.from({ length: 382 }, () => 0),
+    ];
+    for (const document of [exactA, exactB])
+      await knowledgeEmbeddings.upsert(
+        document.chunks[0]!.id,
+        "current-model",
+        axis(1),
+      );
+    await knowledgeEmbeddings.upsert(
+      related.chunks[0]!.id,
+      "current-model",
+      axis(0.8, 0.6),
+    );
+    await knowledgeEmbeddings.upsert(
+      unrelated.chunks[0]!.id,
+      "current-model",
+      axis(0, 1),
+    );
+    await knowledgeEmbeddings.upsert(
+      wrongModel.chunks[0]!.id,
+      "old-model",
+      axis(1),
+    );
+    await knowledgeEmbeddings.upsert(
+      deleted.chunks[0]!.id,
+      "current-model",
+      axis(1),
+    );
+    await knowledgeEmbeddings.upsert(
+      foreign.chunks[0]!.id,
+      "current-model",
+      axis(1),
+    );
+    await knowledge.deleteOwned(actorId, deleted.id, new Date());
+
+    const results = await knowledgeEmbeddings.searchOwned(
+      actorId,
+      "current-model",
+      axis(1),
+      10,
+      0.5,
+    );
+    const exactIds = [exactA.id, exactB.id].sort();
+    expect(results.map((result) => result.documentId)).toEqual([
+      ...exactIds,
+      related.id,
+    ]);
+    expect(results.map((result) => result.title)).not.toEqual(
+      expect.arrayContaining([
+        unrelated.title,
+        wrongModel.title,
+        unembedded.title,
+        deleted.title,
+        foreign.title,
+      ]),
+    );
+    expect(results[0]!.similarity).toBeCloseTo(1);
+    expect(results[2]!.similarity).toBeCloseTo(0.8);
+    await expect(
+      knowledgeEmbeddings.searchOwned(
+        actorId,
+        "current-model",
+        axis(1),
+        1,
+        0.5,
+      ),
+    ).resolves.toHaveLength(1);
+  });
 });

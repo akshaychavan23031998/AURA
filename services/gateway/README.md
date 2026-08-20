@@ -46,6 +46,7 @@ Phase 27 adds authenticated Google capability management. Status is derived from
 | `GET`    | `/api/v1/knowledge/documents`             | Bearer + knowledge.read  | List owned active document metadata              |
 | `GET`    | `/api/v1/knowledge/documents/:documentId` | Bearer + knowledge.read  | Get one owned active document                    |
 | `DELETE` | `/api/v1/knowledge/documents/:documentId` | Bearer + knowledge.write | Soft-delete one owned document                   |
+| `POST`   | `/api/v1/knowledge/search`                | Bearer + knowledge.read  | Search owned active chunks by exact cosine rank  |
 | `POST`   | `/api/v1/tools/execute`                   | Bearer                   | Execute a validated Tool Service request         |
 | `POST`   | `/api/v1/agent/respond`                   | Bearer                   | Produce an unexecuted planning response          |
 | `POST`   | `/api/v1/agent/run`                       | Bearer                   | Run deterministic orchestration                  |
@@ -80,7 +81,11 @@ Documents transition atomically from `ACTIVE` to `DELETED`. Chunk rows are retai
 
 Phase 33 persists model-aware 384-dimensional embeddings for committed knowledge chunks. Post-ingestion indexing runs only after the document transaction commits, with concurrency two and per-chunk failure isolation. Document creation remains successful when indexing is disabled or unavailable; successful vectors survive partial failure and no retry occurs automatically. Run `pnpm --filter @aura/gateway knowledge:backfill -- 25` to process a deterministic bounded batch of active-document chunks missing the current model (default 25, maximum 100).
 
-The public knowledge API remains unchanged and never exposes vectors or indexing internals. Backfill is an operator command, not an HTTP route or startup job. There is still no Knowledge ToolDefinition, Agent/Voice knowledge contract, semantic knowledge search, citation, RAG, multipart/file, PDF/DOCX, URL, Drive, Gmail attachment, or automatic ingestion path.
+Through Phase 33, the public knowledge API remained unchanged and never exposed vectors or indexing internals. Backfill is an operator command, not an HTTP route or startup job. There is still no Knowledge ToolDefinition, Agent/Voice knowledge contract, citation, RAG, multipart/file, PDF/DOCX, URL, Drive, Gmail attachment, or automatic ingestion path.
+
+Phase 34 adds the explicit authenticated search route without exposing vectors. Its strict body is `{ "query": string }`; actor, model, vector, threshold, lifecycle, and limit remain server-controlled. The query is trimmed, limited to 1,024 characters, and rejected for unsafe control characters. PostgreSQL applies actor ownership, `ACTIVE` document status, current-model filtering, cosine threshold, stable ordering, and `LIMIT` inside the vector query. Configure `KNOWLEDGE_SEARCH_LIMIT` from 1–10 (default 5) and `KNOWLEDGE_SEARCH_MIN_SIMILARITY` from -1–1 (default 0.5).
+
+Search returns only document ID, chunk ID, title, chunk content, and ordinal. It never logs query/content/vector/score data, persists queries, performs keyword fallback, embeds missing stored chunks on demand, or exposes full documents. Agent, Tool Service, and Voice remain isolated: Phase 34 has no automatic retrieval, Agent RAG, citations, or grounded answer generation.
 
 ## Configuration
 

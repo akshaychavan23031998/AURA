@@ -8,6 +8,15 @@ export interface KnowledgeChunkForEmbedding {
   readonly content: string;
 }
 
+export interface SemanticKnowledgeRow {
+  readonly documentId: string;
+  readonly chunkId: string;
+  readonly title: string;
+  readonly content: string;
+  readonly ordinal: number;
+  readonly similarity: number;
+}
+
 const STORED_EMBEDDING_DIMENSIONS = 384;
 
 export class KnowledgeEmbeddingRepository {
@@ -47,6 +56,38 @@ export class KnowledgeEmbeddingRepository {
       id: String(row["id"]),
       documentId: String(row["document_id"]),
       content: String(row["content"]),
+    }));
+  }
+
+  public async searchOwned(
+    actorId: string,
+    model: string,
+    embedding: readonly number[],
+    limit: number,
+    minimumSimilarity: number,
+  ): Promise<SemanticKnowledgeRow[]> {
+    const vector = vectorLiteral(embedding);
+    const result = await this.database.db.execute(sql`
+      select d.id as document_id, c.id as chunk_id, d.title, c.content,
+        c.ordinal, 1 - (e.embedding <=> ${vector}::vector) as similarity
+      from knowledge_chunk_embeddings e
+      inner join knowledge_chunks c on c.id = e.chunk_id
+      inner join knowledge_documents d on d.id = c.document_id
+      where d.actor_id = ${actorId}
+        and d.status = 'ACTIVE'
+        and e.model = ${model}
+        and 1 - (e.embedding <=> ${vector}::vector) >= ${minimumSimilarity}
+      order by e.embedding <=> ${vector}::vector asc,
+        d.id asc, c.ordinal asc, c.id asc
+      limit ${limit}
+    `);
+    return result.rows.map((row) => ({
+      documentId: String(row["document_id"]),
+      chunkId: String(row["chunk_id"]),
+      title: String(row["title"]),
+      content: String(row["content"]),
+      ordinal: Number(row["ordinal"]),
+      similarity: Number(row["similarity"]),
     }));
   }
 }

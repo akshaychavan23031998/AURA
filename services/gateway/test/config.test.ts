@@ -91,6 +91,7 @@ describe("gateway configuration", () => {
       googleGmail: { enabled: false },
       googleContacts: { enabled: false },
       memoryEmbeddings: { enabled: false },
+      knowledgeSearch: { limit: 5, minimumSimilarity: 0.5 },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
         poolMax: 8,
@@ -119,6 +120,22 @@ describe("gateway configuration", () => {
         MEMORY_EMBEDDING_DIMENSIONS: "3",
       }),
     ).toThrow(/384 dimensions/);
+  });
+
+  it("bounds server-controlled knowledge search configuration", () => {
+    const base = {
+      TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
+      AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+      VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
+      AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
+      DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+    };
+    expect(() => loadConfig({ ...base, KNOWLEDGE_SEARCH_LIMIT: "11" })).toThrow(
+      /KNOWLEDGE_SEARCH_LIMIT/,
+    );
+    expect(() =>
+      loadConfig({ ...base, KNOWLEDGE_SEARCH_MIN_SIMILARITY: "1.1" }),
+    ).toThrow(/KNOWLEDGE_SEARCH_MIN_SIMILARITY/);
   });
 
   it("rejects an invalid port", () => {

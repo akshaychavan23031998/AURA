@@ -66,6 +66,8 @@ function runtime(options?: { failText?: string; delay?: boolean }) {
         listActiveMissing,
       } as unknown as KnowledgeEmbeddingRepository,
       concurrency: 2,
+      searchLimit: 5,
+      minimumSimilarity: 0.5,
     },
     embed,
     upsert,

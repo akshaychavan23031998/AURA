@@ -7,6 +7,7 @@ import type { ErrorResponse } from "../src/errors/error-response.js";
 import type {
   KnowledgeDocumentMetadataView,
   KnowledgeDocumentView,
+  KnowledgeSearchResultView,
   KnowledgeStore,
 } from "../src/knowledge/knowledge-service.js";
 import { testConfig } from "./test-config.js";
@@ -25,6 +26,13 @@ const metadata: KnowledgeDocumentMetadataView = {
 const document: KnowledgeDocumentView = {
   ...metadata,
   content: "Private content",
+};
+const searchResult: KnowledgeSearchResultView = {
+  documentId,
+  chunkId: "00000000-0000-4000-8000-000000000011",
+  title: "Architecture",
+  content: "Deployment uses a private container network.",
+  ordinal: 2,
 };
 
 function verifier(
@@ -48,6 +56,7 @@ function store(): KnowledgeStore {
     listOwned: vi.fn(() => Promise.resolve([metadata])),
     getOwned: vi.fn(() => Promise.resolve(document)),
     deleteOwned: vi.fn(() => Promise.resolve()),
+    searchOwned: vi.fn(() => Promise.resolve([searchResult])),
   };
 }
 
@@ -86,16 +95,20 @@ describe("knowledge routes", () => {
         method: "DELETE" as const,
         url: `/api/v1/knowledge/documents/${documentId}`,
       },
+      {
+        method: "POST" as const,
+        url: "/api/v1/knowledge/search",
+        payload: { query: "deployment" },
+      },
     ])
       expect((await instance.inject(request)).statusCode).toBe(401);
   });
 
-  it("does not expose embedding, vector, or search routes", async () => {
+  it("does not expose embedding or vector routes", async () => {
     const { instance } = await app(["knowledge.read", "knowledge.write"]);
     for (const request of [
       { method: "GET" as const, url: "/api/v1/knowledge/embeddings" },
       { method: "GET" as const, url: "/api/v1/knowledge/vectors" },
-      { method: "POST" as const, url: "/api/v1/knowledge/search" },
     ]) {
       const response = await instance.inject({
         ...request,
@@ -136,6 +149,69 @@ describe("knowledge routes", () => {
         })
       ).statusCode,
     ).toBe(403);
+    expect(
+      (
+        await writer.instance.inject({
+          method: "POST",
+          url: "/api/v1/knowledge/search",
+          headers: authorization,
+          payload: { query: "deployment" },
+        })
+      ).statusCode,
+    ).toBe(403);
+  });
+
+  it("derives search ownership and returns only sanitized chunks", async () => {
+    const { instance, knowledge } = await app(["knowledge.read"]);
+    const response = await instance.inject({
+      method: "POST",
+      url: "/api/v1/knowledge/search",
+      headers: authorization,
+      payload: { query: "  deployment procedure  " },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(knowledge.searchOwned).toHaveBeenCalledWith(
+      actorId,
+      "deployment procedure",
+      expect.any(String),
+    );
+    const body = response.json<{ results: KnowledgeSearchResultView[] }>();
+    expect(body).toEqual({ results: [searchResult] });
+    expect(body.results[0]).not.toHaveProperty("actorId");
+    expect(body.results[0]).not.toHaveProperty("embedding");
+    expect(body.results[0]).not.toHaveProperty("model");
+    expect(body.results[0]).not.toHaveProperty("similarity");
+    expect(body.results[0]).not.toHaveProperty("contentHash");
+  });
+
+  it.each([
+    {},
+    { query: "" },
+    { query: " ".repeat(10) },
+    { query: "x".repeat(1025) },
+    { query: "unsafe\0query" },
+    { query: "unsafe\u0001query" },
+    { query: "x", actorId: "attacker" },
+    { query: "x", userId: "attacker" },
+    { query: "x", ownerId: "attacker" },
+    { query: "x", vector: [1, 2, 3] },
+    { query: "x", model: "attacker-model" },
+    { query: "x", threshold: -1 },
+    { query: "x", status: "DELETED" },
+    { query: "x", limit: 10 },
+  ])("rejects invalid or caller-controlled search input", async (payload) => {
+    const { instance, knowledge } = await app(["knowledge.read"]);
+    const response = await instance.inject({
+      method: "POST",
+      url: "/api/v1/knowledge/search",
+      headers: authorization,
+      payload,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json<ErrorResponse>().error.code).toBe(
+      "KNOWLEDGE_INPUT_INVALID",
+    );
+    expect(knowledge.searchOwned).not.toHaveBeenCalled();
   });
 
   it("derives ownership and returns only safe create metadata", async () => {

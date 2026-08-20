@@ -143,6 +143,7 @@ describe("Gateway Agent Tool orchestration contract", () => {
       googleGmail: { enabled: false },
       googleContacts: { enabled: false },
       memoryEmbeddings: { enabled: false },
+      knowledgeSearch: { limit: 5, minimumSimilarity: 0.5 },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
         poolMax: 10,

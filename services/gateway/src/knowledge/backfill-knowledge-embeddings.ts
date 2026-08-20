@@ -23,6 +23,8 @@ try {
       client: createMemoryEmbeddingClient(config.memoryEmbeddings),
       repository: new KnowledgeEmbeddingRepository(database),
       concurrency: 2,
+      searchLimit: config.knowledgeSearch.limit,
+      minimumSimilarity: config.knowledgeSearch.minimumSimilarity,
     },
   );
   const result = await service.backfill(batchSize, randomUUID());
