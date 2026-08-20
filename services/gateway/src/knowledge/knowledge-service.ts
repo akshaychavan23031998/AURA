@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 
 import { AppError } from "../errors/app-error.js";
+import type { EmbeddingClient } from "../memory/memory-embedding-client.js";
+import type {
+  KnowledgeChunkForEmbedding,
+  KnowledgeEmbeddingRepository,
+} from "./knowledge-embedding-repository.js";
 import {
   KnowledgeRepository,
   type PreparedKnowledgeDocument,
@@ -50,12 +55,27 @@ export interface KnowledgeStore {
   ) => Promise<void>;
 }
 
+export interface KnowledgeEmbeddingRuntime {
+  readonly client: EmbeddingClient;
+  readonly repository: KnowledgeEmbeddingRepository;
+  readonly concurrency?: number;
+}
+
+export interface KnowledgeBackfillResult {
+  readonly processed: number;
+  readonly embedded: number;
+  readonly failed: number;
+}
+
+const DEFAULT_EMBEDDING_CONCURRENCY = 2;
+
 export class KnowledgeService implements KnowledgeStore {
   public constructor(
     private readonly repository: KnowledgeRepository,
     private readonly log?: {
       info(fields: Record<string, unknown>, message: string): void;
     },
+    private readonly embeddings?: KnowledgeEmbeddingRuntime,
   ) {}
 
   public async create(
@@ -64,8 +84,9 @@ export class KnowledgeService implements KnowledgeStore {
     requestId = "knowledge-create",
   ) {
     const prepared = prepare(input);
+    let row;
     try {
-      const row = await this.repository.createTransactional(actorId, prepared);
+      row = await this.repository.createTransactional(actorId, prepared);
       this.log?.info(
         {
           requestId,
@@ -77,10 +98,12 @@ export class KnowledgeService implements KnowledgeStore {
         },
         "Knowledge document ingested",
       );
-      return metadataView(row);
     } catch {
       throw ingestionFailed();
     }
+    const chunks = "chunks" in row ? row.chunks : [];
+    await this.indexBestEffort(chunks, requestId, row.id);
+    return metadataView(row);
   }
 
   public async listOwned(actorId: string, limit: number) {
@@ -129,6 +152,93 @@ export class KnowledgeService implements KnowledgeStore {
         outcome: "deleted",
       },
       "Knowledge document deleted",
+    );
+  }
+
+  public async backfill(
+    batchSize: number,
+    requestId = "knowledge-embedding-backfill",
+  ): Promise<KnowledgeBackfillResult> {
+    if (this.embeddings === undefined) throw embeddingUnavailable();
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
+      throw inputInvalid();
+    let chunks: KnowledgeChunkForEmbedding[];
+    try {
+      chunks = await this.embeddings.repository.listActiveMissing(
+        this.embeddings.client.model,
+        batchSize,
+      );
+    } catch {
+      throw embeddingUnavailable();
+    }
+    const result = await this.embedChunks(chunks, requestId);
+    this.logIndexing(requestId, undefined, result, "backfill");
+    return Object.freeze({ processed: chunks.length, ...result });
+  }
+
+  private async indexBestEffort(
+    chunks: readonly KnowledgeChunkForEmbedding[],
+    requestId: string,
+    documentId: string,
+  ): Promise<void> {
+    if (this.embeddings === undefined || chunks.length === 0) return;
+    const result = await this.embedChunks(chunks, requestId);
+    this.logIndexing(requestId, documentId, result, "post_ingestion");
+  }
+
+  private async embedChunks(
+    chunks: readonly KnowledgeChunkForEmbedding[],
+    requestId: string,
+  ): Promise<{ embedded: number; failed: number }> {
+    const runtime = this.embeddings;
+    if (runtime === undefined) return { embedded: 0, failed: chunks.length };
+    const concurrency = Math.min(
+      Math.max(runtime.concurrency ?? DEFAULT_EMBEDDING_CONCURRENCY, 1),
+      4,
+    );
+    let cursor = 0;
+    let embedded = 0;
+    let failed = 0;
+    const worker = async () => {
+      while (cursor < chunks.length) {
+        const chunk = chunks[cursor++];
+        if (chunk === undefined) continue;
+        try {
+          const vector = await runtime.client.embed(chunk.content, requestId);
+          await runtime.repository.upsert(
+            chunk.id,
+            runtime.client.model,
+            vector,
+          );
+          embedded += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, chunks.length) }, worker),
+    );
+    return { embedded, failed };
+  }
+
+  private logIndexing(
+    requestId: string,
+    documentId: string | undefined,
+    result: { embedded: number; failed: number },
+    mode: "post_ingestion" | "backfill",
+  ): void {
+    this.log?.info(
+      {
+        requestId,
+        operation: "knowledge_embedding",
+        ...(documentId === undefined ? {} : { documentId }),
+        mode,
+        embeddedCount: result.embedded,
+        failedCount: result.failed,
+        outcome: result.failed === 0 ? "indexed" : "partial",
+      },
+      "Knowledge chunk indexing completed",
     );
   }
 }
@@ -212,5 +322,13 @@ function ingestionFailed(): AppError {
     code: "KNOWLEDGE_INGESTION_FAILED",
     httpStatus: 500,
     message: "Knowledge ingestion failed",
+  });
+}
+
+function embeddingUnavailable(): AppError {
+  return new AppError({
+    code: "KNOWLEDGE_EMBEDDING_UNAVAILABLE",
+    httpStatus: 503,
+    message: "Knowledge embedding service is unavailable",
   });
 }

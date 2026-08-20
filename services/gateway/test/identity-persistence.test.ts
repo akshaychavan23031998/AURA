@@ -7,6 +7,7 @@ import { createAccessTokenVerifier } from "../src/auth/token-verifier.js";
 import { createDatabaseClient, type DatabaseClient } from "../src/db/client.js";
 import {
   externalIdentities,
+  knowledgeChunkEmbeddings,
   knowledgeChunks,
   knowledgeDocuments,
   providerCredentials,
@@ -30,6 +31,7 @@ import { testConfig } from "./test-config.js";
 import { MemoryRepository } from "../src/memory/memory-repository.js";
 import { MemoryEmbeddingRepository } from "../src/memory/memory-embedding-repository.js";
 import { KnowledgeRepository } from "../src/knowledge/knowledge-repository.js";
+import { KnowledgeEmbeddingRepository } from "../src/knowledge/knowledge-embedding-repository.js";
 import { sha256 } from "../src/knowledge/knowledge-service.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -55,6 +57,7 @@ const approvals = new ApprovalRepository(database);
 const memories = new MemoryRepository(database);
 const memoryEmbeddings = new MemoryEmbeddingRepository(database);
 const knowledge = new KnowledgeRepository(database);
+const knowledgeEmbeddings = new KnowledgeEmbeddingRepository(database);
 
 beforeAll(async () => {
   await database.db.execute(sql`drop schema if exists public cascade`);
@@ -518,5 +521,43 @@ describe.sequential("PostgreSQL identity persistence", () => {
       knowledge.listOwnedActiveChunks(actorId, newer.id),
     ).resolves.toEqual([]);
     expect(await database.db.select().from(knowledgeChunks)).toHaveLength(2);
+  });
+
+  it("upserts model-aware chunk vectors and selects only ACTIVE missing chunks", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const create = (title: string) =>
+      knowledge.createTransactional(actorId, {
+        title,
+        normalizedContent: title,
+        contentHash: sha256(title),
+        chunks: [{ ordinal: 0, content: title, contentHash: sha256(title) }],
+      });
+    const active = await create("Active chunk");
+    const deleted = await create("Deleted chunk");
+    const activeChunk = active.chunks[0]!;
+    const vector = Array.from({ length: 384 }, () => 0.25);
+
+    await knowledgeEmbeddings.upsert(activeChunk.id, "model-a", vector);
+    await knowledgeEmbeddings.upsert(activeChunk.id, "model-a", vector);
+    await knowledgeEmbeddings.upsert(activeChunk.id, "model-b", vector);
+    expect(
+      await database.db.select().from(knowledgeChunkEmbeddings),
+    ).toHaveLength(2);
+    await knowledge.deleteOwned(actorId, deleted.id, new Date());
+    await expect(
+      knowledgeEmbeddings.listActiveMissing("model-a", 25),
+    ).resolves.toEqual([]);
+    await expect(
+      knowledgeEmbeddings.listActiveMissing("model-c", 1),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: activeChunk.id,
+        documentId: active.id,
+        content: "Active chunk",
+      }),
+    ]);
+    await expect(
+      knowledgeEmbeddings.upsert(activeChunk.id, "model-a", [1, 2]),
+    ).rejects.toThrow("Invalid knowledge embedding vector");
   });
 });

@@ -59,6 +59,7 @@ import { MemoryService, type MemoryStore } from "../memory/memory-service.js";
 import { createMemoryEmbeddingClient } from "../memory/memory-embedding-client.js";
 import { MemoryEmbeddingRepository } from "../memory/memory-embedding-repository.js";
 import { KnowledgeRepository } from "../knowledge/knowledge-repository.js";
+import { KnowledgeEmbeddingRepository } from "../knowledge/knowledge-embedding-repository.js";
 import {
   KnowledgeService,
   type KnowledgeStore,
@@ -137,7 +138,17 @@ export async function createApp(
     );
   const knowledgeService =
     options.knowledgeService ??
-    new KnowledgeService(new KnowledgeRepository(database), app.log);
+    new KnowledgeService(
+      new KnowledgeRepository(database),
+      app.log,
+      embeddingRuntime === undefined
+        ? undefined
+        : {
+            client: embeddingRuntime.client,
+            repository: new KnowledgeEmbeddingRepository(database),
+            concurrency: 2,
+          },
+    );
   const googleIntegration = options.config.googleCalendar.enabled
     ? options.config.googleCalendar
     : options.config.googleGmail.enabled

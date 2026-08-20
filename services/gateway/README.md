@@ -58,7 +58,7 @@ Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
 ### Semantic retrieval
 
-When `MEMORY_EMBEDDINGS_ENABLED=true`, Gateway uses the fixed `MEMORY_EMBEDDING_BASE_URL` `/v1/embeddings` endpoint and `MEMORY_EMBEDDING_MODEL`; callers cannot select either. The schema is fixed at 384 dimensions, HTTP is bounded by `MEMORY_EMBEDDING_TIMEOUT_MS`, and malformed/non-finite vectors fail closed. `MEMORY_SEARCH_LIMIT` is limited to 1–10 (default 5) and `MEMORY_SEARCH_MIN_SIMILARITY` to -1–1 (default 0.5).
+When `MEMORY_EMBEDDINGS_ENABLED=true`, Gateway uses the fixed `MEMORY_EMBEDDING_BASE_URL` `/v1/embeddings` endpoint and `MEMORY_EMBEDDING_MODEL`; callers cannot select either. Despite the compatibility-preserved environment prefix, the same internal runtime now embeds both explicit memories and knowledge chunks. The schema is fixed at 384 dimensions, HTTP is bounded by `MEMORY_EMBEDDING_TIMEOUT_MS`, and malformed/non-finite vectors fail closed. `MEMORY_SEARCH_LIMIT` is limited to 1–10 (default 5) and `MEMORY_SEARCH_MIN_SIMILARITY` to -1–1 (default 0.5).
 
 `user_memory_embeddings` stores one vector per `(memory_id, model)`. Cosine distance (`<=>`) is evaluated only after joining active memories owned by the authenticated actor. Deleted, foreign-owned, unembedded, wrong-model, and below-threshold rows cannot enter Agent context. Queries, content, and vectors are not logged.
 
@@ -78,7 +78,9 @@ Content is deterministically normalized from CRLF/CR to LF, trimmed only at its 
 
 Documents transition atomically from `ACTIVE` to `DELETED`. Chunk rows are retained for future lifecycle work but every internal access joins through the owner-scoped active document; deleted chunks therefore become immediately inaccessible. Lists are newest-first, limited to 20 by default and 50 maximum, and expose metadata only. Explicit owner-scoped GET may return the bounded normalized content; no public chunk endpoint exists. Titles, content, chunks, and hashes are excluded from logs.
 
-This phase adds no Knowledge ToolDefinition and changes no Agent or Voice contract. There is no multipart/file, PDF/DOCX, URL, Drive, Gmail attachment, automatic, document-embedding, semantic-search, citation, or RAG path.
+Phase 33 persists model-aware 384-dimensional embeddings for committed knowledge chunks. Post-ingestion indexing runs only after the document transaction commits, with concurrency two and per-chunk failure isolation. Document creation remains successful when indexing is disabled or unavailable; successful vectors survive partial failure and no retry occurs automatically. Run `pnpm --filter @aura/gateway knowledge:backfill -- 25` to process a deterministic bounded batch of active-document chunks missing the current model (default 25, maximum 100).
+
+The public knowledge API remains unchanged and never exposes vectors or indexing internals. Backfill is an operator command, not an HTTP route or startup job. There is still no Knowledge ToolDefinition, Agent/Voice knowledge contract, semantic knowledge search, citation, RAG, multipart/file, PDF/DOCX, URL, Drive, Gmail attachment, or automatic ingestion path.
 
 ## Configuration
 

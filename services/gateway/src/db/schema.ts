@@ -321,3 +321,29 @@ export const knowledgeChunks = pgTable(
     index("knowledge_chunks_document_idx").on(table.documentId),
   ],
 );
+
+export const knowledgeChunkEmbeddings = pgTable(
+  "knowledge_chunk_embeddings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    chunkId: uuid("chunk_id")
+      .notNull()
+      .references(() => knowledgeChunks.id, { onDelete: "cascade" }),
+    model: text("model").notNull(),
+    embedding: vector384("embedding").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("knowledge_chunk_embeddings_chunk_model_uidx").on(
+      table.chunkId,
+      table.model,
+    ),
+    index("knowledge_chunk_embeddings_model_idx").on(table.model),
+    check(
+      "knowledge_chunk_embeddings_model_length_check",
+      sql`char_length(${table.model}) between 1 and 128`,
+    ),
+  ],
+);

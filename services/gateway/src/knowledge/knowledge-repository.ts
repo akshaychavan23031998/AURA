@@ -39,15 +39,23 @@ export class KnowledgeRepository {
         .returning();
       if (document === undefined)
         throw new Error("Knowledge persistence failed");
-      await transaction.insert(knowledgeChunks).values(
-        value.chunks.map((chunk) => ({
-          documentId: document.id,
-          ordinal: chunk.ordinal,
-          content: chunk.content,
-          contentHash: chunk.contentHash,
-        })),
-      );
-      return { ...document, chunkCount: value.chunks.length };
+      const chunks = await transaction
+        .insert(knowledgeChunks)
+        .values(
+          value.chunks.map((chunk) => ({
+            documentId: document.id,
+            ordinal: chunk.ordinal,
+            content: chunk.content,
+            contentHash: chunk.contentHash,
+          })),
+        )
+        .returning({
+          id: knowledgeChunks.id,
+          documentId: knowledgeChunks.documentId,
+          ordinal: knowledgeChunks.ordinal,
+          content: knowledgeChunks.content,
+        });
+      return { ...document, chunkCount: value.chunks.length, chunks };
     });
   }
 

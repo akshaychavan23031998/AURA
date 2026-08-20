@@ -16,7 +16,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "identity:bootstrap-dev-user": "tsx src/identity/bootstrap-dev-user.ts",
     "identity:dev-session": "tsx src/identity/create-dev-session.ts",
-    "memory:backfill": "tsx src/memory/backfill-memory-embeddings.ts"
+    "memory:backfill": "tsx src/memory/backfill-memory-embeddings.ts",
+    "knowledge:backfill": "tsx src/knowledge/backfill-knowledge-embeddings.ts"
   },
   "dependencies": {
     "@fastify/cors": "11.2.0",

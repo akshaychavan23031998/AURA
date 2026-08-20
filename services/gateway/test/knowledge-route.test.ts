@@ -90,6 +90,21 @@ describe("knowledge routes", () => {
       expect((await instance.inject(request)).statusCode).toBe(401);
   });
 
+  it("does not expose embedding, vector, or search routes", async () => {
+    const { instance } = await app(["knowledge.read", "knowledge.write"]);
+    for (const request of [
+      { method: "GET" as const, url: "/api/v1/knowledge/embeddings" },
+      { method: "GET" as const, url: "/api/v1/knowledge/vectors" },
+      { method: "POST" as const, url: "/api/v1/knowledge/search" },
+    ]) {
+      const response = await instance.inject({
+        ...request,
+        headers: authorization,
+      });
+      expect(response.statusCode).toBe(404);
+    }
+  });
+
   it("keeps read and write permissions independent", async () => {
     const reader = await app(["knowledge.read"]);
     expect(
@@ -175,6 +190,8 @@ describe("knowledge routes", () => {
     { title: "x", content: "x", status: "ACTIVE" },
     { title: "x", content: "x", contentHash: "injected" },
     { title: "x", content: "x", chunkCount: 1 },
+    { title: "x", content: "x", model: "attacker-model" },
+    { title: "x", content: "x", embedding: [1, 2, 3] },
   ])("rejects invalid or caller-controlled create input", async (payload) => {
     const { instance, knowledge } = await app(["knowledge.write"]);
     const response = await instance.inject({

@@ -169,7 +169,13 @@ Creation accepts only title and plaintext content. Gateway normalizes CRLF/CR to
 
 Deletion is a soft transition to `DELETED`. Chunks remain stored but internal access always joins through the owner-scoped active document, making deleted chunks unavailable immediately. Public lists expose metadata only and explicit get returns bounded normalized content, never raw chunks or hashes. Logging contains request IDs, operation, document ID, byte length, chunk count, and outcome only—not title, content, chunks, hashes, or request bodies.
 
-Knowledge remains isolated from Agent, Tool Service, Voice, and the Phase 31 embedding runtime. The production registry stays at 14 tools. Phase 32 provides no file/multipart, PDF/DOCX, URL, provider, automatic ingestion, document embeddings, semantic document retrieval, citations, or RAG answers.
+Knowledge remains isolated from Agent, Tool Service, and Voice. The production registry stays at 14 tools. Phase 32 provides no file/multipart, PDF/DOCX, URL, provider, automatic ingestion, document embeddings, semantic document retrieval, citations, or RAG answers.
+
+### V1.5 Phase 33: knowledge chunk embedding foundation
+
+After the Phase 32 document/chunk transaction commits, Gateway best-effort embeds each chunk through the existing fixed local OpenAI-compatible runtime. A bounded worker pool of two prevents ingestion from creating unbounded model load. Valid 384-dimensional finite vectors are upserted into `knowledge_chunk_embeddings`, uniquely keyed by chunk and model; different configured model identifiers can coexist. Embedding failure never rolls back or misreports the stored document, successful chunks remain indexed after partial failure, and there is no automatic retry.
+
+The operator-only `knowledge:backfill` command processes at most 100 missing chunks per invocation in deterministic order. Its SQL selection joins through `ACTIVE` documents and excludes existing rows for the current model, so deleted documents are never indexed. Chunk text, vectors, request/response bodies, and model endpoints are not logged or exposed through HTTP. The Phase 32 public API is unchanged, and Phase 33 deliberately adds no cosine search, knowledge Agent plan, retrieval context, citations, or RAG response generation.
 
 ## 7. Security, errors, and observability
 

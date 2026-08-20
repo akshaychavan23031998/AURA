@@ -1,11 +1,15 @@
 import { AppError } from "../errors/app-error.js";
 import { z } from "zod";
 
-export interface MemoryEmbeddingClient {
+export interface EmbeddingClient {
   readonly model: string;
   readonly dimensions: number;
   embed(text: string, requestId: string): Promise<readonly number[]>;
 }
+
+// Compatibility name retained for the Phase 31 memory API. The runtime is
+// intentionally content-agnostic and is also used for knowledge chunks.
+export type MemoryEmbeddingClient = EmbeddingClient;
 
 export interface MemoryEmbeddingClientConfig {
   readonly baseUrl: string;
