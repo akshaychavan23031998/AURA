@@ -41,6 +41,15 @@ describe("voice protocol", () => {
         })!,
       ).error,
     ).toMatch(/expired/i);
+    expect(
+      transitionForEvent(
+        parseVoiceEvent({
+          ...base,
+          type: "error",
+          payload: { code: "PROVIDER_REAUTH_REQUIRED" },
+        })!,
+      ).error,
+    ).toMatch(/reconnect Google.*retry/i);
   });
   it("derives approval state only from the server protocol event", () => {
     const event = parseVoiceEvent({

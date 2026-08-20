@@ -46,6 +46,50 @@ describe("ToolRegistry", () => {
       "utility.datetime",
     ]);
   });
+  it("locks the V1 permission, risk, and approval matrix", () => {
+    const registry = createToolRegistry();
+    const expected: Readonly<
+      Record<string, readonly [string, string, string]>
+    > = {
+      "calendar.events.create": ["calendar.events.write", "WRITE", "REQUIRED"],
+      "calendar.events.delete": [
+        "calendar.events.write",
+        "DESTRUCTIVE",
+        "REQUIRED",
+      ],
+      "calendar.events.get": ["calendar.events.read", "READ", "NONE"],
+      "calendar.events.list": ["calendar.events.read", "READ", "NONE"],
+      "calendar.events.update": ["calendar.events.write", "WRITE", "REQUIRED"],
+      "contacts.people.get": ["contacts.people.read", "READ", "NONE"],
+      "contacts.people.list": ["contacts.people.read", "READ", "NONE"],
+      "gmail.messages.get": ["gmail.messages.read", "READ", "NONE"],
+      "gmail.messages.list": ["gmail.messages.read", "READ", "NONE"],
+      "gmail.messages.reply": ["gmail.messages.send", "WRITE", "REQUIRED"],
+      "gmail.messages.send": ["gmail.messages.send", "WRITE", "REQUIRED"],
+      "system.echo": ["system.echo", "READ", "NONE"],
+      "utility.calculator": ["utility.calculator", "READ", "NONE"],
+      "utility.datetime": ["utility.datetime", "READ", "NONE"],
+    };
+    expect(Object.keys(expected)).toHaveLength(14);
+    for (const metadata of registry.listMetadata()) {
+      expect([
+        metadata.requiredPermissions[0],
+        metadata.riskLevel,
+        metadata.approvalPolicy,
+      ]).toEqual(expected[metadata.name]);
+      expect(metadata.requiredPermissions).toHaveLength(1);
+      expect(metadata.requiredPermissions[0]).not.toContain("*");
+      expect(metadata.version).toBe(1);
+      expect(metadata.timeoutMs).toBeGreaterThan(0);
+      expect(metadata.enabled).toBe(true);
+      expect(registry.get(metadata.name).inputSchema).toHaveProperty(
+        "safeParse",
+      );
+      expect(registry.get(metadata.name).outputSchema).toHaveProperty(
+        "safeParse",
+      );
+    }
+  });
   it("registers and retrieves an explicit tool", () => {
     const registry = new ToolRegistry();
     registry.register(testTool);

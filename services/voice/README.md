@@ -1,5 +1,9 @@
 # AURA Voice Service
 
+## V1 safety boundary
+
+Voice remains a content transformation service for bounded STT/TTS and owns no identity, OAuth, Tool, permission, or approval authority. Realtime speech can request work but cannot approve writes, reconnect/disconnect Google, inject provider credentials, or replay an interrupted side effect. Once a provider mutation is dispatched, cancellation only suppresses stale conversational output and never causes a retry.
+
 The Voice Service is AURA's internal, self-hosted speech transformation boundary. Phase 10 implements a bounded turn-based foundation, not realtime streaming.
 
 ## Responsibilities and APIs

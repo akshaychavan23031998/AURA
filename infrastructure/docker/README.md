@@ -1,5 +1,7 @@
 # AURA container operations
 
+The production-like Gateway configuration forwards the Calendar, Gmail, and Contacts enablement flags plus the Gateway-only provider-token encryption key. When any integration is enabled, inject a base64-encoded 32-byte key through the environment; it is never built into an image. This configuration is validation infrastructure only and does not perform a production deployment.
+
 ## Development PostgreSQL only
 
 `postgres.compose.yml` remains the narrow development dependency and binds PostgreSQL to `127.0.0.1:5433`.

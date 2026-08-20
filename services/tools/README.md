@@ -1,5 +1,11 @@
 # Tool Service
 
+## V1 — Complete
+
+The sealed production registry contains exactly 14 statically composed tools: three local utilities, five Calendar event tools, four Gmail message tools, and two Contacts read tools. Each definition fixes version, category, risk, approval, idempotency, exact permission, timeout, and strict input/output schemas. No wildcard permission, dynamic module loading, arbitrary HTTP, shell, filesystem, memory, or multi-step workflow capability exists.
+
+Calendar create/update/delete and Gmail send/reply are `REQUIRED` approval and `NON_IDEMPOTENT`; preparation performs no provider mutation and execution never retries. All remaining V1 tools are approval-free. Provider hosts, paths, methods, payloads, and normalized outputs are adapter-controlled.
+
 The Tool Service is AURA's controlled action-execution boundary. It treats Agent and LLM output as untrusted, resolves only statically registered tools, validates every input, and centrally enforces permission and approval policy before invoking trusted code.
 
 Contacts registers only `contacts.people.list` and `contacts.people.get`. Both are read-only, approval-free, idempotent, and require exact `contacts.people.read`. Pagination, search, photos, addresses, and writes are unavailable.

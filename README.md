@@ -6,7 +6,13 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## Current status
 
-Phase 27 adds authenticated Google capability status, explicit account-bound re-consent, safe local disconnect, and browser recovery for missing Calendar, Gmail, or Contacts permissions. AURA sessions remain independent from Google authorization and Tool requests are never replayed after consent.
+## V1 — Complete
+
+Phase 28 formally closes V1. The sealed production registry contains exactly 14 tools: `system.echo`; `utility.calculator`; `utility.datetime`; Calendar event list/get/create/update/delete; Gmail message list/get/send/reply; and Contacts people list/get. Read tools are bounded and approval-free. Calendar mutations and Gmail send/reply are exact-action, owner-bound, expiring, single-use approved writes with no automatic retry.
+
+Google credentials stay encrypted behind Gateway. Capability status and explicit re-consent cover Calendar, Gmail, and Contacts while preserving stable-subject binding and AURA-session independence. Provider failure, reconnect, browser refresh, WebSocket reconnect, voice input, and consumed approval state never replay a Tool action.
+
+V1 intentionally excludes memory, RAG, embeddings/vector storage, document ingestion, multi-step planning, autonomous or scheduled workflows, Drive/Tasks, arbitrary HTTP, browser control, shell/filesystem access, and production deployment execution. V1.5 begins after this checkpoint.
 
 **Phase 17 — production deployment foundation.** AURA now has non-root production images, an explicit migration job, a private service network, and a Caddy HTTPS/WSS edge for a repeatable production-like stack. Models and secrets remain external to images, and llama.cpp remains a separately managed inference runtime.
 

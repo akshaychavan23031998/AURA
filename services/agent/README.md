@@ -1,5 +1,9 @@
 # Agent Service
 
+## V1 — Complete
+
+Agent remains proposal-only and may select at most one of the 14 sanitized catalog tools per turn. Catalog entries contain only name, description, category, and safe input schema. JWTs, provider credentials/scopes, actor permissions, approval authority, risks, service tokens, and database details never enter the planner contract. Malformed or unknown Tool plans fail closed; Tool execution and approval remain Gateway/Tool Service responsibilities.
+
 The Agent Service is AURA's internal planning boundary. Phase 9 preserves the deterministic planner and adds an explicitly selected self-hosted LLM planner backed by a local llama.cpp HTTP server. It proposes plans but never authorizes or executes actions.
 
 The sanitized catalog includes Contacts list/get. Deterministic mode supports list/show contacts and exact `people/...` lookup; human-name requests require clarification rather than guessed identifiers.

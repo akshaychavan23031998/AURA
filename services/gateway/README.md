@@ -1,5 +1,9 @@
 # Gateway Service
 
+## V1 — Complete
+
+Gateway is the sole public orchestration and identity boundary for all 14 V1 tools. It derives actor permissions, resolves encrypted provider credentials, persists/consumes exact approvals, propagates request IDs, and never retries unsafe Tool writes. Agent, Voice, Web, and public request bodies cannot supply trusted actor, permission, OAuth scope, provider token, or approval proof state.
+
 The Gateway is AURA's external HTTP and WebSocket entry point. Phase 16 adds Google OIDC account entry while preserving AURA-owned users, sessions, tokens, permissions, and voice transport.
 
 `GOOGLE_CONTACTS_ENABLED=true` adds only `contacts.readonly` consent. Existing users require re-consent. Provider credentials remain encrypted and only an ephemeral access token crosses the internal Tool Service boundary.

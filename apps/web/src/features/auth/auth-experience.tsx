@@ -105,7 +105,9 @@ export function AuthExperience() {
           getAccessToken={() => accessTokenStore.get()}
           onSessionExpired={expireSession}
         />
-        <GoogleIntegrationPanel api={googleIntegration} />
+        {isGoogleLoginEnabled() && (
+          <GoogleIntegrationPanel api={googleIntegration} />
+        )}
       </div>
     );
   }

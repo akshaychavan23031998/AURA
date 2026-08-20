@@ -9,7 +9,10 @@ import { accessTokenStore } from "./access-token";
 import { AuthExperience, isDevelopmentSessionEnabled } from "./auth-experience";
 
 describe("AuthExperience", () => {
-  beforeEach(() => accessTokenStore.clear());
+  beforeEach(() => {
+    accessTokenStore.clear();
+    vi.unstubAllEnvs();
+  });
 
   it("does not flash the authenticated application before bootstrap resolves", () => {
     vi.stubGlobal(
@@ -32,6 +35,20 @@ describe("AuthExperience", () => {
     expect(
       screen.getByRole("button", { name: "Log out of AURA" }),
     ).toBeEnabled();
+    expect(screen.queryByText("Google Account")).not.toBeInTheDocument();
+  });
+
+  it("renders Google capability management only when OIDC is configured", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_OIDC_ENABLED", "true");
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(
+        Response.json({ provider: "google", linked: false, capabilities: [] }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    renderExperience();
+    expect(await screen.findByText("Google Account")).toBeVisible();
   });
 
   it("renders unauthenticated UX when no session exists", async () => {

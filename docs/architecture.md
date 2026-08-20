@@ -10,6 +10,12 @@ Google Contacts is optional and read-only. Gateway owns encrypted credentials an
 
 Phase 27 makes Google authorization status visible without conflating it with AURA authentication. Gateway derives a feature-aware capability view from encrypted credential scopes, while the browser sees only stable capability IDs and `granted`/`reauth_required` states. Re-consent reuses the encrypted OIDC transaction, PKCE, state, and nonce, binds it to the authenticated actor, and requires the verified Google subject to match the existing identity. Missing replacement refresh tokens preserve the existing encrypted token.
 
+### V1 — Complete
+
+V1 closes with a sealed 14-tool registry, exact non-wildcard permissions, schema-validated inputs and outputs, one Tool proposal per Agent turn, Gateway-owned orchestration, and Tool-Service-owned policy. Nine read/local tools require no approval; Calendar create/update/delete and Gmail send/reply require persistent exact-action approval and permit at most one provider dispatch. Request IDs correlate browser or voice ingress through Agent, Tool Service, provider adapters, and continuation without becoming authorization material.
+
+V1.5/V2 capabilities are absent by design: no memory, RAG, embeddings/vector database, document ingestion, multi-step planning, durable autonomous workflows, schedules, arbitrary network/browser execution, shell/filesystem tools, Drive, or Tasks.
+
 - Phase 1 monorepo and web foundation
 - Phase 2 Fastify Gateway runtime with validated configuration, operational endpoints, request correlation, structured logging, security headers, stable external errors, and graceful shutdown
 - Phase 3 Tool Service execution foundation with a trusted registry, typed contracts, input validation, permission enforcement, approval policy, and the local `system.echo` tool

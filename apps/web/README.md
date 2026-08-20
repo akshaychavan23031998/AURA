@@ -1,5 +1,9 @@
 # AURA Web
 
+## V1 — Complete
+
+The browser provides memory-only access-token session UX, authenticated realtime voice, explicit Tool approval, and explicit Google capability management. Refresh credentials remain HttpOnly. Authenticated fetch retries only safe methods once; POST actions, microphone audio, approvals, and provider writes are never replayed. Google reconnect and disconnect require deliberate labelled clicks, and the connected-account panel is omitted when Google OIDC is not configured.
+
 Contacts consent and provider tokens remain server-side. The browser receives only ordinary AURA session/tool responses and uses the standard reconnect state when Contacts re-consent is required.
 
 The authenticated Connected Google Account panel shows human-readable Calendar, Gmail, and Contacts capabilities as Connected or Needs permission. It fetches only sanitized status and starts re-consent only after an explicit click. Provider tokens and raw scopes never enter JavaScript, Redux, localStorage, or sessionStorage. Local disconnect leaves the AURA session authenticated.
