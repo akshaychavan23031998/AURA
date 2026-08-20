@@ -14,8 +14,16 @@ const transactionSchema = z
     codeVerifier: z.string().min(43).max(128),
     nonce: z.string().min(32).max(256),
     issuedAt: z.number().int().positive(),
+    purpose: z.enum(["login", "reconnect"]).optional(),
+    actorId: z.uuid().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.purpose === "reconnect" && value.actorId === undefined)
+      context.addIssue({ code: "custom", message: "Reconnect actor required" });
+    if (value.purpose !== "reconnect" && value.actorId !== undefined)
+      context.addIssue({ code: "custom", message: "Unexpected actor binding" });
+  });
 const CONTEXT = "aura:google-oidc-transaction:v1";
 
 export class OidcTransactionCodec {
@@ -71,7 +79,18 @@ export class OidcTransactionCodec {
       if (!parsed.success) return undefined;
       const age = now - parsed.data.issuedAt;
       if (age < 0 || age > this.ttlSeconds * 1_000) return undefined;
-      return parsed.data;
+      return Object.freeze({
+        state: parsed.data.state,
+        codeVerifier: parsed.data.codeVerifier,
+        nonce: parsed.data.nonce,
+        issuedAt: parsed.data.issuedAt,
+        ...(parsed.data.purpose === undefined
+          ? {}
+          : { purpose: parsed.data.purpose }),
+        ...(parsed.data.actorId === undefined
+          ? {}
+          : { actorId: parsed.data.actorId }),
+      });
     } catch {
       return undefined;
     }

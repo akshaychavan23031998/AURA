@@ -66,6 +66,7 @@ describe("OpenID-certified Google adapter", () => {
     ]);
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("prompt")).toBe("consent");
+    expect(url.searchParams.get("include_granted_scopes")).toBe("true");
     expect(url.searchParams.toString()).not.toMatch(
       /gmail|drive|calendar\.acl/i,
     );

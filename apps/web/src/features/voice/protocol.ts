@@ -128,5 +128,7 @@ function safeErrorMessage(code: unknown): string {
   if (code === "VOICE_SESSION_TIMEOUT") return "The voice session timed out.";
   if (code === "VOICE_BUFFER_LIMIT_EXCEEDED")
     return "That utterance was too long.";
+  if (code === "PROVIDER_REAUTH_REQUIRED")
+    return "Google permission is required. Reconnect Google, then retry this request.";
   return "The voice session could not continue.";
 }

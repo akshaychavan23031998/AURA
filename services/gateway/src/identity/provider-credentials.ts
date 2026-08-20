@@ -19,7 +19,25 @@ const tokenSchema = z
   .object({ access_token: z.string().min(16).max(4096) })
   .passthrough();
 
-export class ProviderCredentialRepository {
+export interface GoogleCredentialStore {
+  readonly storeGoogle: (
+    userId: string,
+    providerSubject: string,
+    refreshToken: string | undefined,
+    scopes: readonly string[],
+  ) => Promise<void>;
+  readonly getGoogle: (userId: string) => Promise<
+    | {
+        subject: string;
+        refreshToken: string;
+        scopes: readonly string[];
+      }
+    | undefined
+  >;
+  readonly disconnectGoogle: (userId: string) => Promise<void>;
+}
+
+export class ProviderCredentialRepository implements GoogleCredentialStore {
   public constructor(
     private readonly database: DatabaseClient,
     private readonly encryptionKey: Buffer,
@@ -28,7 +46,7 @@ export class ProviderCredentialRepository {
   public async storeGoogle(
     userId: string,
     providerSubject: string,
-    refreshToken: string,
+    refreshToken: string | undefined,
     scopes: readonly string[],
   ): Promise<void> {
     const [binding] = await this.database.db
@@ -44,20 +62,38 @@ export class ProviderCredentialRepository {
       .limit(1);
     if (binding === undefined)
       throw new Error("Google identity binding mismatch");
+    const existing = await this.getGoogle(userId);
+    if (existing !== undefined && existing.subject !== providerSubject)
+      throw new Error("Google identity binding mismatch");
+    if (existing === undefined && refreshToken === undefined)
+      throw new Error("Google offline credential unavailable");
+    if (refreshToken === undefined) {
+      await this.database.db
+        .update(providerCredentials)
+        .set({ grantedScopes: [...scopes], updatedAt: new Date() })
+        .where(
+          and(
+            eq(providerCredentials.userId, userId),
+            eq(providerCredentials.provider, "google"),
+          ),
+        );
+      return;
+    }
+    const encryptedRefreshToken = encrypt(refreshToken, this.encryptionKey);
     await this.database.db
       .insert(providerCredentials)
       .values({
         userId,
         provider: "google",
         providerSubject,
-        encryptedRefreshToken: encrypt(refreshToken, this.encryptionKey),
+        encryptedRefreshToken,
         grantedScopes: [...scopes],
       })
       .onConflictDoUpdate({
         target: [providerCredentials.userId, providerCredentials.provider],
         set: {
           providerSubject,
-          encryptedRefreshToken: encrypt(refreshToken, this.encryptionKey),
+          encryptedRefreshToken,
           grantedScopes: [...scopes],
           updatedAt: new Date(),
         },
@@ -81,6 +117,17 @@ export class ProviderCredentialRepository {
       refreshToken: decrypt(row.encryptedRefreshToken, this.encryptionKey),
       scopes: Object.freeze([...row.grantedScopes]),
     };
+  }
+
+  public async disconnectGoogle(userId: string): Promise<void> {
+    await this.database.db
+      .delete(providerCredentials)
+      .where(
+        and(
+          eq(providerCredentials.userId, userId),
+          eq(providerCredentials.provider, "google"),
+        ),
+      );
   }
 }
 

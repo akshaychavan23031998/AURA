@@ -12,11 +12,19 @@ import {
   loginResultMessage,
   resolveGoogleLoginUrl,
 } from "./google-login";
+import { AuthenticatedFetch } from "./authenticated-fetch";
+import { GoogleIntegrationApi } from "../integrations/google-integration";
+import { GoogleIntegrationPanel } from "../integrations/google-integration-panel";
 
 export function AuthExperience() {
   const dispatch = useAppDispatch();
   const auth = useAppSelector((state) => state.auth);
   const api = useMemo(() => new AuthApi(accessTokenStore), []);
+  const googleIntegration = useMemo(
+    () =>
+      new GoogleIntegrationApi(new AuthenticatedFetch(accessTokenStore, api)),
+    [api],
+  );
   const loginResult = useMemo(
     () =>
       typeof window === "undefined"
@@ -54,7 +62,8 @@ export function AuthExperience() {
   useEffect(() => {
     if (
       typeof window !== "undefined" &&
-      window.location.search.includes("login=")
+      (window.location.search.includes("login=") ||
+        window.location.search.includes("integration="))
     )
       window.history.replaceState({}, "", window.location.pathname);
   }, []);
@@ -96,6 +105,7 @@ export function AuthExperience() {
           getAccessToken={() => accessTokenStore.get()}
           onSessionExpired={expireSession}
         />
+        <GoogleIntegrationPanel api={googleIntegration} />
       </div>
     );
   }

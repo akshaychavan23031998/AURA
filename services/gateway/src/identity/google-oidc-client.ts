@@ -9,6 +9,8 @@ export interface OidcTransaction {
   readonly codeVerifier: string;
   readonly nonce: string;
   readonly issuedAt: number;
+  readonly purpose?: "login" | "reconnect";
+  readonly actorId?: string;
 }
 
 export interface GoogleOidcProvider {
@@ -23,7 +25,7 @@ export type GoogleOidcCallbackResult =
   | AuthenticatedExternalIdentity
   | {
       readonly identity: AuthenticatedExternalIdentity;
-      readonly refreshToken: string;
+      readonly refreshToken?: string;
       readonly grantedScopes: readonly string[];
     };
 
@@ -58,26 +60,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
     return oidc.buildAuthorizationUrl(configuration, {
       redirect_uri: this.config.redirectUri,
       response_type: "code",
-      scope: [
-        "openid",
-        "email",
-        "profile",
-        ...(this.calendarEnabled
-          ? [
-              "https://www.googleapis.com/auth/calendar.readonly",
-              "https://www.googleapis.com/auth/calendar.events",
-            ]
-          : []),
-        ...(this.gmailEnabled
-          ? [
-              "https://www.googleapis.com/auth/gmail.readonly",
-              "https://www.googleapis.com/auth/gmail.send",
-            ]
-          : []),
-        ...(this.contactsEnabled
-          ? ["https://www.googleapis.com/auth/contacts.readonly"]
-          : []),
-      ].join(" "),
+      scope: ["openid", "email", "profile", ...this.providerScopes()].join(" "),
       ...(this.calendarEnabled || this.gmailEnabled || this.contactsEnabled
         ? { access_type: "offline", prompt: "consent" }
         : {}),
@@ -87,6 +70,7 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
         transaction.codeVerifier,
       ),
       code_challenge_method: "S256",
+      include_granted_scopes: "true",
     });
   }
 
@@ -121,28 +105,18 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
     if (!this.calendarEnabled && !this.gmailEnabled && !this.contactsEnabled)
       return identity;
     const refreshToken = tokens.refreshToken;
-    if (typeof refreshToken !== "string" || refreshToken.length < 16)
-      throw new Error("Google did not return an offline credential");
     return Object.freeze({
       identity,
-      refreshToken,
-      grantedScopes: Object.freeze([
-        ...(this.calendarEnabled
-          ? [
-              "https://www.googleapis.com/auth/calendar.readonly",
-              "https://www.googleapis.com/auth/calendar.events",
-            ]
-          : []),
-        ...(this.gmailEnabled
-          ? [
-              "https://www.googleapis.com/auth/gmail.readonly",
-              "https://www.googleapis.com/auth/gmail.send",
-            ]
-          : []),
-        ...(this.contactsEnabled
-          ? ["https://www.googleapis.com/auth/contacts.readonly"]
-          : []),
-      ]),
+      ...(typeof refreshToken === "string" && refreshToken.length >= 16
+        ? { refreshToken }
+        : {}),
+      grantedScopes: Object.freeze(
+        typeof tokens.scope === "string"
+          ? tokens.scope
+              .split(" ")
+              .filter((scope) => this.providerScopes().includes(scope))
+          : this.providerScopes(),
+      ),
     });
   }
 
@@ -159,13 +133,36 @@ export class OpenIdClientGoogleProvider implements GoogleOidcProvider {
       });
     return this.configuration;
   }
+
+  private providerScopes(): string[] {
+    return [
+      ...(this.calendarEnabled
+        ? [
+            "https://www.googleapis.com/auth/calendar.readonly",
+            "https://www.googleapis.com/auth/calendar.events",
+          ]
+        : []),
+      ...(this.gmailEnabled
+        ? [
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/gmail.send",
+          ]
+        : []),
+      ...(this.contactsEnabled
+        ? ["https://www.googleapis.com/auth/contacts.readonly"]
+        : []),
+    ];
+  }
 }
 
-export function createOidcTransaction(): OidcTransaction {
+export function createOidcTransaction(
+  binding?: Readonly<{ purpose: "reconnect"; actorId: string }>,
+): OidcTransaction {
   return Object.freeze({
     state: oidc.randomState(),
     codeVerifier: oidc.randomPKCECodeVerifier(),
     nonce: oidc.randomNonce(),
     issuedAt: Date.now(),
+    ...(binding ?? { purpose: "login" as const }),
   });
 }

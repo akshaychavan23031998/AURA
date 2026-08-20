@@ -19,7 +19,7 @@ import { registerGoogleOidcRoutes } from "./auth/google-oidc.route.js";
 import type { ApprovalRepository } from "../approvals/approval-repository.js";
 import { registerApprovalRoutes } from "./approvals/approval.route.js";
 import type { ApprovalRealtimeRegistry } from "../approvals/approval-realtime-registry.js";
-import type { ProviderCredentialRepository } from "../identity/provider-credentials.js";
+import type { GoogleCredentialStore } from "../identity/provider-credentials.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -36,7 +36,7 @@ export function registerRoutes(
   approvals?: ApprovalRepository,
   approvalTtlSeconds = 300,
   realtimeApprovals?: ApprovalRealtimeRegistry,
-  providerCredentials?: ProviderCredentialRepository,
+  providerCredentials?: GoogleCredentialStore,
 ): void {
   registerHealthRoutes(app, checkDatabase);
   if (config !== undefined)
@@ -48,6 +48,7 @@ export function registerRoutes(
       googleOidcProvider,
       identities,
       sessions,
+      authenticate,
       providerCredentials,
     );
   registerToolExecutionRoute(

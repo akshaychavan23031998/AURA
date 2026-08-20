@@ -2,6 +2,10 @@
 
 Contacts consent and provider tokens remain server-side. The browser receives only ordinary AURA session/tool responses and uses the standard reconnect state when Contacts re-consent is required.
 
+The authenticated Connected Google Account panel shows human-readable Calendar, Gmail, and Contacts capabilities as Connected or Needs permission. It fetches only sanitized status and starts re-consent only after an explicit click. Provider tokens and raw scopes never enter JavaScript, Redux, localStorage, or sessionStorage. Local disconnect leaves the AURA session authenticated.
+
+`PROVIDER_REAUTH_REQUIRED` produces a safe reconnect instruction. The UI does not redirect automatically and never replays the failed Tool request, an approved write, or microphone audio after consent. OAuth and disconnect are browser-only controls; spoken commands have no provider-consent authority.
+
 Phase 20 integrates an accessible approval card into the live protocol-driven voice experience. `approval.required` supplies only the approval ID, safe title/preview, and expiry; deliberate Approve or Reject activation calls the fixed authenticated Gateway route. Loading, rejection, completion, expiry, session failure, and sanitized error states are represented. Transcript text—including “yes” or “approve”—never invokes the approval API, and the UI never resubmits tool arguments or trusted policy metadata.
 
 When Calendar access is enabled, Google consent includes the official Calendar read and event-write scopes plus offline token issuance. The browser still receives only AURA session credentials; Google tokens never enter frontend JavaScript, Redux, storage, URLs, or voice events. Calendar create, update, and delete use the existing accessible `ApprovalCard`: merely rendering or reading an approval cannot execute, and voice phrases have no approval authority. Only an explicit authenticated Approve click can resume the exact persisted action; the browser never resubmits event data or policy metadata.

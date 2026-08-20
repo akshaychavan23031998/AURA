@@ -82,6 +82,22 @@ export class IdentityRepository {
     }
   }
 
+  public async findGoogleSubjectForUser(
+    userId: string,
+  ): Promise<string | undefined> {
+    const [binding] = await this.database.db
+      .select({ subject: externalIdentities.providerSubject })
+      .from(externalIdentities)
+      .where(
+        and(
+          eq(externalIdentities.userId, userId),
+          eq(externalIdentities.provider, "google"),
+        ),
+      )
+      .limit(1);
+    return binding?.subject;
+  }
+
   private async findExternalIdentity(
     provider: "google",
     subject: string,

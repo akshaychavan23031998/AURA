@@ -51,6 +51,7 @@ import { ApprovalRepository } from "../approvals/approval-repository.js";
 import { ApprovalRealtimeRegistry } from "../approvals/approval-realtime-registry.js";
 import {
   GoogleProviderAccessTokenService,
+  type GoogleCredentialStore,
   ProviderCredentialRepository,
 } from "../identity/provider-credentials.js";
 
@@ -65,6 +66,7 @@ export interface CreateAppOptions {
   readonly voiceClient?: VoiceServiceClient;
   readonly googleOidcProvider?: GoogleOidcProvider;
   readonly externalIdentityResolver?: ExternalIdentityResolver;
+  readonly providerCredentialRepository?: GoogleCredentialStore;
 }
 
 export async function createApp(
@@ -105,12 +107,14 @@ export async function createApp(
     : options.config.googleGmail.enabled
       ? options.config.googleGmail
       : options.config.googleContacts;
-  const providerCredentials = googleIntegration.enabled
-    ? new ProviderCredentialRepository(
-        database,
-        Buffer.from(googleIntegration.tokenEncryptionKey, "base64"),
-      )
-    : undefined;
+  const providerCredentials =
+    options.providerCredentialRepository ??
+    (googleIntegration.enabled
+      ? new ProviderCredentialRepository(
+          database,
+          Buffer.from(googleIntegration.tokenEncryptionKey, "base64"),
+        )
+      : undefined);
   const realtimeApprovals = new ApprovalRealtimeRegistry();
   const sessions =
     options.sessionService ??

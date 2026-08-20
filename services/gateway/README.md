@@ -4,6 +4,8 @@ The Gateway is AURA's external HTTP and WebSocket entry point. Phase 16 adds Goo
 
 `GOOGLE_CONTACTS_ENABLED=true` adds only `contacts.readonly` consent. Existing users require re-consent. Provider credentials remain encrypted and only an ephemeral access token crosses the internal Tool Service boundary.
 
+Phase 27 adds authenticated Google capability management. Status is derived from enabled features and stored scopes; it excludes raw scopes, subjects, tokens, and encryption metadata. Re-consent reuses OIDC Authorization Code + PKCE and binds the protected transaction to the authenticated actor and existing Google `sub`. A callback from another Google account fails closed. If Google omits a replacement refresh token, the current encrypted token is preserved.
+
 ## Implemented
 
 - Fastify lifecycle, validated immutable configuration, structured/redacted logging, request correlation, Helmet headers, stable errors, and graceful shutdown
@@ -20,20 +22,23 @@ The Gateway is AURA's external HTTP and WebSocket entry point. Phase 16 adds Goo
 
 ## Endpoints
 
-| Method | Path                               | Authentication      | Purpose                                          |
-| ------ | ---------------------------------- | ------------------- | ------------------------------------------------ |
-| `GET`  | `/health`                          | None                | Process liveness                                 |
-| `GET`  | `/ready`                           | None                | Gateway and PostgreSQL readiness                 |
-| `POST` | `/api/v1/auth/refresh`             | Refresh cookie/body | Rotate refresh token and issue access token      |
-| `POST` | `/api/v1/auth/logout`              | Bearer              | Revoke the caller's current session              |
-| `POST` | `/api/v1/auth/development-session` | Development only    | Create the fixed local development identity      |
-| `GET`  | `/api/v1/auth/google/start`        | None                | Start Google OIDC with state, nonce, and PKCE    |
-| `GET`  | `/api/v1/auth/google/callback`     | Transaction cookie  | Validate Google identity and create AURA session |
-| `POST` | `/api/v1/tools/execute`            | Bearer              | Execute a validated Tool Service request         |
-| `POST` | `/api/v1/agent/respond`            | Bearer              | Produce an unexecuted planning response          |
-| `POST` | `/api/v1/agent/run`                | Bearer              | Run deterministic orchestration                  |
-| `POST` | `/api/v1/voice/run`                | Bearer              | Run one multipart voice turn                     |
-| `GET`  | `/api/v1/voice/session`            | Bearer upgrade      | Open an `aura.voice.v1` WebSocket session        |
+| Method | Path                                     | Authentication      | Purpose                                          |
+| ------ | ---------------------------------------- | ------------------- | ------------------------------------------------ |
+| `GET`  | `/health`                                | None                | Process liveness                                 |
+| `GET`  | `/ready`                                 | None                | Gateway and PostgreSQL readiness                 |
+| `POST` | `/api/v1/auth/refresh`                   | Refresh cookie/body | Rotate refresh token and issue access token      |
+| `POST` | `/api/v1/auth/logout`                    | Bearer              | Revoke the caller's current session              |
+| `POST` | `/api/v1/auth/development-session`       | Development only    | Create the fixed local development identity      |
+| `GET`  | `/api/v1/auth/google/start`              | None                | Start Google OIDC with state, nonce, and PKCE    |
+| `GET`  | `/api/v1/auth/google/callback`           | Transaction cookie  | Validate Google identity and create AURA session |
+| `GET`  | `/api/v1/integrations/google`            | Bearer              | Read sanitized enabled Google capability state   |
+| `POST` | `/api/v1/integrations/google/reconnect`  | Bearer + Origin     | Start explicit actor-bound Google re-consent     |
+| `POST` | `/api/v1/integrations/google/disconnect` | Bearer + Origin     | Remove only the caller's local Google credential |
+| `POST` | `/api/v1/tools/execute`                  | Bearer              | Execute a validated Tool Service request         |
+| `POST` | `/api/v1/agent/respond`                  | Bearer              | Produce an unexecuted planning response          |
+| `POST` | `/api/v1/agent/run`                      | Bearer              | Run deterministic orchestration                  |
+| `POST` | `/api/v1/voice/run`                      | Bearer              | Run one multipart voice turn                     |
+| `GET`  | `/api/v1/voice/session`                  | Bearer upgrade      | Open an `aura.voice.v1` WebSocket session        |
 
 Operational endpoints remain unversioned; application APIs use `/api/v1`.
 

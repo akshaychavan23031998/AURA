@@ -68,7 +68,7 @@ export function registerAuthRoutes(
   });
 }
 
-function requireBrowserOrigin(
+export function requireBrowserOrigin(
   request: FastifyRequest,
   config: GatewayConfig,
 ): void {

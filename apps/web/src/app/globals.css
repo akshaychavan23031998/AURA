@@ -437,3 +437,56 @@ button {
     scroll-behavior: auto !important;
   }
 }
+.integration-panel {
+  width: min(100% - 32px, 1080px);
+  margin: 0 auto 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 4%);
+}
+.integration-panel h2,
+.integration-panel p {
+  margin: 0 0 8px;
+}
+.capability-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 16px 0;
+  list-style: none;
+}
+.capability-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 4%);
+}
+.capability-list strong {
+  color: var(--mint);
+}
+.integration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.integration-actions button {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  background: rgb(255 255 255 / 7%);
+  cursor: pointer;
+}
+.integration-actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.integration-error {
+  color: #ffd5d5;
+}
+.integration-success {
+  color: var(--mint);
+}

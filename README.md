@@ -6,7 +6,7 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## Current status
 
-Phase 26 adds read-only `contacts.people.list` and `contacts.people.get`, using conditional `contacts.readonly` consent, exact `contacts.people.read`, fixed People API endpoints, and normalized contact summaries. Contact writes are not implemented.
+Phase 27 adds authenticated Google capability status, explicit account-bound re-consent, safe local disconnect, and browser recovery for missing Calendar, Gmail, or Contacts permissions. AURA sessions remain independent from Google authorization and Tool requests are never replayed after consent.
 
 **Phase 17 — production deployment foundation.** AURA now has non-root production images, an explicit migration job, a private service network, and a Caddy HTTPS/WSS edge for a repeatable production-like stack. Models and secrets remain external to images, and llama.cpp remains a separately managed inference runtime.
 
@@ -68,10 +68,10 @@ pnpm build
 - **V1:** Tools and actions
 - **Later:** Memory, RAG, and explicitly bounded workflows
 
-V1 registers the three local utilities, five Google Calendar tools, and four Gmail tools through the sealed Tool Registry and centralized policy pipeline. Gmail list/get are read-only; send/reply are explicit-approved writes. Contacts, Drive, and other SaaS integrations remain unimplemented.
+V1 registers three local utilities, five Google Calendar tools, four Gmail tools, and two read-only Contacts tools through the sealed Tool Registry and centralized policy pipeline. Gmail list/get and Contacts list/get are read-only; Gmail send/reply and Calendar mutations require explicit approval. Drive and other SaaS integrations remain unimplemented.
 
 Redis, Kafka, CognoDB, Kubernetes, and cloud-specific deployment SDKs are not introduced. See [docs/architecture.md](docs/architecture.md) for ownership and evolution constraints.
 
 Phase 20 adds persistent, owner-bound, expiring, single-use approval records for future risky tools. Exact actions are SHA-256 bound to canonical tool name, version, and validated input. Agent orchestration suspends before execution, an explicit authenticated browser decision consumes the stored action once, and the Tool result returns through Agent continuation. Realtime sessions emit `approval.required`, wait in `AWAITING_APPROVAL`, and resume TTS only after an HTTP approval; voice transcripts and Agent output cannot approve. All three current production tools remain approval-free.
 
-The Google Calendar V1 set is `calendar.events.list`, `get`, `create`, `update`, and `delete`, all restricted to the authenticated user's primary calendar. Gmail provides `messages.list`/`get` with `gmail.readonly` plus approved `messages.send`/`reply` with the narrower `gmail.send` scope and exact AURA permissions. Outbound mail is single-recipient plain text, approval-bound, single-use, and never retried; reply recipients and threading metadata are resolved server-side. Older credentials require re-consent. Forward/delete/modify, drafts, attachments, CC/BCC, Contacts, and Drive remain unimplemented.
+The Google Calendar V1 set is `calendar.events.list`, `get`, `create`, `update`, and `delete`, all restricted to the authenticated user's primary calendar. Gmail provides `messages.list`/`get` with `gmail.readonly` plus approved `messages.send`/`reply` with the narrower `gmail.send` scope. Contacts provides bounded read-only `people.list`/`get`. The connected-account panel reports enabled capabilities without exposing tokens or raw scopes and starts protected re-consent only after an explicit click. Forward/delete/modify, drafts, attachments, CC/BCC, Contacts writes, and Drive remain unimplemented.

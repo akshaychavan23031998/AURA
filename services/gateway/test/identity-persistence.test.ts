@@ -224,6 +224,19 @@ describe.sequential("PostgreSQL identity persistence", () => {
     expect(stored?.encryptedRefreshToken).not.toContain(
       "provider-refresh-token-must-stay-secret",
     );
+    await credentials.storeGoogle(userId, subject, undefined, [
+      GOOGLE_CALENDAR_READ_SCOPE,
+      "https://www.googleapis.com/auth/contacts.readonly",
+    ]);
+    await expect(credentials.getGoogle(userId)).resolves.toMatchObject({
+      refreshToken: "provider-refresh-token-must-stay-secret",
+      scopes: [
+        GOOGLE_CALENDAR_READ_SCOPE,
+        "https://www.googleapis.com/auth/contacts.readonly",
+      ],
+    });
+    await credentials.disconnectGoogle(userId);
+    await expect(credentials.getGoogle(userId)).resolves.toBeUndefined();
   });
 
   it("resolves concurrent first login and rolls back the losing partial user", async () => {
