@@ -115,6 +115,15 @@ class MemoryReadPlan(BaseModel):
     kind: MemoryKind | None = None
 
 
+class MemorySearchPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["memory_search"] = "memory_search"
+    query: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1024)
+    ]
+
+
 class MemoryCreatePlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -135,7 +144,12 @@ class MemoryDeletePlan(BaseModel):
 
 
 Plan = Annotated[
-    RespondPlan | ToolPlan | MemoryReadPlan | MemoryCreatePlan | MemoryDeletePlan,
+    RespondPlan
+    | ToolPlan
+    | MemoryReadPlan
+    | MemorySearchPlan
+    | MemoryCreatePlan
+    | MemoryDeletePlan,
     Field(discriminator="type"),
 ]
 

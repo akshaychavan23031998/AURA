@@ -26,6 +26,7 @@ import {
 } from "../src/identity/provider-credentials.js";
 import { testConfig } from "./test-config.js";
 import { MemoryRepository } from "../src/memory/memory-repository.js";
+import { MemoryEmbeddingRepository } from "../src/memory/memory-embedding-repository.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) {
@@ -48,6 +49,7 @@ const repository = new IdentityRepository(database);
 const sessions = new SessionService(repository, testConfig.auth);
 const approvals = new ApprovalRepository(database);
 const memories = new MemoryRepository(database);
+const memoryEmbeddings = new MemoryEmbeddingRepository(database);
 
 beforeAll(async () => {
   await database.db.execute(sql`drop schema if exists public cascade`);
@@ -358,6 +360,43 @@ describe.sequential("PostgreSQL identity persistence", () => {
     );
     const [stored] = await database.db.select().from(userMemories);
     expect(stored).toMatchObject({ status: "DELETED", deletedAt: now });
+  });
+
+  it("ranks semantic memories inside the active owner boundary", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const [otherActor] = await database.db.insert(users).values({}).returning();
+    const related = await memories.create(actorId, {
+      kind: "preference",
+      content: "Prefers TypeScript",
+    });
+    const unrelated = await memories.create(actorId, {
+      kind: "note",
+      content: "Prefers morning meetings",
+    });
+    const foreign = await memories.create(otherActor!.id, {
+      kind: "fact",
+      content: "Uses TypeScript",
+    });
+    const axis = (index: number) =>
+      Array.from({ length: 384 }, (_, position) =>
+        position === index ? 1 : 0,
+      );
+    await memoryEmbeddings.upsert(related.id, "test-model", axis(0));
+    await memoryEmbeddings.upsert(unrelated.id, "test-model", axis(1));
+    await memoryEmbeddings.upsert(foreign.id, "test-model", axis(0));
+
+    await expect(
+      memoryEmbeddings.searchOwned(actorId, "test-model", axis(0), 5, 0.5),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: related.id,
+        content: "Prefers TypeScript",
+      }),
+    ]);
+    await memories.deleteOwned(actorId, related.id, new Date());
+    await expect(
+      memoryEmbeddings.searchOwned(actorId, "test-model", axis(0), 5, 0.5),
+    ).resolves.toEqual([]);
   });
 
   it("enforces the memory user foreign key", async () => {

@@ -52,6 +52,14 @@ Operational endpoints remain unversioned; application APIs use `/api/v1`.
 
 ## Persistent memory foundation
 
+### Semantic retrieval
+
+When `MEMORY_EMBEDDINGS_ENABLED=true`, Gateway uses the fixed `MEMORY_EMBEDDING_BASE_URL` `/v1/embeddings` endpoint and `MEMORY_EMBEDDING_MODEL`; callers cannot select either. The schema is fixed at 384 dimensions, HTTP is bounded by `MEMORY_EMBEDDING_TIMEOUT_MS`, and malformed/non-finite vectors fail closed. `MEMORY_SEARCH_LIMIT` is limited to 1–10 (default 5) and `MEMORY_SEARCH_MIN_SIMILARITY` to -1–1 (default 0.5).
+
+`user_memory_embeddings` stores one vector per `(memory_id, model)`. Cosine distance (`<=>`) is evaluated only after joining active memories owned by the authenticated actor. Deleted, foreign-owned, unembedded, wrong-model, and below-threshold rows cannot enter Agent context. Queries, content, and vectors are not logged.
+
+Explicit creation succeeds even when embedding fails; the failure is recorded only as safe metadata. Run `pnpm --filter @aura/gateway memory:backfill -- 25` explicitly to process up to 25 active memories missing the configured model. The command is bounded to 100, idempotent, tolerates partial failures, and is neither a public API nor a startup task.
+
 Phase 29 started V1.5 with manual persistence. Phase 30 reuses that same MemoryService for explicit Agent-proposed reads, creates, and deletes. Gateway derives ownership from the authenticated principal and stores bounded `preference`, `fact`, `instruction`, or `note` content in PostgreSQL. Neither public callers nor the Agent can select ownership, lifecycle, source, or permissions; the source is always `user_explicit`. `memory.read` and `memory.write` are independent exact permissions, public list limits cannot exceed 50, Agent context is capped at 10, and content cannot exceed 4096 characters.
 
 Deletion is an owner-scoped atomic soft delete. Active list/get operations exclude deleted rows, and absent, deleted, and foreign-owned identifiers use the same `MEMORY_NOT_FOUND` response to avoid existence disclosure. Request logs contain no bodies or memory content. Agent continuation receives only bounded `id`, `kind`, and `content` fields in a dedicated context explicitly framed as untrusted user data; it never receives actor, source, lifecycle, or database metadata. Tool Service remains uninvolved and its production registry remains at 14 entries.

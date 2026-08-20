@@ -15,7 +15,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "identity:bootstrap-dev-user": "tsx src/identity/bootstrap-dev-user.ts",
-    "identity:dev-session": "tsx src/identity/create-dev-session.ts"
+    "identity:dev-session": "tsx src/identity/create-dev-session.ts",
+    "memory:backfill": "tsx src/memory/backfill-memory-embeddings.ts"
   },
   "dependencies": {
     "@fastify/cors": "11.2.0",

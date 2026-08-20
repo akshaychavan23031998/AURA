@@ -38,6 +38,11 @@ const DEVELOPMENT_DEFAULTS = {
   GOOGLE_CALENDAR_ENABLED: "false",
   GOOGLE_GMAIL_ENABLED: "false",
   GOOGLE_CONTACTS_ENABLED: "false",
+  MEMORY_EMBEDDINGS_ENABLED: "false",
+  MEMORY_EMBEDDING_DIMENSIONS: "384",
+  MEMORY_EMBEDDING_TIMEOUT_MS: "5000",
+  MEMORY_SEARCH_LIMIT: "5",
+  MEMORY_SEARCH_MIN_SIMILARITY: "0.5",
 } as const;
 
 export interface AuthConfig {
@@ -124,6 +129,17 @@ export interface GatewayConfig {
   readonly googleContacts:
     | { readonly enabled: false }
     | { readonly enabled: true; readonly tokenEncryptionKey: string };
+  readonly memoryEmbeddings:
+    | { readonly enabled: false }
+    | {
+        readonly enabled: true;
+        readonly baseUrl: string;
+        readonly model: string;
+        readonly dimensions: 384;
+        readonly timeoutMs: number;
+        readonly searchLimit: number;
+        readonly minimumSimilarity: number;
+      };
   readonly database: {
     readonly url: string;
     readonly poolMax: number;
@@ -252,6 +268,17 @@ export function loadConfig(
       ? Object.freeze({
           enabled: true as const,
           tokenEncryptionKey: parsed.GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY!,
+        })
+      : Object.freeze({ enabled: false as const }),
+    memoryEmbeddings: parsed.MEMORY_EMBEDDINGS_ENABLED
+      ? Object.freeze({
+          enabled: true as const,
+          baseUrl: parsed.MEMORY_EMBEDDING_BASE_URL!.replace(/\/$/, ""),
+          model: parsed.MEMORY_EMBEDDING_MODEL!,
+          dimensions: 384 as const,
+          timeoutMs: parsed.MEMORY_EMBEDDING_TIMEOUT_MS,
+          searchLimit: parsed.MEMORY_SEARCH_LIMIT,
+          minimumSimilarity: parsed.MEMORY_SEARCH_MIN_SIMILARITY,
         })
       : Object.freeze({ enabled: false as const }),
     database: Object.freeze({

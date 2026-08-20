@@ -21,6 +21,7 @@ from aura_agent.contracts import (
     MemoryCreatePlan,
     MemoryDeletePlan,
     MemoryReadPlan,
+    MemorySearchPlan,
     RespondPlan,
     ToolPlan,
     ToolProposal,
@@ -40,7 +41,12 @@ class DeterministicDevelopmentPlanner:
     async def plan(self, request: AgentRequest) -> AgentResult:
         if request.memory_context is not None:
             if not request.memory_context:
-                response = "You have no explicit saved memories."
+                requested_memory = _parse_deterministic_memory(request.message.strip())
+                response = (
+                    "I found no matching explicit saved memories."
+                    if isinstance(requested_memory, MemorySearchPlan)
+                    else "You have no explicit saved memories."
+                )
             else:
                 rendered = "; ".join(
                     f"[{item.id}] {item.kind}: {item.content}"
@@ -547,6 +553,14 @@ class _MemoryReadOutput(BaseModel):
     plan: MemoryReadPlan
 
 
+class _MemorySearchOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["propose_memory_search"]
+    response: str = Field(min_length=1, max_length=8192)
+    plan: MemorySearchPlan
+
+
 class _MemoryCreateOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -567,6 +581,7 @@ InitialOutput = (
     _RespondOutput
     | _ToolOutput
     | _MemoryReadOutput
+    | _MemorySearchOutput
     | _MemoryCreateOutput
     | _MemoryDeleteOutput
 )
@@ -686,6 +701,7 @@ def _initial_output_schema() -> dict[str, object]:
                 "required": ["intent", "response", "plan"],
             },
             _memory_output_schema("memory_read"),
+            _memory_output_schema("memory_search"),
             _memory_output_schema("memory_create"),
             _memory_output_schema("memory_delete"),
         ]
@@ -731,6 +747,13 @@ def _memory_output_schema(operation: str) -> dict[str, object]:
             "enum": ["preference", "fact", "instruction", "note", None],
         }
         required.append("kind")
+    elif operation == "memory_search":
+        plan_properties["query"] = {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+        }
+        required.append("query")
     elif operation == "memory_create":
         plan_properties.update(
             {
@@ -767,6 +790,7 @@ def _parse_initial_output(value: object) -> InitialOutput:
         _RespondOutput,
         _ToolOutput,
         _MemoryReadOutput,
+        _MemorySearchOutput,
         _MemoryCreateOutput,
         _MemoryDeleteOutput,
     ):
@@ -813,7 +837,7 @@ class AgentService:
 
 def _parse_deterministic_memory(
     message: str,
-) -> MemoryReadPlan | MemoryCreatePlan | MemoryDeletePlan | None:
+) -> MemoryReadPlan | MemorySearchPlan | MemoryCreatePlan | MemoryDeletePlan | None:
     lowered = message.casefold().strip()
     if lowered in {
         "what do you remember about me?",
@@ -830,7 +854,18 @@ def _parse_deterministic_memory(
         "what timezone did i ask you to remember?",
         "what timezone did i ask you to remember",
     }:
-        return MemoryReadPlan(kind="fact")
+        return MemorySearchPlan(query="timezone")
+    deployment_match = re.fullmatch(
+        r"what did i save about ([a-z0-9][a-z0-9 -]{0,100})\??",
+        lowered,
+    )
+    if deployment_match is not None:
+        return MemorySearchPlan(query=deployment_match.group(1).strip())
+    if lowered in {
+        "what coding language do i prefer?",
+        "what coding language do i prefer",
+    }:
+        return MemorySearchPlan(query="coding language preference")
 
     delete_match = re.fullmatch(
         r"(?:forget memory|delete (?:the )?saved "

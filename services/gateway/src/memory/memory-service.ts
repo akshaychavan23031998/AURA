@@ -4,6 +4,8 @@ import {
   type ListMemoryOptions,
   MemoryRepository,
 } from "./memory-repository.js";
+import type { MemoryEmbeddingClient } from "./memory-embedding-client.js";
+import type { MemoryEmbeddingRepository } from "./memory-embedding-repository.js";
 
 export interface MemoryView {
   readonly id: string;
@@ -13,11 +15,13 @@ export interface MemoryView {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
+export type MemoryContextView = Pick<MemoryView, "id" | "kind" | "content">;
 
 export interface MemoryStore {
   readonly create: (
     actorId: string,
     value: CreateMemoryValue,
+    requestId?: string,
   ) => Promise<MemoryView>;
   readonly getOwned: (actorId: string, memoryId: string) => Promise<MemoryView>;
   readonly listOwned: (
@@ -25,15 +29,39 @@ export interface MemoryStore {
     options: ListMemoryOptions,
   ) => Promise<MemoryView[]>;
   readonly deleteOwned: (actorId: string, memoryId: string) => Promise<void>;
+  readonly searchOwnedRelevant?: (
+    actorId: string,
+    query: string,
+    requestId: string,
+  ) => Promise<MemoryContextView[]>;
 }
 
 export class MemoryService implements MemoryStore {
-  public constructor(private readonly repository: MemoryRepository) {}
+  public constructor(
+    private readonly repository: MemoryRepository,
+    private readonly embeddings?: {
+      readonly client: MemoryEmbeddingClient;
+      readonly repository: MemoryEmbeddingRepository;
+      readonly searchLimit: number;
+      readonly minimumSimilarity: number;
+      readonly log?: {
+        warn(fields: Record<string, unknown>, message: string): void;
+        info(fields: Record<string, unknown>, message: string): void;
+      };
+    },
+  ) {}
 
-  public async create(actorId: string, value: CreateMemoryValue) {
+  public async create(
+    actorId: string,
+    value: CreateMemoryValue,
+    requestId = "memory-create",
+  ) {
     const normalized = normalizeCreate(value);
     try {
-      return view(await this.repository.create(actorId, normalized));
+      const row = await this.repository.create(actorId, normalized);
+      if (this.embeddings !== undefined)
+        await this.embedBestEffort(row.id, row.content, requestId);
+      return view(row);
     } catch {
       throw storageFailed();
     }
@@ -78,6 +106,88 @@ export class MemoryService implements MemoryStore {
     }
     if (deleted === undefined) throw notFound();
   }
+
+  public async searchOwnedRelevant(
+    actorId: string,
+    query: string,
+    requestId: string,
+  ): Promise<MemoryContextView[]> {
+    if (this.embeddings === undefined) throw embeddingUnavailable();
+    const normalized = normalizeQuery(query);
+    try {
+      const vector = await this.embeddings.client.embed(normalized, requestId);
+      const rows = await this.embeddings.repository.searchOwned(
+        actorId,
+        this.embeddings.client.model,
+        vector,
+        this.embeddings.searchLimit,
+        this.embeddings.minimumSimilarity,
+      );
+      this.embeddings.log?.info(
+        { requestId, operation: "memory_search", resultCount: rows.length },
+        "Semantic memory search completed",
+      );
+      return rows.map((row) =>
+        Object.freeze({
+          id: row.id,
+          kind: row.kind,
+          content: row.content,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw searchFailed();
+    }
+  }
+
+  public async backfill(batchSize: number, requestId = "memory-backfill") {
+    if (this.embeddings === undefined) throw embeddingUnavailable();
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
+      throw inputInvalid();
+    const rows = await this.embeddings.repository.listActiveMissing(
+      this.embeddings.client.model,
+      batchSize,
+    );
+    let embedded = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const vector = await this.embeddings.client.embed(
+          row.content,
+          requestId,
+        );
+        await this.embeddings.repository.upsert(
+          row.id,
+          this.embeddings.client.model,
+          vector,
+        );
+        embedded += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    return Object.freeze({ scanned: rows.length, embedded, failed });
+  }
+
+  private async embedBestEffort(
+    memoryId: string,
+    content: string,
+    requestId: string,
+  ): Promise<void> {
+    try {
+      const vector = await this.embeddings!.client.embed(content, requestId);
+      await this.embeddings!.repository.upsert(
+        memoryId,
+        this.embeddings!.client.model,
+        vector,
+      );
+    } catch {
+      this.embeddings!.log?.warn(
+        { requestId, operation: "memory_embedding", outcome: "failed" },
+        "Memory persisted without an embedding",
+      );
+    }
+  }
 }
 
 const memoryKinds = new Set<CreateMemoryValue["kind"]>([
@@ -113,6 +223,33 @@ function inputInvalid(): AppError {
     code: "MEMORY_INPUT_INVALID",
     httpStatus: 400,
     message: "Memory input is invalid",
+  });
+}
+
+function normalizeQuery(query: string): string {
+  const normalized = query.trim();
+  if (
+    normalized.length < 1 ||
+    normalized.length > 1024 ||
+    hasForbiddenControlCharacter(normalized)
+  )
+    throw inputInvalid();
+  return normalized;
+}
+
+function embeddingUnavailable(): AppError {
+  return new AppError({
+    code: "MEMORY_EMBEDDING_UNAVAILABLE",
+    httpStatus: 503,
+    message: "Semantic memory retrieval is unavailable",
+  });
+}
+
+function searchFailed(): AppError {
+  return new AppError({
+    code: "MEMORY_SEARCH_FAILED",
+    httpStatus: 500,
+    message: "Semantic memory search failed",
   });
 }
 

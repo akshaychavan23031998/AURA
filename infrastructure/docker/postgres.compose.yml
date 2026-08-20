@@ -1,7 +1,7 @@
 services:
   postgres:
     container_name: aura-postgres
-    image: postgres:17.6-alpine
+    image: pgvector/pgvector:0.8.1-pg17
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aura}
       POSTGRES_USER: ${POSTGRES_USER:-aura}

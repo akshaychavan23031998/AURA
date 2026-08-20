@@ -90,6 +90,7 @@ describe("gateway configuration", () => {
       googleCalendar: { enabled: false },
       googleGmail: { enabled: false },
       googleContacts: { enabled: false },
+      memoryEmbeddings: { enabled: false },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
         poolMax: 8,
@@ -98,6 +99,26 @@ describe("gateway configuration", () => {
       },
     });
     expect(Object.isFrozen(config)).toBe(true);
+  });
+
+  it("fails closed for malformed enabled memory embedding configuration", () => {
+    const base = {
+      TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
+      AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+      VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
+      AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
+      DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+      MEMORY_EMBEDDINGS_ENABLED: "true",
+    };
+    expect(() => loadConfig(base)).toThrow(/MEMORY_EMBEDDING_BASE_URL/);
+    expect(() =>
+      loadConfig({
+        ...base,
+        MEMORY_EMBEDDING_BASE_URL: "http://127.0.0.1:8081",
+        MEMORY_EMBEDDING_MODEL: "test",
+        MEMORY_EMBEDDING_DIMENSIONS: "3",
+      }),
+    ).toThrow(/384 dimensions/);
   });
 
   it("rejects an invalid port", () => {

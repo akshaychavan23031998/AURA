@@ -129,6 +129,7 @@ describe("Agent Service client", () => {
     { type: "memory_create", kind: "unknown", content: "x" },
     { type: "memory_create", kind: "note", content: "x", actorId: "attacker" },
     { type: "memory_delete", memoryId: "not-a-uuid" },
+    { type: "memory_search", query: "timezone", actorId: "attacker" },
   ])("rejects unsafe memory plans from the Agent", async (plan) => {
     const fetchMock = vi.fn<typeof fetch>(() =>
       Promise.resolve(

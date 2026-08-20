@@ -66,7 +66,9 @@ export function registerMemoryRoutes(
     async (request) => {
       const principal = requirePermission(request, "memory.write");
       const input = parse(createMemorySchema, request.body);
-      return { memory: await memories.create(principal.actorId, input) };
+      return {
+        memory: await memories.create(principal.actorId, input, request.id),
+      };
     },
   );
 

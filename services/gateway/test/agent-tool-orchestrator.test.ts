@@ -45,6 +45,7 @@ function memoryStore(): MemoryStore {
     create: vi.fn().mockResolvedValue(memory),
     getOwned: vi.fn().mockResolvedValue(memory),
     listOwned: vi.fn().mockResolvedValue([memory]),
+    searchOwnedRelevant: vi.fn().mockResolvedValue([memory]),
     deleteOwned: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -272,10 +273,11 @@ describe("AgentToolOrchestrator", () => {
       ),
     ).resolves.toMatchObject({ status: "completed", steps: 2 });
     expect(memories.create).toHaveBeenCalledOnce();
-    expect(memories.create).toHaveBeenCalledWith("actor-1", {
-      kind: "preference",
-      content: "Prefers dark mode",
-    });
+    expect(memories.create).toHaveBeenCalledWith(
+      "actor-1",
+      { kind: "preference", content: "Prefers dark mode" },
+      requestId,
+    );
     expect(respond).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
@@ -332,6 +334,60 @@ describe("AgentToolOrchestrator", () => {
     expect(JSON.stringify(context)).not.toMatch(
       /source|createdAt|actorId|status/,
     );
+  });
+
+  it("runs owner-scoped semantic search with memory.read and hides retrieval metadata", async () => {
+    const memories = memoryStore();
+    const respond = vi
+      .fn<AgentServiceClient["respond"]>()
+      .mockResolvedValueOnce({
+        requestId,
+        intent: "propose_memory_search",
+        response: "I can search explicit saved memories.",
+        plan: { type: "memory_search", query: "coding language" },
+      })
+      .mockResolvedValueOnce(finalPlan);
+    const orchestrator = new AgentToolOrchestrator({
+      agentClient: { respond },
+      toolClient: { execute: vi.fn() },
+      memories,
+    });
+    await orchestrator.run(
+      { message: "What coding language do I prefer?" },
+      requestId,
+      { actorId: "actor-1", grantedPermissions: ["memory.read"] },
+    );
+    expect(memories.searchOwnedRelevant).toHaveBeenCalledWith(
+      "actor-1",
+      "coding language",
+      requestId,
+    );
+    expect(respond.mock.calls[1]?.[0].memoryContext).toEqual([
+      { id: memoryId, kind: "preference", content: "Prefers dark mode" },
+    ]);
+  });
+
+  it("does not allow memory.write to authorize semantic search", async () => {
+    const memories = memoryStore();
+    const orchestrator = new AgentToolOrchestrator({
+      agentClient: {
+        respond: vi.fn().mockResolvedValue({
+          requestId,
+          intent: "propose_memory_search",
+          response: "search",
+          plan: { type: "memory_search", query: "timezone" },
+        }),
+      },
+      toolClient: { execute: vi.fn() },
+      memories,
+    });
+    await expect(
+      orchestrator.run({ message: "saved timezone" }, requestId, {
+        actorId: "actor-1",
+        grantedPermissions: ["memory.write"],
+      }),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(memories.searchOwnedRelevant).not.toHaveBeenCalled();
   });
 
   it("requires independent memory permissions and never invokes persistence on denial", async () => {

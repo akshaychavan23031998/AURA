@@ -153,7 +153,13 @@ Gateway exposes bounded authenticated CRUD at `/api/v1/memories`. `memory.read` 
 
 Phase 30 adds a distinct strict Agent plan union for explicit memory read/create/delete. Gateway—not the Agent—checks `memory.read` or `memory.write`, derives ownership, calls the shared MemoryService, and returns a dedicated sanitized continuation result. Reads are intentional, newest-first, and capped at 10; creates require explicit remember/save language; deletes require an exact UUID. One turn may contain only one response, Tool, or memory action.
 
-Memory context is untrusted persisted user content, structurally separated from system policy and never treated as authorization or executable instruction. Voice can carry a finalized explicit request through the same path, but background, stale, and interrupted transcripts are not persisted. Tool Service and its 14-tool registry are unchanged. Transcript scanning, automatic profiling/extraction, fuzzy deletion, prompt injection as authority, embeddings, semantic retrieval, vector storage, document ingestion, and RAG remain absent.
+Memory context is untrusted persisted user content, structurally separated from system policy and never treated as authorization or executable instruction. Voice can carry a finalized explicit request through the same path, but background, stale, and interrupted transcripts are not persisted. Tool Service and its 14-tool registry are unchanged. Through Phase 30, transcript scanning, automatic profiling/extraction, fuzzy deletion, prompt injection as authority, embeddings, semantic retrieval, vector storage, document ingestion, and RAG were absent.
+
+### V1.5 Phase 31: semantic memory retrieval
+
+Gateway owns a narrow local embedding client and a dedicated pgvector repository. A fixed 384-dimensional embedding model is provisioned outside the repository and served through a separately managed OpenAI-compatible `/v1/embeddings` endpoint; browser, Voice, Agent, and request bodies cannot select the host or model. Memory creation is durable even when embedding is unavailable, while an explicit bounded backfill handles active rows missing the current model.
+
+The database ranks with cosine distance only within `actor_id = authenticated actor`, `status = ACTIVE`, and configured-model predicates. Results are thresholded, top-k bounded, and stripped to `id`, `kind`, and `content`. `memory_search` is a distinct one-action Agent proposal used only when the user explicitly asks about particular saved information. Retrieved content remains untrusted and cannot authorize Tools or override policy. There is still no document ingestion, chunking, citations, automatic personalization, or general RAG.
 
 ## 7. Security, errors, and observability
 

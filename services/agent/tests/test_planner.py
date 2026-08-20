@@ -7,6 +7,7 @@ from aura_agent.contracts import (
     MemoryDeletePlan,
     MemoryMutationResultContext,
     MemoryReadPlan,
+    MemorySearchPlan,
     RespondPlan,
     ToolExecutionResultContext,
     ToolPlan,
@@ -382,6 +383,31 @@ async def test_memory_create_requires_explicit_intent() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "query"),
+    [
+        ("What timezone did I ask you to remember?", "timezone"),
+        ("What did I save about deployment?", "deployment"),
+        ("What coding language do I prefer?", "coding language preference"),
+    ],
+)
+async def test_semantic_memory_search_requires_explicit_saved_memory_intent(
+    message: str, query: str
+) -> None:
+    result = await DeterministicDevelopmentPlanner().plan(AgentRequest(message=message))
+    assert isinstance(result.plan, MemorySearchPlan)
+    assert result.plan.query == query
+
+
+@pytest.mark.asyncio
+async def test_unrelated_requests_do_not_search_memory() -> None:
+    result = await DeterministicDevelopmentPlanner().plan(
+        AgentRequest(message="What's the weather?")
+    )
+    assert not isinstance(result.plan, MemorySearchPlan)
+
+
+@pytest.mark.asyncio
 async def test_memory_read_and_exact_delete_require_explicit_intent() -> None:
     planner = DeterministicDevelopmentPlanner()
     read = await planner.plan(AgentRequest(message="What do you remember about me?"))
@@ -422,6 +448,12 @@ async def test_memory_continuations_are_final_and_use_only_returned_context() ->
         AgentRequest(message="What do you remember?", memoryContext=[])
     )
     assert empty.response == "You have no explicit saved memories."
+    no_match = await planner.plan(
+        AgentRequest(
+            message="What timezone did I ask you to remember?", memoryContext=[]
+        )
+    )
+    assert no_match.response == "I found no matching explicit saved memories."
     created = await planner.plan(
         AgentRequest(
             message="Remember this",

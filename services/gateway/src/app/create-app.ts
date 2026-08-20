@@ -56,6 +56,8 @@ import {
 } from "../identity/provider-credentials.js";
 import { MemoryRepository } from "../memory/memory-repository.js";
 import { MemoryService, type MemoryStore } from "../memory/memory-service.js";
+import { createMemoryEmbeddingClient } from "../memory/memory-embedding-client.js";
+import { MemoryEmbeddingRepository } from "../memory/memory-embedding-repository.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -105,8 +107,28 @@ export async function createApp(
   const database = options.database ?? createDatabaseClient(options.config);
   const identityRepository = new IdentityRepository(database);
   const approvalRepository = new ApprovalRepository(database);
+  const embeddingConfig = options.config.memoryEmbeddings;
+  const embeddingRuntime = embeddingConfig.enabled
+    ? {
+        client: createMemoryEmbeddingClient(embeddingConfig),
+        searchLimit: embeddingConfig.searchLimit,
+        minimumSimilarity: embeddingConfig.minimumSimilarity,
+      }
+    : undefined;
   const memoryService =
-    options.memoryService ?? new MemoryService(new MemoryRepository(database));
+    options.memoryService ??
+    new MemoryService(
+      new MemoryRepository(database),
+      embeddingRuntime === undefined
+        ? undefined
+        : {
+            client: embeddingRuntime.client,
+            repository: new MemoryEmbeddingRepository(database),
+            searchLimit: embeddingRuntime.searchLimit,
+            minimumSimilarity: embeddingRuntime.minimumSimilarity,
+            log: app.log,
+          },
+    );
   const googleIntegration = options.config.googleCalendar.enabled
     ? options.config.googleCalendar
     : options.config.googleGmail.enabled

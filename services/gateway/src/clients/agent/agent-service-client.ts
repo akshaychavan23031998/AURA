@@ -35,6 +35,12 @@ const agentResponseSchema = z
         .strict(),
       z
         .object({
+          type: z.literal("memory_search"),
+          query: z.string().trim().min(1).max(1024),
+        })
+        .strict(),
+      z
+        .object({
           type: z.literal("memory_create"),
           kind: z.enum(["preference", "fact", "instruction", "note"]),
           content: z.string().trim().min(1).max(4096),

@@ -4,7 +4,7 @@ The production-like Gateway configuration forwards the Calendar, Gmail, and Cont
 
 ## Development PostgreSQL only
 
-`postgres.compose.yml` remains the narrow development dependency and binds PostgreSQL to `127.0.0.1:5433`.
+`postgres.compose.yml` remains the narrow development dependency and binds PostgreSQL to `127.0.0.1:5433`. Phase 31 pins `pgvector/pgvector:0.8.1-pg17`, preserving PostgreSQL major version 17 while making the `vector` extension available. Existing PostgreSQL 17 data directories are compatible, but back up important local data before changing images; never use `down --volumes` during this transition.
 
 ```powershell
 $env:POSTGRES_PASSWORD = "replace-with-local-password"
@@ -42,6 +42,8 @@ Run it once with `DATABASE_URL` before rolling out Gateway instances. Never use 
 Voice weights are provisioned out of band and mounted read-only at `/models`; images contain no weights. The Compose stack requires the faster-whisper directory plus the configured Piper `.onnx` and `.onnx.json` files in `VOICE_MODEL_PATH`.
 
 llama.cpp remains a separately managed inference process because its CPU/GPU build, device access, and model lifecycle are host-specific. For real LLM mode, expose it only to the deployment's private network and set `AGENT_PLANNER_MODE=llm`, `LLM_BASE_URL`, and `LLM_MODEL_NAME`. Deterministic mode is appropriate only for infrastructure validation, not production reasoning.
+
+Memory embeddings use a separate, externally provisioned OpenAI-compatible `/v1/embeddings` process. A small CPU-capable 384-dimensional embedding GGUF such as BGE Small EN v1.5 is recommended; do not reuse the Qwen chat model unless it was independently verified as an embedding model. Set the server-only `MEMORY_EMBEDDING_*` values and keep the endpoint on a private network. Images and builds never download embedding weights.
 
 ## Production secrets
 

@@ -129,6 +129,7 @@ describe("memory routes", () => {
     expect(memories.create).toHaveBeenCalledWith(
       "00000000-0000-4000-8000-000000000001",
       { kind: "preference", content: "Prefer concise answers" },
+      expect.any(String),
     );
     expect(accepted.json()).toEqual({ memory });
     expect(JSON.stringify(accepted.json())).not.toContain("actorId");

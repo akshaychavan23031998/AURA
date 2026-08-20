@@ -14,7 +14,10 @@ import type {
 } from "../clients/tools/tool-service-client.js";
 import { AppError } from "../errors/app-error.js";
 import type { TurnExecutionPhase } from "../voice/cancellation.js";
-import type { MemoryStore, MemoryView } from "../memory/memory-service.js";
+import type {
+  MemoryContextView,
+  MemoryStore,
+} from "../memory/memory-service.js";
 
 export interface AgentRunRequest {
   readonly message: string;
@@ -58,7 +61,10 @@ export interface OrchestrationControl {
 type ToolPlan = Extract<AgentResult["plan"], { readonly type: "tool" }>;
 type MemoryPlan = Extract<
   AgentResult["plan"],
-  { readonly type: "memory_read" | "memory_create" | "memory_delete" }
+  {
+    readonly type:
+      "memory_read" | "memory_search" | "memory_create" | "memory_delete";
+  }
 >;
 
 export class AgentToolOrchestrator {
@@ -114,7 +120,9 @@ export class AgentToolOrchestrator {
         message: "Memory service unavailable",
       });
     const requiredPermission =
-      plan.type === "memory_read" ? "memory.read" : "memory.write";
+      plan.type === "memory_read" || plan.type === "memory_search"
+        ? "memory.read"
+        : "memory.write";
     if (!context.grantedPermissions.includes(requiredPermission))
       throw new AppError({
         code: "PERMISSION_DENIED",
@@ -138,14 +146,37 @@ export class AgentToolOrchestrator {
         "memory_read",
       );
     }
+    if (plan.type === "memory_search") {
+      if (memories.searchOwnedRelevant === undefined)
+        throw new AppError({
+          code: "MEMORY_EMBEDDING_UNAVAILABLE",
+          httpStatus: 503,
+          message: "Semantic memory retrieval is unavailable",
+        });
+      const rows = await memories.searchOwnedRelevant(
+        context.actorId,
+        plan.query,
+        requestId,
+      );
+      control.signal?.throwIfAborted();
+      return this.finalizeMemory(
+        request,
+        { memoryContext: rows.slice(0, 10).map(sanitizeMemory) },
+        requestId,
+        startedAt,
+        control,
+        "memory_search",
+      );
+    }
 
     control.onPhaseChange?.("TOOL_EXECUTION");
     control.onToolDispatched?.();
     if (plan.type === "memory_create") {
-      const created = await memories.create(context.actorId, {
-        kind: plan.kind,
-        content: plan.content,
-      });
+      const created = await memories.create(
+        context.actorId,
+        { kind: plan.kind, content: plan.content },
+        requestId,
+      );
       control.onToolCompleted?.();
       control.signal?.throwIfAborted();
       return this.finalizeMemory(
@@ -182,7 +213,8 @@ export class AgentToolOrchestrator {
     requestId: string,
     startedAt: number,
     control: OrchestrationControl,
-    planType: "memory_read" | "memory_create" | "memory_delete",
+    planType:
+      "memory_read" | "memory_search" | "memory_create" | "memory_delete",
   ): Promise<CompletedAgentRunResult> {
     let final: AgentResult;
     try {
@@ -198,7 +230,8 @@ export class AgentToolOrchestrator {
           requestId,
           phase: "agent-finalization",
           memoryOperation: planType,
-          memoryMutationSucceeded: planType !== "memory_read",
+          memoryMutationSucceeded:
+            planType !== "memory_read" && planType !== "memory_search",
           duration: performance.now() - startedAt,
         },
         "Agent finalization failed after memory operation",
@@ -207,7 +240,7 @@ export class AgentToolOrchestrator {
         code: "AGENT_FINALIZATION_FAILED",
         httpStatus: 502,
         message:
-          planType === "memory_read"
+          planType === "memory_read" || planType === "memory_search"
             ? "Memory was read, but the final agent response could not be generated"
             : "The memory operation may have completed, but the final agent response could not be generated",
       });
@@ -358,7 +391,12 @@ export class AgentToolOrchestrator {
   private logCompleted(
     requestId: string,
     planType:
-      "respond" | "tool" | "memory_read" | "memory_create" | "memory_delete",
+      | "respond"
+      | "tool"
+      | "memory_read"
+      | "memory_search"
+      | "memory_create"
+      | "memory_delete",
     step: 1 | 2,
     startedAt: number,
     toolName?: string,
@@ -387,7 +425,7 @@ export class AgentToolOrchestrator {
   }
 }
 
-function sanitizeMemory(memory: MemoryView) {
+function sanitizeMemory(memory: MemoryContextView) {
   return Object.freeze({
     id: memory.id,
     kind: memory.kind,

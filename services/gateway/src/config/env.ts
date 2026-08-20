@@ -106,6 +106,26 @@ const environmentSchema = z
     GOOGLE_CONTACTS_ENABLED: z
       .enum(["true", "false"])
       .transform((value) => value === "true"),
+    MEMORY_EMBEDDINGS_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    MEMORY_EMBEDDING_BASE_URL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .url()
+        .refine(
+          (url) => url.startsWith("http://") || url.startsWith("https://"),
+        )
+        .optional(),
+    ),
+    MEMORY_EMBEDDING_MODEL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().trim().min(1).max(128).optional(),
+    ),
+    MEMORY_EMBEDDING_DIMENSIONS: z.coerce.number().int().min(1).max(4096),
+    MEMORY_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000),
+    MEMORY_SEARCH_LIMIT: z.coerce.number().int().min(1).max(10),
+    MEMORY_SEARCH_MIN_SIMILARITY: z.coerce.number().min(-1).max(1),
     GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z
@@ -159,6 +179,26 @@ const environmentSchema = z
         path: ["GOOGLE_CONTACTS_ENABLED"],
         message: "Google Contacts requires Google OIDC",
       });
+    if (value.MEMORY_EMBEDDINGS_ENABLED) {
+      if (value.MEMORY_EMBEDDING_BASE_URL === undefined)
+        context.addIssue({
+          code: "custom",
+          path: ["MEMORY_EMBEDDING_BASE_URL"],
+          message: "Embedding base URL is required when embeddings are enabled",
+        });
+      if (value.MEMORY_EMBEDDING_MODEL === undefined)
+        context.addIssue({
+          code: "custom",
+          path: ["MEMORY_EMBEDDING_MODEL"],
+          message: "Embedding model is required when embeddings are enabled",
+        });
+      if (value.MEMORY_EMBEDDING_DIMENSIONS !== 384)
+        context.addIssue({
+          code: "custom",
+          path: ["MEMORY_EMBEDDING_DIMENSIONS"],
+          message: "The current memory vector schema requires 384 dimensions",
+        });
+    }
     if (!value.GOOGLE_OIDC_ENABLED) return;
     for (const key of [
       "GOOGLE_OIDC_CLIENT_ID",

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  customType,
   index,
   integer,
   jsonb,
@@ -31,6 +32,15 @@ export const memoryKind = pgEnum("memory_kind", [
 ]);
 export const memorySource = pgEnum("memory_source", ["user_explicit"]);
 export const memoryStatus = pgEnum("memory_status", ["ACTIVE", "DELETED"]);
+const vector384 = customType<{ data: number[]; driverData: string }>({
+  dataType: () => "vector(384)",
+  toDriver: (value) => `[${value.join(",")}]`,
+  fromDriver: (value) =>
+    value
+      .slice(1, -1)
+      .split(",")
+      .map((entry) => Number(entry)),
+});
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -196,5 +206,30 @@ export const userMemories = pgTable(
     ),
     index("user_memories_actor_created_idx").on(table.actorId, table.createdAt),
     index("user_memories_actor_status_idx").on(table.actorId, table.status),
+  ],
+);
+
+export const userMemoryEmbeddings = pgTable(
+  "user_memory_embeddings",
+  {
+    memoryId: uuid("memory_id")
+      .notNull()
+      .references(() => userMemories.id, { onDelete: "cascade" }),
+    model: text("model").notNull(),
+    embedding: vector384("embedding").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("user_memory_embeddings_memory_model_uidx").on(
+      table.memoryId,
+      table.model,
+    ),
+    index("user_memory_embeddings_model_idx").on(table.model),
+    check(
+      "user_memory_embeddings_model_length_check",
+      sql`char_length(${table.model}) between 1 and 128`,
+    ),
   ],
 );
