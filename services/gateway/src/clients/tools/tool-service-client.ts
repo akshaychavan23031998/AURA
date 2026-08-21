@@ -56,6 +56,7 @@ const preparationSchema = z
     version: z.number().int().positive(),
     title: z.string(),
     approvalPolicy: z.enum(["NONE", "REQUIRED"]),
+    idempotency: z.enum(["IDEMPOTENT", "NON_IDEMPOTENT"]),
     input: z.unknown(),
     inputDigest: z.string().regex(/^[a-f0-9]{64}$/),
     preview: z.string(),

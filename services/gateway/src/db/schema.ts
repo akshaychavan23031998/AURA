@@ -53,6 +53,7 @@ export const workflowStatus = pgEnum("workflow_status", [
   "COMPLETED",
   "FAILED",
   "CANCELLED",
+  "RECOVERY_REQUIRED",
 ]);
 export const workflowStepKind = pgEnum("workflow_step_kind", [
   "tool",
@@ -69,13 +70,27 @@ export const workflowStepStatus = pgEnum("workflow_step_status", [
   "FAILED",
   "SKIPPED",
   "CANCELLED",
+  "RECOVERY_REQUIRED",
 ]);
 export const workflowExecutionStatus = pgEnum("workflow_execution_status", [
   "RUNNING",
   "AWAITING_APPROVAL",
   "SUCCEEDED",
   "FAILED",
+  "AMBIGUOUS",
 ]);
+export const workflowExecutionCheckpoint = pgEnum(
+  "workflow_execution_checkpoint",
+  [
+    "CLAIMED",
+    "PREPARED",
+    "DISPATCH_PENDING",
+    "DISPATCHED",
+    "AWAITING_APPROVAL",
+    "FINALIZED",
+    "AMBIGUOUS",
+  ],
+);
 const vector384 = customType<{ data: number[]; driverData: string }>({
   dataType: () => "vector(384)",
   toDriver: (value) => `[${value.join(",")}]`,
@@ -502,6 +517,9 @@ export const workflowStepExecutions = pgTable(
       .references(() => workflowSteps.id, { onDelete: "cascade" }),
     attemptNumber: integer("attempt_number").notNull().default(1),
     status: workflowExecutionStatus("status").notNull(),
+    checkpoint: workflowExecutionCheckpoint("checkpoint")
+      .notNull()
+      .default("CLAIMED"),
     approvalId: uuid("approval_id").references(() => toolApprovals.id, {
       onDelete: "restrict",
     }),
@@ -511,6 +529,8 @@ export const workflowStepExecutions = pgTable(
       .notNull()
       .defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    recoveryUpdatedAt: timestamp("recovery_updated_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("workflow_step_executions_step_attempt_uidx").on(
@@ -520,6 +540,11 @@ export const workflowStepExecutions = pgTable(
     check(
       "workflow_step_executions_attempt_check",
       sql`${table.attemptNumber} = 1`,
+    ),
+    index("workflow_step_executions_recovery_idx").on(
+      table.status,
+      table.checkpoint,
+      table.recoveryUpdatedAt,
     ),
     check(
       "workflow_step_executions_error_code_check",

@@ -68,6 +68,28 @@ export function registerWorkflowRoutes(
   );
 
   app.post<{ Params: { workflowId: string } }>(
+    "/api/v1/workflows/:workflowId/recover",
+    { preHandler: authenticate },
+    async (request) => {
+      const principal = requirePermission(request, "workflow.write");
+      if (
+        request.body != null &&
+        (typeof request.body !== "object" ||
+          Object.keys(request.body).length !== 0)
+      )
+        throw inputInvalid();
+      return {
+        workflow: await runner.recover(
+          principal.actorId,
+          parse(workflowIdSchema, request.params.workflowId),
+          deriveAuthorizationContext(principal),
+          request.id,
+        ),
+      };
+    },
+  );
+
+  app.post<{ Params: { workflowId: string } }>(
     "/api/v1/workflows/:workflowId/cancel",
     { preHandler: authenticate },
     async (request) => {

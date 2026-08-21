@@ -33,7 +33,8 @@ export type WorkflowStatus =
   | "PAUSED"
   | "COMPLETED"
   | "FAILED"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "RECOVERY_REQUIRED";
 export type WorkflowStepStatus =
   | "BLOCKED"
   | "READY"
@@ -42,7 +43,8 @@ export type WorkflowStepStatus =
   | "SUCCEEDED"
   | "FAILED"
   | "SKIPPED"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "RECOVERY_REQUIRED";
 
 const stepIdSchema = z
   .string()

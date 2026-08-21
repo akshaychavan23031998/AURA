@@ -32,6 +32,12 @@ export interface WorkflowRunner {
     errorCode: string,
   ): Promise<void>;
   canResumeApproval(actorId: string, approvalId: string): Promise<boolean>;
+  recover(
+    actorId: string,
+    workflowId: string,
+    context: TrustedToolContext,
+    requestId: string,
+  ): Promise<WorkflowView>;
 }
 
 export class WorkflowExecutor implements WorkflowRunner {
@@ -39,10 +45,13 @@ export class WorkflowExecutor implements WorkflowRunner {
     private readonly repository: WorkflowRepository,
     private readonly workflows: WorkflowStore,
     private readonly tools: ToolServiceClient,
-    private readonly approvals: Pick<ApprovalRepository, "create">,
+    private readonly approvals: Pick<ApprovalRepository, "create"> &
+      Partial<Pick<ApprovalRepository, "findOwned" | "findForWorkflowStep">>,
     private readonly memories: MemoryStore,
     private readonly knowledge: Pick<KnowledgeStore, "searchOwned">,
     private readonly approvalTtlSeconds = 300,
+    private readonly recoveryStaleMs = 60_000,
+    private readonly clock: () => Date = () => new Date(),
   ) {}
 
   public async run(
@@ -74,7 +83,25 @@ export class WorkflowExecutor implements WorkflowRunner {
       new Date(),
     );
     if (resumed === undefined) throw stateInvalid();
+    let idempotency: "IDEMPOTENT" | "NON_IDEMPOTENT" = "NON_IDEMPOTENT";
+    let crossedDispatchBoundary = false;
     try {
+      const preparation = await this.tools.prepare?.(
+        { tool: tool.name, input: tool.input },
+        context,
+        requestId,
+      );
+      idempotency = preparation?.idempotency ?? "NON_IDEMPOTENT";
+      if (
+        (await this.repository.checkpoint(
+          resumed.execution.id,
+          ["PREPARED"],
+          "DISPATCH_PENDING",
+          this.clock(),
+        )) === undefined
+      )
+        throw stateInvalid();
+      crossedDispatchBoundary = true;
       const result = await this.tools.execute(
         { tool: tool.name, input: tool.input },
         context,
@@ -87,6 +114,15 @@ export class WorkflowExecutor implements WorkflowRunner {
         result.data,
       );
     } catch (error) {
+      if (crossedDispatchBoundary && idempotency === "NON_IDEMPOTENT") {
+        await this.repository.markAmbiguous(
+          resumed.workflow.id,
+          resumed.step.id,
+          resumed.execution.id,
+          this.clock(),
+        );
+        return this.workflows.getOwned(actorId, resumed.workflow.id);
+      }
       await this.repository.fail(
         resumed.workflow.id,
         resumed.step.id,
@@ -123,6 +159,67 @@ export class WorkflowExecutor implements WorkflowRunner {
     return this.repository.canResumeApproval(actorId, approvalId);
   }
 
+  public async recover(
+    actorId: string,
+    workflowId: string,
+    context: TrustedToolContext,
+    requestId: string,
+  ): Promise<WorkflowView> {
+    const now = this.clock();
+    const graph = await this.repository.getOwned(actorId, workflowId);
+    if (graph === undefined) throw notFound();
+    if (graph.workflow.status === "RECOVERY_REQUIRED")
+      return this.workflows.getOwned(actorId, workflowId);
+    if (graph.workflow.status === "AWAITING_APPROVAL") {
+      const execution = graph.executions.find(
+        (item) => item.status === "AWAITING_APPROVAL",
+      );
+      if (execution?.approvalId === null || execution?.approvalId === undefined)
+        throw recoveryNotAllowed();
+      const approval = await this.approvals.findOwned?.(
+        execution.approvalId,
+        actorId,
+      );
+      if (approval === undefined) throw recoveryNotAllowed();
+      if (approval.status === "PENDING" && approval.expiresAt > now)
+        return this.workflows.getOwned(actorId, workflowId);
+      if (approval.status === "CONSUMED")
+        return this.resumeApproved(
+          actorId,
+          approval.id,
+          { name: approval.toolName, input: approval.inputEnvelope },
+          context,
+          requestId,
+        );
+      await this.rejectApproval(
+        actorId,
+        approval.id,
+        approval.expiresAt <= now ? "APPROVAL_EXPIRED" : "APPROVAL_REJECTED",
+      );
+      return this.workflows.getOwned(actorId, workflowId);
+    }
+    if (graph.workflow.status !== "RUNNING") throw recoveryNotAllowed();
+    const claimed = await this.repository.claimRecoveryOwned(
+      actorId,
+      workflowId,
+      new Date(now.getTime() - this.recoveryStaleMs),
+      now,
+    );
+    if (claimed === undefined) throw recoveryInProgress();
+    await this.executeClaim(
+      actorId,
+      workflowId,
+      claimed,
+      context,
+      requestId,
+      true,
+    );
+    const current = await this.workflows.getOwned(actorId, workflowId);
+    return current.status === "RUNNING"
+      ? this.executeLoop(actorId, workflowId, context, requestId)
+      : current;
+  }
+
   private async executeLoop(
     actorId: string,
     workflowId: string,
@@ -133,25 +230,100 @@ export class WorkflowExecutor implements WorkflowRunner {
       const claimed = await this.repository.claimNext(workflowId, new Date());
       if (claimed === undefined)
         return this.workflows.getOwned(actorId, workflowId);
-      try {
-        const payload = claimed.step.payload as Record<string, unknown>;
-        if (claimed.step.kind === "tool") {
-          const tool = payload.tool as { name: string; input: unknown };
-          const graph = await this.repository.getForResolution(workflowId);
-          if (graph === undefined) throw stateInvalid();
-          const resolvedInput = resolveWorkflowToolInput(
-            graph,
+      await this.executeClaim(
+        actorId,
+        workflowId,
+        claimed,
+        context,
+        requestId,
+        false,
+      );
+      const current = await this.workflows.getOwned(actorId, workflowId);
+      if (current.status !== "RUNNING") return current;
+    }
+    return this.workflows.getOwned(actorId, workflowId);
+  }
+
+  private async executeClaim(
+    actorId: string,
+    workflowId: string,
+    claimed: Awaited<ReturnType<WorkflowRepository["claimNext"]>> & {},
+    context: TrustedToolContext,
+    requestId: string,
+    recovering: boolean,
+  ): Promise<void> {
+    let unsafeDispatch = false;
+    try {
+      if (recovering && claimed.execution.errorCode !== null) {
+        await this.repository.fail(
+          workflowId,
+          claimed.step.id,
+          claimed.execution.id,
+          claimed.execution.errorCode,
+          this.clock(),
+        );
+        return;
+      }
+      if (recovering && claimed.execution.result !== null) {
+        await this.persistSuccess(
+          workflowId,
+          claimed.step.id,
+          claimed.execution.id,
+          claimed.execution.result,
+          true,
+        );
+        return;
+      }
+      const payload = claimed.step.payload as Record<string, unknown>;
+      if (claimed.step.kind === "tool") {
+        const tool = payload.tool as { name: string; input: unknown };
+        const graph = await this.repository.getForResolution(workflowId);
+        if (graph === undefined) throw stateInvalid();
+        const resolvedInput = resolveWorkflowToolInput(
+          graph,
+          claimed.step.id,
+          tool.name,
+          tool.input as Record<string, unknown>,
+        );
+        const preparation = await this.tools.prepare?.(
+          { tool: tool.name, input: resolvedInput },
+          context,
+          requestId,
+        );
+        if (preparation === undefined) throw stateInvalid();
+        if (
+          recovering &&
+          ["DISPATCH_PENDING", "DISPATCHED"].includes(
+            claimed.execution.checkpoint,
+          ) &&
+          preparation.idempotency === "NON_IDEMPOTENT"
+        ) {
+          await this.repository.markAmbiguous(
+            workflowId,
             claimed.step.id,
-            tool.name,
-            tool.input as Record<string, unknown>,
+            claimed.execution.id,
+            this.clock(),
           );
-          const preparation = await this.tools.prepare?.(
-            { tool: tool.name, input: resolvedInput },
-            context,
-            requestId,
+          return;
+        }
+        if (["CLAIMED", "PREPARED"].includes(claimed.execution.checkpoint))
+          requireCheckpoint(
+            await this.repository.checkpoint(
+              claimed.execution.id,
+              [claimed.execution.checkpoint as "CLAIMED" | "PREPARED"],
+              "PREPARED",
+              this.clock(),
+            ),
           );
-          if (preparation?.approvalPolicy === "REQUIRED") {
-            const approval = await this.approvals.create({
+        if (preparation?.approvalPolicy === "REQUIRED") {
+          const existing = await this.approvals.findForWorkflowStep?.(
+            actorId,
+            workflowId,
+            claimed.step.id,
+          );
+          const approval =
+            existing ??
+            (await this.approvals.create({
               actorId,
               toolName: preparation.tool,
               toolVersion: preparation.version,
@@ -166,84 +338,120 @@ export class WorkflowExecutor implements WorkflowRunner {
               title: preparation.title,
               preview: preparation.preview,
               expiresAt: new Date(Date.now() + this.approvalTtlSeconds * 1000),
-            });
-            await this.repository.awaitApproval(
-              workflowId,
-              claimed.step.id,
-              claimed.execution.id,
-              approval.id,
-              new Date(),
-            );
-            return this.workflows.getOwned(actorId, workflowId);
-          }
-          const result = await this.tools.execute(
-            { tool: tool.name, input: resolvedInput },
-            context,
-            requestId,
-          );
-          await this.persistSuccess(
+            }));
+          await this.repository.awaitApproval(
             workflowId,
             claimed.step.id,
             claimed.execution.id,
-            result.data,
+            approval.id,
+            new Date(),
           );
-        } else if (claimed.step.kind === "memory_read") {
-          requirePermission(context, "memory.read");
-          const memoryKind = payload.memoryKind as
-            "preference" | "fact" | "instruction" | "note" | null;
-          const result = await this.memories.listOwned(
-            actorId,
-            memoryKind === null
-              ? { limit: 10 }
-              : { limit: 10, kind: memoryKind },
-          );
-          await this.persistSuccess(
-            workflowId,
-            claimed.step.id,
-            claimed.execution.id,
-            result,
-          );
-        } else if (claimed.step.kind === "memory_search") {
-          requirePermission(context, "memory.read");
-          if (this.memories.searchOwnedRelevant === undefined)
-            throw new Error("Memory search unavailable");
-          const result = await this.memories.searchOwnedRelevant(
-            actorId,
-            String(payload.query),
-            requestId,
-          );
-          await this.persistSuccess(
-            workflowId,
-            claimed.step.id,
-            claimed.execution.id,
-            result,
-          );
-        } else {
-          requirePermission(context, "knowledge.read");
-          const result = await this.knowledge.searchOwned(
-            actorId,
-            String(payload.query),
-            requestId,
-          );
-          await this.persistSuccess(
-            workflowId,
-            claimed.step.id,
-            claimed.execution.id,
-            result,
-          );
+          return;
         }
-      } catch (error) {
-        await this.repository.fail(
+        requireCheckpoint(
+          await this.repository.checkpoint(
+            claimed.execution.id,
+            ["PREPARED", "DISPATCH_PENDING", "DISPATCHED"],
+            "DISPATCH_PENDING",
+            this.clock(),
+          ),
+        );
+        unsafeDispatch = preparation.idempotency === "NON_IDEMPOTENT";
+        const result = await this.tools.execute(
+          { tool: tool.name, input: resolvedInput },
+          context,
+          requestId,
+        );
+        await this.persistSuccess(
           workflowId,
           claimed.step.id,
           claimed.execution.id,
-          safeCode(error),
-          new Date(),
+          result.data,
         );
-        return this.workflows.getOwned(actorId, workflowId);
+      } else if (claimed.step.kind === "memory_read") {
+        await this.prepareSafeDispatch(claimed.execution.id);
+        requirePermission(context, "memory.read");
+        const memoryKind = payload.memoryKind as
+          "preference" | "fact" | "instruction" | "note" | null;
+        const result = await this.memories.listOwned(
+          actorId,
+          memoryKind === null ? { limit: 10 } : { limit: 10, kind: memoryKind },
+        );
+        await this.persistSuccess(
+          workflowId,
+          claimed.step.id,
+          claimed.execution.id,
+          result,
+        );
+      } else if (claimed.step.kind === "memory_search") {
+        await this.prepareSafeDispatch(claimed.execution.id);
+        requirePermission(context, "memory.read");
+        if (this.memories.searchOwnedRelevant === undefined)
+          throw new Error("Memory search unavailable");
+        const result = await this.memories.searchOwnedRelevant(
+          actorId,
+          String(payload.query),
+          requestId,
+        );
+        await this.persistSuccess(
+          workflowId,
+          claimed.step.id,
+          claimed.execution.id,
+          result,
+        );
+      } else {
+        await this.prepareSafeDispatch(claimed.execution.id);
+        requirePermission(context, "knowledge.read");
+        const result = await this.knowledge.searchOwned(
+          actorId,
+          String(payload.query),
+          requestId,
+        );
+        await this.persistSuccess(
+          workflowId,
+          claimed.step.id,
+          claimed.execution.id,
+          result,
+        );
       }
+    } catch (error) {
+      if (unsafeDispatch) {
+        await this.repository.markAmbiguous(
+          workflowId,
+          claimed.step.id,
+          claimed.execution.id,
+          this.clock(),
+        );
+        return;
+      }
+      await this.repository.fail(
+        workflowId,
+        claimed.step.id,
+        claimed.execution.id,
+        safeCode(error),
+        new Date(),
+      );
+      return;
     }
-    return this.workflows.getOwned(actorId, workflowId);
+  }
+
+  private async prepareSafeDispatch(executionId: string): Promise<void> {
+    requireCheckpoint(
+      await this.repository.checkpoint(
+        executionId,
+        ["CLAIMED", "PREPARED"],
+        "PREPARED",
+        this.clock(),
+      ),
+    );
+    requireCheckpoint(
+      await this.repository.checkpoint(
+        executionId,
+        ["PREPARED", "DISPATCH_PENDING", "DISPATCHED"],
+        "DISPATCH_PENDING",
+        this.clock(),
+      ),
+    );
   }
 
   private async persistSuccess(
@@ -251,6 +459,7 @@ export class WorkflowExecutor implements WorkflowRunner {
     stepId: string,
     executionId: string,
     value: unknown,
+    alreadyRecorded = false,
   ) {
     const safe = redact(value);
     if (
@@ -262,12 +471,20 @@ export class WorkflowExecutor implements WorkflowRunner {
         httpStatus: 500,
         message: "Workflow result exceeded its safe limit",
       });
+    if (!alreadyRecorded) {
+      const recorded = await this.repository.recordDispatchedResult(
+        executionId,
+        safe,
+        this.clock(),
+      );
+      if (recorded === undefined) throw stateInvalid();
+    }
     await this.repository.succeed(
       workflowId,
       stepId,
       executionId,
       safe,
-      new Date(),
+      this.clock(),
     );
   }
 }
@@ -316,4 +533,22 @@ function stateInvalid() {
     httpStatus: 409,
     message: "Workflow state transition is invalid",
   });
+}
+function recoveryNotAllowed() {
+  return new AppError({
+    code: "WORKFLOW_RECOVERY_NOT_ALLOWED",
+    httpStatus: 409,
+    message: "Workflow recovery is not allowed",
+  });
+}
+function recoveryInProgress() {
+  return new AppError({
+    code: "WORKFLOW_RECOVERY_IN_PROGRESS",
+    httpStatus: 409,
+    message: "Workflow execution is still in progress",
+  });
+}
+function requireCheckpoint<T>(value: T | undefined): T {
+  if (value === undefined) throw stateInvalid();
+  return value;
 }

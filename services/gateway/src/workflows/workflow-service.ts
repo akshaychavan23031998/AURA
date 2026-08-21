@@ -24,7 +24,8 @@ export interface WorkflowStepView {
     | "SUCCEEDED"
     | "FAILED"
     | "SKIPPED"
-    | "CANCELLED";
+    | "CANCELLED"
+    | "RECOVERY_REQUIRED";
   readonly dependsOn: readonly string[];
   readonly payload: Readonly<Record<string, unknown>>;
   readonly startedAt: string | null;
@@ -42,7 +43,8 @@ export interface WorkflowView {
     | "PAUSED"
     | "COMPLETED"
     | "FAILED"
-    | "CANCELLED";
+    | "CANCELLED"
+    | "RECOVERY_REQUIRED";
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly cancelledAt: string | null;

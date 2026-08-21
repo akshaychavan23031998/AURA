@@ -925,6 +925,8 @@ describe.sequential("PostgreSQL identity persistence", () => {
       new WorkflowRepository(database),
       new WorkflowService(new WorkflowRepository(database)),
       {
+        prepare: (request) =>
+          Promise.resolve(preparation(request, "IDEMPOTENT")),
         execute: (request) => {
           dispatched.push(request);
           return Promise.resolve({
@@ -1032,6 +1034,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
               request.tool === "calendar.events.list"
                 ? ("REQUIRED" as const)
                 : ("NONE" as const),
+            idempotency: "IDEMPOTENT" as const,
             input: request.input,
             inputDigest: "a".repeat(64),
             preview: "safe preview",
@@ -1056,14 +1059,307 @@ describe.sequential("PostgreSQL identity persistence", () => {
     const [approval] = await database.db.select().from(toolApprovals);
     expect(approval!.inputEnvelope).toMatchObject({ maxResults: 4 });
     expect(approval!.inputDigest).toBe("a".repeat(64));
-    const completed = await executor.resumeApproved(
+    await expect(
+      executor.recover(
+        actorId,
+        created.id,
+        { actorId, grantedPermissions: ["workflow.write"] },
+        "workflow-reference-pending",
+      ),
+    ).resolves.toMatchObject({ status: "AWAITING_APPROVAL" });
+    expect(await database.db.select().from(toolApprovals)).toHaveLength(1);
+    await database.db
+      .update(toolApprovals)
+      .set({
+        status: "CONSUMED",
+        consumedAt: new Date(),
+        decidedAt: new Date(),
+      })
+      .where(eq(toolApprovals.id, approval!.id));
+    const completed = await executor.recover(
       actorId,
-      approval!.id,
-      { name: approval!.toolName, input: approval!.inputEnvelope },
+      created.id,
       { actorId, grantedPermissions: ["workflow.write"] },
       "workflow-reference-approved",
     );
     expect(completed.status).toBe("COMPLETED");
     expect(executions.at(-1)).toMatchObject({ input: { maxResults: 4 } });
   });
+
+  it("recovers one stale idempotent attempt after repository recreation", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Recover calculator",
+      steps: [
+        {
+          id: "calculate",
+          kind: "tool",
+          dependsOn: [],
+          tool: { name: "utility.calculator", input: { expression: "4+5" } },
+        },
+      ],
+    });
+    const old = new Date("2026-01-01T00:00:00.000Z");
+    await workflowRepository.startOwned(actorId, created.id, old);
+    const claimed = await workflowRepository.claimNext(created.id, old);
+    await workflowRepository.checkpoint(
+      claimed!.execution.id,
+      ["CLAIMED"],
+      "PREPARED",
+      old,
+    );
+    let dispatches = 0;
+    const recreatedRepository = new WorkflowRepository(database);
+    const recreatedService = new WorkflowService(recreatedRepository);
+    const recovered = await new WorkflowExecutor(
+      recreatedRepository,
+      recreatedService,
+      {
+        prepare: (request) =>
+          Promise.resolve(preparation(request, "IDEMPOTENT")),
+        execute: (request) => {
+          dispatches += 1;
+          return Promise.resolve({
+            status: "success" as const,
+            tool: request.tool,
+            data: { expression: "4+5", result: 9 },
+          });
+        },
+      },
+      approvals,
+      unexpectedMemories(),
+      unexpectedKnowledge(),
+      300,
+      10_000,
+      () => new Date("2026-01-01T00:01:00.000Z"),
+    ).recover(
+      actorId,
+      created.id,
+      { actorId, grantedPermissions: ["workflow.write", "utility.calculator"] },
+      "recover-safe",
+    );
+    expect(recovered.status).toBe("COMPLETED");
+    expect(dispatches).toBe(1);
+    const executions = await database.db.select().from(workflowStepExecutions);
+    expect(executions).toHaveLength(1);
+    expect(executions[0]).toMatchObject({
+      attemptNumber: 1,
+      status: "SUCCEEDED",
+      checkpoint: "FINALIZED",
+      result: { expression: "4+5", result: 9 },
+    });
+  });
+
+  it("reconciles a persisted dispatch result without executing again", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Reconcile calculator",
+      steps: [
+        {
+          id: "calculate",
+          kind: "tool",
+          dependsOn: [],
+          tool: { name: "utility.calculator", input: { expression: "2+3" } },
+        },
+      ],
+    });
+    const old = new Date("2026-01-01T00:00:00.000Z");
+    await workflowRepository.startOwned(actorId, created.id, old);
+    const claimed = await workflowRepository.claimNext(created.id, old);
+    await workflowRepository.checkpoint(
+      claimed!.execution.id,
+      ["CLAIMED"],
+      "PREPARED",
+      old,
+    );
+    await workflowRepository.checkpoint(
+      claimed!.execution.id,
+      ["PREPARED"],
+      "DISPATCH_PENDING",
+      old,
+    );
+    await workflowRepository.recordDispatchedResult(
+      claimed!.execution.id,
+      { expression: "2+3", result: 5 },
+      old,
+    );
+    const recreatedRepository = new WorkflowRepository(database);
+    const recovered = await new WorkflowExecutor(
+      recreatedRepository,
+      new WorkflowService(recreatedRepository),
+      {
+        prepare: () => Promise.reject(new Error("must not prepare")),
+        execute: () => Promise.reject(new Error("must not dispatch")),
+      },
+      approvals,
+      unexpectedMemories(),
+      unexpectedKnowledge(),
+      300,
+      10_000,
+      () => new Date("2026-01-01T00:01:00.000Z"),
+    ).recover(
+      actorId,
+      created.id,
+      { actorId, grantedPermissions: ["workflow.write"] },
+      "recover-result",
+    );
+    expect(recovered.status).toBe("COMPLETED");
+    expect(
+      await database.db.select().from(workflowStepExecutions),
+    ).toHaveLength(1);
+  });
+
+  it("marks a possibly dispatched non-idempotent action ambiguous without replay", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Do not repeat a mutation",
+      steps: [
+        {
+          id: "send",
+          kind: "tool",
+          dependsOn: [],
+          tool: {
+            name: "gmail.messages.send",
+            input: { to: "user@example.com", subject: "Test", body: "Body" },
+          },
+        },
+      ],
+    });
+    const old = new Date("2026-01-01T00:00:00.000Z");
+    await workflowRepository.startOwned(actorId, created.id, old);
+    const claimed = await workflowRepository.claimNext(created.id, old);
+    await workflowRepository.checkpoint(
+      claimed!.execution.id,
+      ["CLAIMED"],
+      "PREPARED",
+      old,
+    );
+    await workflowRepository.checkpoint(
+      claimed!.execution.id,
+      ["PREPARED"],
+      "DISPATCH_PENDING",
+      old,
+    );
+    let dispatches = 0;
+    const recreatedRepository = new WorkflowRepository(database);
+    const executor = new WorkflowExecutor(
+      recreatedRepository,
+      new WorkflowService(recreatedRepository),
+      {
+        prepare: (request) =>
+          Promise.resolve(preparation(request, "NON_IDEMPOTENT")),
+        execute: () => {
+          dispatches += 1;
+          return Promise.reject(new Error("must not dispatch"));
+        },
+      },
+      approvals,
+      unexpectedMemories(),
+      unexpectedKnowledge(),
+      300,
+      10_000,
+      () => new Date("2026-01-01T00:01:00.000Z"),
+    );
+    const recovered = await executor.recover(
+      actorId,
+      created.id,
+      {
+        actorId,
+        grantedPermissions: ["workflow.write", "gmail.messages.send"],
+      },
+      "recover-ambiguous",
+    );
+    expect(recovered.status).toBe("RECOVERY_REQUIRED");
+    expect(recovered.steps[0]).toMatchObject({
+      status: "RECOVERY_REQUIRED",
+      errorCode: "WORKFLOW_EXECUTION_AMBIGUOUS",
+    });
+    expect(dispatches).toBe(0);
+    await expect(
+      executor.recover(
+        actorId,
+        created.id,
+        {
+          actorId,
+          grantedPermissions: ["workflow.write", "gmail.messages.send"],
+        },
+        "recover-ambiguous-again",
+      ),
+    ).resolves.toMatchObject({ status: "RECOVERY_REQUIRED" });
+    expect(
+      await database.db.select().from(workflowStepExecutions),
+    ).toHaveLength(1);
+  });
+
+  it("allows only one PostgreSQL recovery claimant", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Race recovery",
+      steps: [
+        {
+          id: "calculate",
+          kind: "tool",
+          dependsOn: [],
+          tool: { name: "utility.calculator", input: { expression: "1+1" } },
+        },
+      ],
+    });
+    const old = new Date("2026-01-01T00:00:00.000Z");
+    await workflowRepository.startOwned(actorId, created.id, old);
+    await workflowRepository.claimNext(created.id, old);
+    const now = new Date("2026-01-01T00:01:00.000Z");
+    const claims = await Promise.all([
+      new WorkflowRepository(database).claimRecoveryOwned(
+        actorId,
+        created.id,
+        old,
+        now,
+      ),
+      new WorkflowRepository(database).claimRecoveryOwned(
+        actorId,
+        created.id,
+        old,
+        now,
+      ),
+    ]);
+    expect(claims.filter((claim) => claim !== undefined)).toHaveLength(1);
+    expect(
+      await database.db.select().from(workflowStepExecutions),
+    ).toHaveLength(1);
+  });
 });
+
+function preparation(
+  request: { tool: string; input: unknown },
+  idempotency: "IDEMPOTENT" | "NON_IDEMPOTENT",
+) {
+  return {
+    tool: request.tool,
+    version: 1,
+    title: "Workflow tool",
+    approvalPolicy: "NONE" as const,
+    idempotency,
+    input: request.input,
+    inputDigest: "b".repeat(64),
+    preview: "safe",
+  };
+}
+
+function unexpectedMemories() {
+  return {
+    create: () => Promise.reject(new Error("unexpected memory")),
+    getOwned: () => Promise.reject(new Error("unexpected memory")),
+    listOwned: () => Promise.reject(new Error("unexpected memory")),
+    deleteOwned: () => Promise.reject(new Error("unexpected memory")),
+  };
+}
+
+function unexpectedKnowledge() {
+  return {
+    searchOwned: () => Promise.reject(new Error("unexpected knowledge")),
+  };
+}

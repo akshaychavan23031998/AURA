@@ -237,7 +237,12 @@ export class WorkflowRepository {
     await this.database.db.transaction(async (transaction) => {
       await transaction
         .update(workflowStepExecutions)
-        .set({ status: "SUCCEEDED", result, completedAt: now })
+        .set({
+          status: "SUCCEEDED",
+          checkpoint: "FINALIZED",
+          result,
+          completedAt: now,
+        })
         .where(
           and(
             eq(workflowStepExecutions.id, executionId),
@@ -276,6 +281,138 @@ export class WorkflowRepository {
     });
   }
 
+  public async checkpoint(
+    executionId: string,
+    expected: readonly (
+      | "CLAIMED"
+      | "PREPARED"
+      | "DISPATCH_PENDING"
+      | "DISPATCHED"
+      | "AWAITING_APPROVAL"
+    )[],
+    checkpoint: "PREPARED" | "DISPATCH_PENDING" | "AWAITING_APPROVAL",
+    now: Date,
+  ) {
+    const [updated] = await this.database.db
+      .update(workflowStepExecutions)
+      .set({
+        checkpoint,
+        recoveryUpdatedAt: now,
+        ...(checkpoint === "DISPATCH_PENDING" ? { dispatchedAt: now } : {}),
+      })
+      .where(
+        and(
+          eq(workflowStepExecutions.id, executionId),
+          eq(workflowStepExecutions.status, "RUNNING"),
+          inArray(workflowStepExecutions.checkpoint, expected),
+        ),
+      )
+      .returning();
+    return updated;
+  }
+
+  public async recordDispatchedResult(
+    executionId: string,
+    result: unknown,
+    now: Date,
+  ) {
+    const [updated] = await this.database.db
+      .update(workflowStepExecutions)
+      .set({ checkpoint: "DISPATCHED", result, recoveryUpdatedAt: now })
+      .where(
+        and(
+          eq(workflowStepExecutions.id, executionId),
+          eq(workflowStepExecutions.status, "RUNNING"),
+          eq(workflowStepExecutions.checkpoint, "DISPATCH_PENDING"),
+        ),
+      )
+      .returning();
+    return updated;
+  }
+
+  public async claimRecoveryOwned(
+    actorId: string,
+    workflowId: string,
+    staleBefore: Date,
+    now: Date,
+  ) {
+    return this.database.db.transaction(async (transaction) => {
+      const [candidate] = await transaction
+        .select({
+          execution: workflowStepExecutions,
+          step: workflowSteps,
+          workflow: workflows,
+        })
+        .from(workflowStepExecutions)
+        .innerJoin(
+          workflowSteps,
+          eq(workflowSteps.id, workflowStepExecutions.stepId),
+        )
+        .innerJoin(
+          workflows,
+          eq(workflows.id, workflowStepExecutions.workflowId),
+        )
+        .where(
+          and(
+            eq(workflows.id, workflowId),
+            eq(workflows.actorId, actorId),
+            eq(workflows.status, "RUNNING"),
+            eq(workflowSteps.status, "RUNNING"),
+            eq(workflowStepExecutions.status, "RUNNING"),
+            sql`coalesce(${workflowStepExecutions.recoveryUpdatedAt}, ${workflowStepExecutions.startedAt}) <= ${staleBefore}`,
+          ),
+        )
+        .limit(1);
+      if (candidate === undefined) return undefined;
+      const [claimed] = await transaction
+        .update(workflowStepExecutions)
+        .set({ recoveryUpdatedAt: now })
+        .where(
+          and(
+            eq(workflowStepExecutions.id, candidate.execution.id),
+            eq(workflowStepExecutions.status, "RUNNING"),
+            sql`coalesce(${workflowStepExecutions.recoveryUpdatedAt}, ${workflowStepExecutions.startedAt}) <= ${staleBefore}`,
+          ),
+        )
+        .returning();
+      return claimed === undefined
+        ? undefined
+        : { ...candidate, execution: claimed };
+    });
+  }
+
+  public async markAmbiguous(
+    workflowId: string,
+    stepId: string,
+    executionId: string,
+    now: Date,
+  ) {
+    await this.database.db.transaction(async (transaction) => {
+      await transaction
+        .update(workflowStepExecutions)
+        .set({
+          status: "AMBIGUOUS",
+          checkpoint: "AMBIGUOUS",
+          errorCode: "WORKFLOW_EXECUTION_AMBIGUOUS",
+          completedAt: now,
+          recoveryUpdatedAt: now,
+        })
+        .where(eq(workflowStepExecutions.id, executionId));
+      await transaction
+        .update(workflowSteps)
+        .set({
+          status: "RECOVERY_REQUIRED",
+          updatedAt: now,
+          completedAt: now,
+        })
+        .where(eq(workflowSteps.id, stepId));
+      await transaction
+        .update(workflows)
+        .set({ status: "RECOVERY_REQUIRED", updatedAt: now })
+        .where(eq(workflows.id, workflowId));
+    });
+  }
+
   public async fail(
     workflowId: string,
     stepId: string,
@@ -286,7 +423,12 @@ export class WorkflowRepository {
     await this.database.db.transaction(async (transaction) => {
       await transaction
         .update(workflowStepExecutions)
-        .set({ status: "FAILED", errorCode, completedAt: now })
+        .set({
+          status: "FAILED",
+          checkpoint: "FINALIZED",
+          errorCode,
+          completedAt: now,
+        })
         .where(eq(workflowStepExecutions.id, executionId));
       await transaction
         .update(workflowSteps)
@@ -318,7 +460,12 @@ export class WorkflowRepository {
     await this.database.db.transaction(async (transaction) => {
       await transaction
         .update(workflowStepExecutions)
-        .set({ status: "AWAITING_APPROVAL", approvalId })
+        .set({
+          status: "AWAITING_APPROVAL",
+          checkpoint: "AWAITING_APPROVAL",
+          approvalId,
+          recoveryUpdatedAt: now,
+        })
         .where(eq(workflowStepExecutions.id, executionId));
       await transaction
         .update(workflowSteps)
@@ -369,7 +516,11 @@ export class WorkflowRepository {
         .where(eq(workflowSteps.id, row.step.id));
       await transaction
         .update(workflowStepExecutions)
-        .set({ status: "RUNNING" })
+        .set({
+          status: "RUNNING",
+          checkpoint: "PREPARED",
+          recoveryUpdatedAt: now,
+        })
         .where(eq(workflowStepExecutions.id, row.execution.id));
       return row;
     });

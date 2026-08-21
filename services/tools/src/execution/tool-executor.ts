@@ -101,6 +101,7 @@ export class ToolExecutor {
       approvalPolicy: requiresApproval(tool)
         ? ("REQUIRED" as const)
         : ("NONE" as const),
+      idempotency: tool.idempotency,
       input: parsed.data,
       inputDigest: actionDigest(tool.name, tool.version, parsed.data),
       preview: tool.approvalPreview?.(parsed.data) ?? tool.title,

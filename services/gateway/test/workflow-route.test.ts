@@ -81,6 +81,7 @@ function runner(): WorkflowRunner {
     resumeApproved: vi.fn().mockResolvedValue(snapshot),
     rejectApproval: vi.fn().mockResolvedValue(undefined),
     canResumeApproval: vi.fn().mockResolvedValue(true),
+    recover: vi.fn().mockResolvedValue(snapshot),
   };
 }
 
@@ -103,7 +104,7 @@ describe("workflow routes", () => {
     return { instance, workflows, workflowRunner };
   }
 
-  it("requires authentication for list, detail, and cancellation", async () => {
+  it("requires authentication for list, detail, cancellation, and recovery", async () => {
     const { instance } = await app(["workflow.read", "workflow.write"]);
     for (const request of [
       { method: "GET" as const, url: "/api/v1/workflows" },
@@ -111,6 +112,10 @@ describe("workflow routes", () => {
       {
         method: "POST" as const,
         url: `/api/v1/workflows/${workflowId}/cancel`,
+      },
+      {
+        method: "POST" as const,
+        url: `/api/v1/workflows/${workflowId}/recover`,
       },
     ])
       expect((await instance.inject(request)).statusCode).toBe(401);
@@ -185,6 +190,47 @@ describe("workflow routes", () => {
       expect.objectContaining({ actorId }),
       expect.any(String),
     );
+  });
+
+  it("requires workflow.write for strict explicit recovery", async () => {
+    const reader = await app(["workflow.read"]);
+    expect(
+      (
+        await reader.instance.inject({
+          method: "POST",
+          url: `/api/v1/workflows/${workflowId}/recover`,
+          headers: authorization,
+        })
+      ).statusCode,
+    ).toBe(403);
+    const writer = await app(["workflow.write"]);
+    const recover = vi.spyOn(writer.workflowRunner, "recover");
+    expect(
+      (
+        await writer.instance.inject({
+          method: "POST",
+          url: `/api/v1/workflows/${workflowId}/recover`,
+          headers: authorization,
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(recover).toHaveBeenCalledWith(
+      actorId,
+      workflowId,
+      expect.objectContaining({ actorId }),
+      expect.any(String),
+    );
+    expect(
+      (
+        await writer.instance.inject({
+          method: "POST",
+          url: `/api/v1/workflows/${workflowId}/recover`,
+          headers: authorization,
+          payload: { retry: true },
+        })
+      ).statusCode,
+    ).toBe(400);
   });
 
   it("derives actor ownership and bounds list limits", async () => {

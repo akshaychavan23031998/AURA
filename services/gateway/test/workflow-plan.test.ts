@@ -100,6 +100,10 @@ describe("workflow plan", () => {
     },
     {
       ...valid,
+      steps: [{ ...valid.steps[1], checkpoint: "FINALIZED" }],
+    },
+    {
+      ...valid,
       steps: [
         {
           ...valid.steps[1],

@@ -16,6 +16,8 @@ Tool preparation and exact approvals are reused without bypass. Required approva
 
 Phase 43 allows selected Tool input fields to contain a strict scalar reference with exactly `fromStep` and `field`. Gateway-owned metadata defines the Tool result export, primitive type, and compatible destination. References must point to a transitive ancestor in the same workflow; resolution reads only its immutable SUCCEEDED attempt-one result after the destination is claimed. Resolved input is ephemeral and re-enters normal Tool validation. Approval records bind that resolved action. Raw results, arbitrary properties, nested paths, templates, expressions, memory/knowledge results, and resolved values remain unavailable through workflow APIs and logs.
 
+Phase 44 adds `POST /api/v1/workflows/:workflowId/recover`, requiring exact `workflow.write`, actor ownership, and an empty body. Recovery is explicit and permitted only for stale attempt-one state. Durable internal checkpoints classify safe pre-dispatch/read/idempotent reconciliation, known returned results, approval waits, and potentially dispatched non-idempotent work. Ambiguous mutations become `RECOVERY_REQUIRED`; they are not labeled failed and are never redispatched. Checkpoints and Tool idempotency metadata remain internal. Startup performs no workflow scan, recovery, provider call, or approval resume.
+
 ## V1.5 — Complete
 
 Gateway now owns the complete explicit Memory and bounded Knowledge/RAG authority path: authenticated actor derivation, independent permissions, PostgreSQL ownership/lifecycle, local embedding access, owner-scoped retrieval, grounded continuation, and trusted citation resolution. Public clients and Agent cannot choose actors, permissions, vectors, models, thresholds, lifecycle, or citation metadata. V2 workflow persistence and multi-step execution remain unimplemented; Phase 40 adds proposals only.
@@ -71,6 +73,7 @@ Phase 27 adds authenticated Google capability management. Status is derived from
 | `GET`    | `/api/v1/workflows`                       | Bearer + workflow.read   | List bounded actor-owned workflow snapshots      |
 | `GET`    | `/api/v1/workflows/:workflowId`           | Bearer + workflow.read   | Get one actor-owned workflow graph               |
 | `POST`   | `/api/v1/workflows/:workflowId/cancel`    | Bearer + workflow.write  | Idempotently cancel one READY workflow           |
+| `POST`   | `/api/v1/workflows/:workflowId/recover`   | Bearer + workflow.write  | Explicitly reconcile one stale workflow attempt  |
 | `POST`   | `/api/v1/tools/execute`                   | Bearer                   | Execute a validated Tool Service request         |
 | `POST`   | `/api/v1/agent/respond`                   | Bearer                   | Produce an unexecuted planning response          |
 | `POST`   | `/api/v1/agent/run`                       | Bearer                   | Run deterministic orchestration                  |

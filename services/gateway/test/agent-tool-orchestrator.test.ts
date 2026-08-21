@@ -200,6 +200,7 @@ describe("AgentToolOrchestrator", () => {
         version: 1,
         title: "Test action",
         approvalPolicy: "REQUIRED",
+        idempotency: "NON_IDEMPOTENT",
         input: { value: "fixed" },
         inputDigest: "a".repeat(64),
         preview: "Run test action",

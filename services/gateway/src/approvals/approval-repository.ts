@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import type { DatabaseClient } from "../db/client.js";
 import { toolApprovals } from "../db/schema.js";
 
@@ -39,6 +39,26 @@ export class ApprovalRepository {
       .select()
       .from(toolApprovals)
       .where(and(eq(toolApprovals.id, id), eq(toolApprovals.actorId, actorId)))
+      .limit(1);
+    return row;
+  }
+  public async findForWorkflowStep(
+    actorId: string,
+    workflowId: string,
+    stepId: string,
+  ) {
+    const [row] = await this.database.db
+      .select()
+      .from(toolApprovals)
+      .where(
+        and(
+          eq(toolApprovals.actorId, actorId),
+          sql`${toolApprovals.requestEnvelope}->>'kind' = 'workflow_tool'`,
+          sql`${toolApprovals.requestEnvelope}->>'workflowId' = ${workflowId}`,
+          sql`${toolApprovals.requestEnvelope}->>'stepId' = ${stepId}`,
+        ),
+      )
+      .orderBy(sql`${toolApprovals.createdAt} desc`)
       .limit(1);
     return row;
   }
