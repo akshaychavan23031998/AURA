@@ -8,6 +8,10 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## V1.5 — Started
 
+Phase 36 adds an authenticated browser workspace for explicit Memory and Knowledge management. Users can list, create, filter, inspect, and deliberately confirm deletion of owned memories/documents; ingest only manual plaintext; and run explicit semantic knowledge searches. Forms submit only the public contracts, block duplicate mutations, and keep drafts, stored content, and queries in transient component state rather than browser persistence or Redux.
+
+The responsive navigation preserves Conversation/Voice and connected Google capability management. Structured citation rendering accepts only Gateway-returned citation metadata; model-like `[K…]` text is never promoted into a trusted source. Gateway remains authoritative for identity, permissions, ownership, lifecycle, normalization, chunking, embeddings, and search policy. Phase 36 adds no automatic extraction, transcript ingestion, background RAG, file/URL ingestion, or autonomy.
+
 Phase 32 adds explicit authenticated manual-text knowledge ingestion. Gateway normalizes at most 128 KiB of UTF-8 text, hashes it with SHA-256, creates deterministic paragraph-aware chunks, and persists the actor-owned document and all chunks in one PostgreSQL transaction. `knowledge.read` and `knowledge.write` are independent exact permissions; list/get/delete queries scope ownership directly in SQL and soft-deleted documents are indistinguishable from missing or foreign-owned records.
 
 Phase 33 indexes those committed chunks with the same fixed, local 384-dimensional embedding runtime used by memory. Vectors live in model-aware `knowledge_chunk_embeddings` rows with one row per chunk/model. Post-ingestion indexing is best effort, uses concurrency two, never rolls back a stored document, and retains successful vectors when another chunk fails. Operators can run bounded, idempotent `pnpm --filter @aura/gateway knowledge:backfill -- 25`; it selects only chunks of `ACTIVE` documents and never runs at startup.

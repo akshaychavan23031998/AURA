@@ -1,5 +1,15 @@
 # AURA Web
 
+## V1.5 data management
+
+Authenticated users have responsive Conversation, Memory, Knowledge, and Connected Accounts surfaces. Memory supports explicit kind/content creation, bounded listing/filtering, and two-step deletion. Knowledge supports metadata listing, manual plaintext ingestion, explicit single-document viewing, two-step deletion, and deliberate semantic search with a truthful no-match state. The browser does not chunk, hash, embed, rank, or select search policy.
+
+All requests reuse `AuthenticatedFetch`: access JWTs stay memory-only, safe GET requests may use the existing refresh-and-replay behavior, and POST/DELETE mutations are never automatically replayed. Memory/document contents, drafts, queries, and results remain in React component memory and are not written to localStorage, sessionStorage, IndexedDB, cookies, URLs, persistent Redux, analytics, or console logs.
+
+Citation UI trusts only the structured citation array returned by Gateway. It displays response-local reference labels and document titles without turning arbitrary model text into source authority or exposing chunk IDs, vectors, scores, model details, hashes, actor identity, or database metadata.
+
+Current boundaries remain explicit manual user memory and plaintext knowledge ingestion. There is no automatic transcript persistence, background retrieval, file/URL upload, or autonomous behavior.
+
 ## V1 — Complete
 
 The browser provides memory-only access-token session UX, authenticated realtime voice, explicit Tool approval, and explicit Google capability management. Refresh credentials remain HttpOnly. Authenticated fetch retries only safe methods once; POST actions, microphone audio, approvals, and provider writes are never replayed. Google reconnect and disconnect require deliberate labelled clicks, and the connected-account panel is omitted when Google OIDC is not configured.

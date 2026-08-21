@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { VoiceExperience } from "../voice/voice-experience";
 import { accessTokenStore } from "./access-token";
 import { AuthApi, AuthFailure } from "./auth-api";
@@ -15,15 +15,34 @@ import {
 import { AuthenticatedFetch } from "./authenticated-fetch";
 import { GoogleIntegrationApi } from "../integrations/google-integration";
 import { GoogleIntegrationPanel } from "../integrations/google-integration-panel";
+import { MemoryApi } from "../memory/memory-api";
+import { MemoryPanel } from "../memory/memory-panel";
+import { KnowledgeApi } from "../knowledge/knowledge-api";
+import { KnowledgePanel } from "../knowledge/knowledge-panel";
+
+type AuthenticatedSection =
+  "conversation" | "memory" | "knowledge" | "accounts";
 
 export function AuthExperience() {
   const dispatch = useAppDispatch();
   const auth = useAppSelector((state) => state.auth);
+  const [section, setSection] = useState<AuthenticatedSection>("conversation");
   const api = useMemo(() => new AuthApi(accessTokenStore), []);
-  const googleIntegration = useMemo(
-    () =>
-      new GoogleIntegrationApi(new AuthenticatedFetch(accessTokenStore, api)),
+  const authenticatedFetch = useMemo(
+    () => new AuthenticatedFetch(accessTokenStore, api),
     [api],
+  );
+  const googleIntegration = useMemo(
+    () => new GoogleIntegrationApi(authenticatedFetch),
+    [authenticatedFetch],
+  );
+  const memoryApi = useMemo(
+    () => new MemoryApi(authenticatedFetch),
+    [authenticatedFetch],
+  );
+  const knowledgeApi = useMemo(
+    () => new KnowledgeApi(authenticatedFetch),
+    [authenticatedFetch],
   );
   const loginResult = useMemo(
     () =>
@@ -93,21 +112,48 @@ export function AuthExperience() {
     if (token === undefined) return <AuthPanel status="session-expired" />;
     return (
       <div className="authenticated-shell">
-        <button
-          className="logout-button"
-          type="button"
-          onClick={() => void logout()}
-          aria-label="Log out of AURA"
-        >
-          Log out
-        </button>
-        <VoiceExperience
-          getAccessToken={() => accessTokenStore.get()}
-          onSessionExpired={expireSession}
-        />
-        {isGoogleLoginEnabled() && (
-          <GoogleIntegrationPanel api={googleIntegration} />
+        <nav className="product-nav" aria-label="AURA sections">
+          <strong>AURA</strong>
+          {(["conversation", "memory", "knowledge"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              aria-current={section === item ? "page" : undefined}
+              onClick={() => setSection(item)}
+            >
+              {item === "conversation" ? "Conversation" : titleCase(item)}
+            </button>
+          ))}
+          {isGoogleLoginEnabled() && (
+            <button
+              type="button"
+              aria-current={section === "accounts" ? "page" : undefined}
+              onClick={() => setSection("accounts")}
+            >
+              Connected accounts
+            </button>
+          )}
+          <button
+            className="logout-button"
+            type="button"
+            onClick={() => void logout()}
+            aria-label="Log out of AURA"
+          >
+            Log out
+          </button>
+        </nav>
+        {section === "conversation" && (
+          <VoiceExperience
+            getAccessToken={() => accessTokenStore.get()}
+            onSessionExpired={expireSession}
+          />
         )}
+        {section === "memory" && <MemoryPanel api={memoryApi} />}
+        {section === "knowledge" && <KnowledgePanel api={knowledgeApi} />}
+        {(section === "conversation" || section === "accounts") &&
+          isGoogleLoginEnabled() && (
+            <GoogleIntegrationPanel api={googleIntegration} />
+          )}
       </div>
     );
   }
@@ -128,6 +174,10 @@ export function AuthExperience() {
       }
     />
   );
+}
+
+function titleCase(value: string): string {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
 
 export function isDevelopmentSessionEnabled(

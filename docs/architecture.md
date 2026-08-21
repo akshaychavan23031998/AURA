@@ -285,6 +285,14 @@ The Compose topology is a production-like validation target, not a high-availabi
 
 ## 9. Evolution and testing strategy
 
+### Phase 36 authenticated Memory and Knowledge UX
+
+The Web application adds thin, schema-validating Memory and Knowledge API clients on top of the existing authenticated-fetch/session boundary. Sensitive user data is held only in component-local state. Neither request bodies nor frontend state can supply actor, permission, lifecycle, source, model, vector, hash, threshold, or server retrieval limit. Mutations require explicit form submission; deletion requires a second confirmation action; pending state suppresses duplicate dispatch.
+
+Memory management covers owned active list/create/delete with optional exact-kind filtering. Knowledge management covers metadata list, manual plaintext create, explicit full-document get, delete, and semantic search. The browser performs no normalization, chunking, hashing, embedding, or ranking. Server errors are reduced to bounded user-facing messages, while unknown failures remain generic.
+
+The responsive product navigation keeps Voice and Google capability management intact. Citation presentation consumes only Gateway-validated structured metadata and never parses answer text for source authority. Contents, drafts, queries, and results are not placed in persistent browser storage, URLs, analytics, or logs. No backend schema or authority boundary changes in this phase.
+
 ### Phase 35 grounded knowledge answers
 
 An explicit saved-knowledge question may produce exactly one `knowledge_search` proposal. Gateway—not Agent—derives the actor and `knowledge.read` permission and invokes `KnowledgeService.searchOwned` directly, preserving Phase 34's SQL-level actor, `ACTIVE` lifecycle, configured-model, threshold, and top-k controls. Public search security is unchanged and the Tool registry remains sealed at 14 tools.

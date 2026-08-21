@@ -490,3 +490,219 @@ button {
 .integration-success {
   color: var(--mint);
 }
+
+/* Authenticated V1.5 data-management surfaces. */
+.authenticated-shell {
+  min-height: 100vh;
+  padding-top: 76px;
+}
+.product-nav {
+  position: fixed;
+  z-index: 10;
+  inset: 12px max(10px, calc((100vw - 1120px) / 2)) auto;
+  min-height: 52px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgb(7 11 16 / 92%);
+  backdrop-filter: blur(20px);
+}
+.product-nav strong {
+  margin: 0 8px;
+  color: var(--mint);
+  letter-spacing: 0.12em;
+}
+.product-nav button,
+.data-panel button {
+  padding: 9px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 7%);
+  color: var(--text);
+  cursor: pointer;
+}
+.product-nav button {
+  border-radius: 999px;
+}
+.product-nav button[aria-current="page"] {
+  color: #071410;
+  background: var(--mint);
+}
+.product-nav .logout-button {
+  position: static;
+  margin-left: auto;
+}
+.data-panel {
+  width: min(100% - 32px, 1080px);
+  margin: 0 auto 32px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--panel);
+  box-shadow: 0 28px 80px rgb(0 0 0 / 20%);
+}
+.data-panel-heading,
+.document-view header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.data-panel h2,
+.data-panel h3,
+.data-panel p {
+  margin-top: 0;
+}
+.data-panel button,
+.data-panel input,
+.data-panel select,
+.data-panel textarea {
+  font: inherit;
+}
+.data-panel button:focus-visible,
+.data-panel input:focus-visible,
+.data-panel select:focus-visible,
+.data-panel textarea:focus-visible,
+.product-nav button:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+.data-panel button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.data-form {
+  margin: 22px 0;
+  display: grid;
+  gap: 9px;
+}
+.data-form input,
+.data-form select,
+.data-form textarea,
+.data-toolbar select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b1219;
+  color: var(--text);
+}
+.data-form textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+.data-form .document-input {
+  min-height: 240px;
+}
+.field-help,
+.data-list time,
+.data-kind,
+.data-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+.data-toolbar {
+  max-width: 260px;
+  margin: 24px 0 14px;
+  display: grid;
+  gap: 7px;
+}
+.data-list,
+.search-results {
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.data-list > li,
+.search-results > li,
+.document-view,
+.citation-panel {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 4%);
+}
+.data-list > li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+.data-list p,
+.search-results p {
+  margin: 7px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.data-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.confirm-actions,
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.data-panel .danger-button {
+  border-color: rgb(255 123 123 / 40%);
+  color: #ffd5d5;
+}
+.data-error {
+  padding: 12px;
+  border: 1px solid rgb(255 123 123 / 35%);
+  border-radius: 10px;
+  color: #ffd5d5;
+  background: rgb(255 123 123 / 8%);
+}
+.knowledge-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.document-view {
+  margin: 20px 0;
+}
+.document-view pre {
+  max-height: 460px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  color: var(--text);
+}
+.citation-panel ol {
+  margin: 0;
+  padding-left: 24px;
+}
+.citation-reference {
+  margin-right: 8px;
+  color: var(--mint);
+  font-weight: 700;
+}
+@media (max-width: 720px) {
+  .authenticated-shell {
+    padding-top: 126px;
+  }
+  .product-nav {
+    flex-wrap: wrap;
+  }
+  .product-nav strong {
+    width: 100%;
+  }
+  .product-nav .logout-button {
+    margin-left: 0;
+  }
+  .knowledge-grid {
+    grid-template-columns: 1fr;
+  }
+  .data-list > li {
+    flex-direction: column;
+  }
+}
