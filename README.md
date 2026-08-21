@@ -10,7 +10,11 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 Phase 40 establishes proposal-only workflow planning. Agent may propose one strict workflow with a bounded goal and at most eight ordering-only steps drawn from existing Tool, Memory read/search, and Knowledge search capabilities. Gateway independently validates the structure and dependency DAG, produces a deterministic topological proposal, and executes zero steps.
 
-Workflow proposals contain no actor, permission, approval, provider, retry, timeout, idempotency, runtime status, result, or credential authority. There is no workflow persistence, execution API, result substitution, template language, scheduler, worker, retry engine, or UI. Existing Tool approvals remain mandatory in any future runtime; a workflow proposal can never satisfy approval.
+Workflow proposals contain no actor, permission, approval, provider, retry, timeout, idempotency, runtime status, result, or credential authority. Phase 40 added no persistence, execution API, result substitution, template language, scheduler, worker, retry engine, or UI. Existing Tool approvals remain mandatory in any future runtime; a workflow proposal can never satisfy approval.
+
+Phase 41 persists validated proposals as actor-owned PostgreSQL workflows. Workflow, step, and dependency rows are committed atomically; Gateway generates all database IDs and derives the initial `READY` workflow plus `READY` root and `BLOCKED` dependent step states. Exact `workflow.read` and `workflow.write` permissions govern bounded list/detail and idempotent `READY → CANCELLED` account APIs.
+
+Persistence still executes zero steps and creates no Tool preparation, approval, provider call, Memory/Knowledge operation, continuation, retry, result, worker, or schedule. Dependencies remain ordering metadata only.
 
 ## V1.5 — Complete
 

@@ -11,6 +11,7 @@ import {
   KNOWLEDGE_RAG_CONTEXT_MAX_CHARACTERS,
 } from "../src/orchestration/agent-tool-orchestrator.js";
 import type { MemoryStore } from "../src/memory/memory-service.js";
+import type { WorkflowStore } from "../src/workflows/workflow-service.js";
 
 const requestId = "orchestration-test-1";
 const request = { message: "echo AURA" };
@@ -69,7 +70,7 @@ function dependencies(agentResults: readonly AgentResult[] = [finalPlan]) {
 }
 
 describe("AgentToolOrchestrator", () => {
-  it("returns a normalized workflow proposal with zero side effects", async () => {
+  it("persists a normalized workflow with zero execution side effects", async () => {
     const workflowPlan: AgentResult = {
       requestId,
       intent: "propose_workflow",
@@ -104,38 +105,40 @@ describe("AgentToolOrchestrator", () => {
     const createApproval = vi.fn();
     const memories = memoryStore();
     const searchOwned = vi.fn();
+    const createWorkflow = vi.fn<WorkflowStore["create"]>().mockResolvedValue({
+      id: "00000000-0000-4000-8000-000000000100",
+      goal: "Prepare for the meeting",
+      status: "READY",
+      createdAt: "2026-08-21T00:00:00.000Z",
+      updatedAt: "2026-08-21T00:00:00.000Z",
+      cancelledAt: null,
+      steps: [],
+    });
     const orchestrator = new AgentToolOrchestrator({
       agentClient: { respond },
       toolClient: { prepare, execute },
       approvals: { create: createApproval },
       memories,
       knowledge: { searchOwned },
+      workflows: { create: createWorkflow },
     });
 
     await expect(
-      orchestrator.run(request, requestId, authorizationContext),
+      orchestrator.run(request, requestId, {
+        ...authorizationContext,
+        grantedPermissions: ["workflow.write"],
+      }),
     ).resolves.toEqual({
-      status: "workflow_proposed",
+      status: "workflow_created",
       response: { text: "I can propose that workflow." },
       workflow: {
+        id: "00000000-0000-4000-8000-000000000100",
         goal: "Prepare for the meeting",
-        steps: [
-          {
-            id: "meeting",
-            kind: "tool",
-            dependsOn: [],
-            tool: {
-              name: "calendar.events.list",
-              input: { maxResults: 1 },
-            },
-          },
-          {
-            id: "notes",
-            kind: "knowledge_search",
-            dependsOn: ["meeting"],
-            query: "project notes",
-          },
-        ],
+        status: "READY",
+        createdAt: "2026-08-21T00:00:00.000Z",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+        cancelledAt: null,
+        steps: [],
       },
       steps: 1,
     });
@@ -147,6 +150,38 @@ describe("AgentToolOrchestrator", () => {
     expect(memories.deleteOwned).not.toHaveBeenCalled();
     expect(memories.listOwned).not.toHaveBeenCalled();
     expect(searchOwned).not.toHaveBeenCalled();
+    expect(createWorkflow).toHaveBeenCalledOnce();
+    expect(createWorkflow.mock.calls[0]?.[0]).toBe(
+      authorizationContext.actorId,
+    );
+    expect(
+      createWorkflow.mock.calls[0]?.[1].steps.map((step) => step.id),
+    ).toEqual(["meeting", "notes"]);
+  });
+
+  it("requires workflow.write and never falls back to step execution", async () => {
+    const result: AgentResult = {
+      requestId,
+      intent: "propose_workflow",
+      response: "Workflow",
+      plan: {
+        type: "workflow",
+        goal: "One action",
+        steps: [
+          {
+            id: "echo",
+            kind: "tool",
+            dependsOn: [],
+            tool: { name: "system.echo", input: { message: "x" } },
+          },
+        ],
+      },
+    };
+    const { orchestrator, execute } = dependencies([result]);
+    await expect(
+      orchestrator.run(request, requestId, authorizationContext),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("persists and suspends an authoritative REQUIRED proposal without executing", async () => {

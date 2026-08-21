@@ -12,6 +12,8 @@ The initial union now adds exactly one `workflow` variant. A proposal has a boun
 
 Workflow plans cannot contain actors, permissions, approval state, provider credentials, retry/timeout/idempotency controls, runtime state, results, or timestamps. Retrieved content cannot authorize a workflow. Agent proposes structure only and has no persistence or execution authority.
 
+Phase 41 does not change the Agent schema. Gateway may persist a validated proposal and construct the durable `workflow_created` response itself; Agent never receives or chooses the workflow UUID, database step IDs, runtime status, timestamps, ownership, cancellation, or persistence policy. There is still no workflow continuation or step execution.
+
 ## V1 — Complete
 
 Agent remains proposal-only and may select at most one of the 14 sanitized catalog tools per turn. Catalog entries contain only name, description, category, and safe input schema. JWTs, provider credentials/scopes, actor permissions, approval authority, risks, service tokens, and database details never enter the planner contract. Malformed or unknown Tool plans fail closed; Tool execution and approval remain Gateway/Tool Service responsibilities.

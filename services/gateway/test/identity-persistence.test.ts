@@ -15,6 +15,9 @@ import {
   toolApprovals,
   userMemories,
   users,
+  workflowStepDependencies,
+  workflowSteps,
+  workflows,
 } from "../src/db/schema.js";
 import { ApprovalRepository } from "../src/approvals/approval-repository.js";
 import { IdentityRepository } from "../src/identity/repositories.js";
@@ -33,6 +36,8 @@ import { MemoryEmbeddingRepository } from "../src/memory/memory-embedding-reposi
 import { KnowledgeRepository } from "../src/knowledge/knowledge-repository.js";
 import { KnowledgeEmbeddingRepository } from "../src/knowledge/knowledge-embedding-repository.js";
 import { sha256 } from "../src/knowledge/knowledge-service.js";
+import { WorkflowRepository } from "../src/workflows/workflow-repository.js";
+import { WorkflowService } from "../src/workflows/workflow-service.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) {
@@ -58,6 +63,8 @@ const memories = new MemoryRepository(database);
 const memoryEmbeddings = new MemoryEmbeddingRepository(database);
 const knowledge = new KnowledgeRepository(database);
 const knowledgeEmbeddings = new KnowledgeEmbeddingRepository(database);
+const workflowRepository = new WorkflowRepository(database);
+const workflowService = new WorkflowService(workflowRepository);
 
 beforeAll(async () => {
   await database.db.execute(sql`drop schema if exists public cascade`);
@@ -650,5 +657,146 @@ describe.sequential("PostgreSQL identity persistence", () => {
         0.5,
       ),
     ).resolves.toHaveLength(1);
+  });
+
+  it("persists and reconstructs an actor-owned workflow graph atomically", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Prepare for the meeting",
+      steps: [
+        {
+          id: "meeting",
+          kind: "tool",
+          dependsOn: [],
+          tool: { name: "calendar.events.list", input: { maxResults: 1 } },
+        },
+        {
+          id: "notes",
+          kind: "knowledge_search",
+          dependsOn: ["meeting"],
+          query: "project notes",
+        },
+      ],
+    });
+    expect(created.status).toBe("READY");
+    expect(
+      created.steps.map((step) => [step.stepKey, step.status, step.dependsOn]),
+    ).toEqual([
+      ["meeting", "READY", []],
+      ["notes", "BLOCKED", ["meeting"]],
+    ]);
+    const recreated = new WorkflowService(new WorkflowRepository(database));
+    await expect(recreated.getOwned(actorId, created.id)).resolves.toEqual(
+      created,
+    );
+    expect(await database.db.select().from(workflows)).toHaveLength(1);
+    expect(await database.db.select().from(workflowSteps)).toHaveLength(2);
+    expect(
+      await database.db.select().from(workflowStepDependencies),
+    ).toHaveLength(1);
+  });
+
+  it("keeps foreign workflows indistinguishable and cancellation idempotent", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const [other] = await database.db
+      .insert(users)
+      .values({ developmentKey: "workflow-other" })
+      .returning();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Read saved preferences",
+      steps: [
+        {
+          id: "preferences",
+          kind: "memory_read",
+          dependsOn: [],
+          memoryKind: null,
+        },
+      ],
+    });
+    await expect(
+      workflowService.getOwned(other!.id, created.id),
+    ).rejects.toMatchObject({ code: "WORKFLOW_NOT_FOUND" });
+    await expect(
+      workflowService.cancelOwned(other!.id, created.id),
+    ).rejects.toMatchObject({ code: "WORKFLOW_NOT_FOUND" });
+    const first = await workflowService.cancelOwned(actorId, created.id);
+    const second = await workflowService.cancelOwned(actorId, created.id);
+    expect(first.status).toBe("CANCELLED");
+    expect(first.steps[0]?.status).toBe("CANCELLED");
+    expect(second).toEqual(first);
+    await expect(workflowService.listOwned(other!.id, 20)).resolves.toEqual([]);
+  });
+
+  it("cascades durable steps and dependencies with workflow deletion", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Ordered reads",
+      steps: [
+        {
+          id: "memory",
+          kind: "memory_search",
+          dependsOn: [],
+          query: "preferences",
+        },
+        {
+          id: "knowledge",
+          kind: "knowledge_search",
+          dependsOn: ["memory"],
+          query: "notes",
+        },
+      ],
+    });
+    await database.db.delete(workflows).where(eq(workflows.id, created.id));
+    await expect(database.db.select().from(workflowSteps)).resolves.toEqual([]);
+    await expect(
+      database.db.select().from(workflowStepDependencies),
+    ).resolves.toEqual([]);
+  });
+
+  it("rolls back the complete graph when dependency persistence fails", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    await expect(
+      database.db.transaction(async (transaction) => {
+        const [workflow] = await transaction
+          .insert(workflows)
+          .values({ actorId, goal: "Rollback dependency failure" })
+          .returning();
+        const steps = await transaction
+          .insert(workflowSteps)
+          .values([
+            {
+              workflowId: workflow!.id,
+              stepKey: "first",
+              kind: "memory_read",
+              ordinal: 0,
+              status: "READY",
+              payload: { memoryKind: null },
+            },
+            {
+              workflowId: workflow!.id,
+              stepKey: "second",
+              kind: "knowledge_search",
+              ordinal: 1,
+              status: "BLOCKED",
+              payload: { query: "notes" },
+            },
+          ])
+          .returning();
+        await transaction.insert(workflowStepDependencies).values({
+          workflowId: workflow!.id,
+          stepId: steps[1]!.id,
+          dependsOnStepId: "00000000-0000-4000-8000-000000000999",
+        });
+      }),
+    ).rejects.toBeDefined();
+    await expect(
+      database.db
+        .select()
+        .from(workflows)
+        .where(eq(workflows.goal, "Rollback dependency failure")),
+    ).resolves.toEqual([]);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app/create-app.js";
 import type { AgentServiceClient } from "../src/clients/agent/agent-service-client.js";
 import type { ToolServiceClient } from "../src/clients/tools/tool-service-client.js";
+import type { AccessTokenVerifier } from "../src/auth/token-verifier.js";
 import type { VoiceServiceClient } from "../src/clients/voice/voice-service-client.js";
 import {
   testAuthorizationHeader,
@@ -128,7 +129,30 @@ describe("POST /api/v1/voice/run", () => {
     const app = await createApp({
       config: testConfig,
       ...deps,
-      tokenVerifier: testTokenVerifier,
+      tokenVerifier: {
+        verify: () =>
+          Promise.resolve({
+            actorId: "local-user-001",
+            sessionId: "00000000-0000-4000-8000-000000000001",
+            permissions: ["workflow.write"],
+            tokenIssuedAt: 1,
+            tokenExpiresAt: 2,
+          }),
+      } satisfies AccessTokenVerifier,
+      workflowService: {
+        create: vi.fn().mockResolvedValue({
+          id: "00000000-0000-4000-8000-000000000100",
+          goal: "Review the meeting",
+          status: "READY",
+          createdAt: "2026-08-21T00:00:00.000Z",
+          updatedAt: "2026-08-21T00:00:00.000Z",
+          cancelledAt: null,
+          steps: [],
+        }),
+        getOwned: vi.fn(),
+        listOwned: vi.fn(),
+        cancelOwned: vi.fn(),
+      },
     });
     const data = multipart(Buffer.from("RIFFaudio"));
     const response = await app.inject({

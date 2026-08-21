@@ -319,6 +319,10 @@ Gateway validates unique narrow IDs, dependency existence, self/duplicate depend
 
 Later V2 phases may add persisted workflow/step state, dependency-aware execution, pause/resume and recovery, idempotency, workflow approvals, bounded autonomy policy, and management UI. Phase 40 adds no workflow API, substitution/JSONPath/template language, scheduler, worker, retry engine, autonomous loop, or execution authority.
 
+Phase 41 adds the first durable runtime-owned state without adding execution. `workflows`, `workflow_steps`, and `workflow_step_dependencies` store one actor-owned validated graph in a single PostgreSQL transaction. Gateway generates UUIDs, ordinals, timestamps, and statuses; roots begin `READY`, dependent steps begin `BLOCKED`, and the workflow begins `READY`. Composite dependency foreign keys ensure both endpoints belong to the same workflow.
+
+`workflow.read` and `workflow.write` are independent exact permissions. Owner-scoped bounded list/detail routes and an idempotent cancellation route expose only safe plan-local step keys and payloads. Cancellation atomically changes `READY → CANCELLED` and cancels all `READY`/`BLOCKED` steps. Foreign and missing IDs share `WORKFLOW_NOT_FOUND`. No route accepts actor or runtime state, and no workflow operation dispatches Tools, providers, approvals, Memory, Knowledge, embeddings, or Agent continuation.
+
 The responsive product navigation keeps Voice and Google capability management intact. Citation presentation consumes only Gateway-validated structured metadata and never parses answer text for source authority. Contents, drafts, queries, and results are not placed in persistent browser storage, URLs, analytics, or logs. No backend schema or authority boundary changes in this phase.
 
 ### Phase 35 grounded knowledge answers

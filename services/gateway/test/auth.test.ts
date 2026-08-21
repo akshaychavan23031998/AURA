@@ -117,6 +117,8 @@ describe("access-token verification", () => {
         "memory.write",
         "knowledge.read",
         "knowledge.write",
+        "workflow.read",
+        "workflow.write",
       ],
       tokenExpiresAt: now + 900,
     });

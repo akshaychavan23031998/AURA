@@ -64,6 +64,11 @@ import {
   KnowledgeService,
   type KnowledgeStore,
 } from "../knowledge/knowledge-service.js";
+import { WorkflowRepository } from "../workflows/workflow-repository.js";
+import {
+  WorkflowService,
+  type WorkflowStore,
+} from "../workflows/workflow-service.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -79,6 +84,7 @@ export interface CreateAppOptions {
   readonly providerCredentialRepository?: GoogleCredentialStore;
   readonly memoryService?: MemoryStore;
   readonly knowledgeService?: KnowledgeStore;
+  readonly workflowService?: WorkflowStore;
 }
 
 export async function createApp(
@@ -151,6 +157,9 @@ export async function createApp(
             minimumSimilarity: options.config.knowledgeSearch.minimumSimilarity,
           },
     );
+  const workflowService =
+    options.workflowService ??
+    new WorkflowService(new WorkflowRepository(database));
   const googleIntegration = options.config.googleCalendar.enabled
     ? options.config.googleCalendar
     : options.config.googleGmail.enabled
@@ -226,6 +235,7 @@ export async function createApp(
     logger: app.log,
     memories: memoryService,
     knowledge: knowledgeService,
+    workflows: workflowService,
   });
   registerRoutes(
     app,
@@ -245,6 +255,7 @@ export async function createApp(
     providerCredentials,
     memoryService,
     knowledgeService,
+    workflowService,
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);

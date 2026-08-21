@@ -24,6 +24,8 @@ import type { MemoryStore } from "../memory/memory-service.js";
 import { registerMemoryRoutes } from "./memory/memory.route.js";
 import type { KnowledgeStore } from "../knowledge/knowledge-service.js";
 import { registerKnowledgeRoutes } from "./knowledge/knowledge.route.js";
+import type { WorkflowStore } from "../workflows/workflow-service.js";
+import { registerWorkflowRoutes } from "./workflows/workflow.route.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -43,6 +45,7 @@ export function registerRoutes(
   providerCredentials?: GoogleCredentialStore,
   memories?: MemoryStore,
   knowledge?: KnowledgeStore,
+  workflows?: WorkflowStore,
 ): void {
   registerHealthRoutes(app, checkDatabase);
   if (config !== undefined)
@@ -87,4 +90,6 @@ export function registerRoutes(
   if (memories !== undefined) registerMemoryRoutes(app, authenticate, memories);
   if (knowledge !== undefined)
     registerKnowledgeRoutes(app, authenticate, knowledge);
+  if (workflows !== undefined)
+    registerWorkflowRoutes(app, authenticate, workflows);
 }

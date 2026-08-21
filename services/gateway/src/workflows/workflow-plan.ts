@@ -23,10 +23,9 @@ export const WORKFLOW_ALLOWED_TOOL_NAMES = [
   "contacts.people.get",
 ] as const;
 
-// Reserved for a future Gateway-owned runtime. These values are deliberately
-// absent from the Agent proposal schema and have no persistence in Phase 40.
+// Gateway-owned runtime states. These values are deliberately absent from the
+// Agent proposal schema; Phase 41 persists the same bounded state vocabulary.
 export type WorkflowStatus =
-  | "PROPOSED"
   | "READY"
   | "RUNNING"
   | "AWAITING_APPROVAL"
@@ -35,7 +34,6 @@ export type WorkflowStatus =
   | "FAILED"
   | "CANCELLED";
 export type WorkflowStepStatus =
-  | "PENDING"
   | "BLOCKED"
   | "READY"
   | "RUNNING"

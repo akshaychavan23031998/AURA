@@ -2,15 +2,18 @@ import { sql } from "drizzle-orm";
 import {
   check,
   customType,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
   uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 export const userStatus = pgEnum("user_status", ["ACTIVE", "DISABLED"]);
@@ -41,6 +44,31 @@ export const knowledgeSourceType = pgEnum("knowledge_source_type", [
 export const knowledgeStatus = pgEnum("knowledge_status", [
   "ACTIVE",
   "DELETED",
+]);
+export const workflowStatus = pgEnum("workflow_status", [
+  "READY",
+  "RUNNING",
+  "AWAITING_APPROVAL",
+  "PAUSED",
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
+]);
+export const workflowStepKind = pgEnum("workflow_step_kind", [
+  "tool",
+  "memory_read",
+  "memory_search",
+  "knowledge_search",
+]);
+export const workflowStepStatus = pgEnum("workflow_step_status", [
+  "READY",
+  "BLOCKED",
+  "RUNNING",
+  "AWAITING_APPROVAL",
+  "SUCCEEDED",
+  "FAILED",
+  "SKIPPED",
+  "CANCELLED",
 ]);
 const vector384 = customType<{ data: number[]; driverData: string }>({
   dataType: () => "vector(384)",
@@ -347,6 +375,111 @@ export const knowledgeChunkEmbeddings = pgTable(
     check(
       "knowledge_chunk_embeddings_model_length_check",
       sql`char_length(${table.model}) between 1 and 128`,
+    ),
+  ],
+);
+
+export const workflows = pgTable(
+  "workflows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    goal: text("goal").notNull(),
+    status: workflowStatus("status").notNull().default("READY"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "workflows_goal_length_check",
+      sql`char_length(${table.goal}) between 1 and 1024`,
+    ),
+    index("workflows_actor_created_idx").on(table.actorId, table.createdAt),
+    index("workflows_actor_status_idx").on(table.actorId, table.status),
+  ],
+);
+
+export const workflowSteps = pgTable(
+  "workflow_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workflowId: uuid("workflow_id")
+      .notNull()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    stepKey: varchar("step_key", { length: 64 }).notNull(),
+    kind: workflowStepKind("kind").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    status: workflowStepStatus("status").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workflow_steps_workflow_key_uidx").on(
+      table.workflowId,
+      table.stepKey,
+    ),
+    uniqueIndex("workflow_steps_workflow_ordinal_uidx").on(
+      table.workflowId,
+      table.ordinal,
+    ),
+    uniqueIndex("workflow_steps_workflow_id_uidx").on(
+      table.workflowId,
+      table.id,
+    ),
+    check(
+      "workflow_steps_key_length_check",
+      sql`char_length(${table.stepKey}) between 1 and 64`,
+    ),
+    check(
+      "workflow_steps_ordinal_check",
+      sql`${table.ordinal} between 0 and 7`,
+    ),
+  ],
+);
+
+export const workflowStepDependencies = pgTable(
+  "workflow_step_dependencies",
+  {
+    workflowId: uuid("workflow_id")
+      .notNull()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    stepId: uuid("step_id").notNull(),
+    dependsOnStepId: uuid("depends_on_step_id").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "workflow_step_dependencies_pk",
+      columns: [table.workflowId, table.stepId, table.dependsOnStepId],
+    }),
+    foreignKey({
+      name: "workflow_step_dependencies_step_fk",
+      columns: [table.workflowId, table.stepId],
+      foreignColumns: [workflowSteps.workflowId, workflowSteps.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "workflow_step_dependencies_depends_fk",
+      columns: [table.workflowId, table.dependsOnStepId],
+      foreignColumns: [workflowSteps.workflowId, workflowSteps.id],
+    }).onDelete("cascade"),
+    check(
+      "workflow_step_dependencies_not_self_check",
+      sql`${table.stepId} <> ${table.dependsOnStepId}`,
     ),
   ],
 );

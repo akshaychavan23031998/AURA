@@ -4,7 +4,11 @@
 
 Gateway accepts one new strict Agent `workflow` proposal containing a bounded goal and one to eight `tool`, `memory_read`, `memory_search`, or `knowledge_search` steps. It independently validates step IDs, bounds, dependency existence, duplicate/self dependencies, and cycles, then returns a deterministic topologically ordered proposal.
 
-This path performs zero Tool calls, approvals, provider resolution, Memory operations, Knowledge searches, or database writes. Agent cannot provide actor, permissions, approval proof, provider credentials, retry/timeout/idempotency controls, runtime state, results, or timestamps. Dependencies represent ordering only; there is no result substitution, persistence, execution API, scheduler, worker, retry engine, or workflow UI. Existing Tool approval rules remain unchanged.
+The Phase 40 path performed zero Tool calls, approvals, provider resolution, Memory operations, Knowledge searches, or database writes. Agent cannot provide actor, permissions, approval proof, provider credentials, retry/timeout/idempotency controls, runtime state, results, or timestamps. Dependencies represent ordering only; there is no result substitution, execution API, scheduler, worker, retry engine, or workflow UI. Existing Tool approval rules remain unchanged.
+
+Phase 41 replaces the transient proposal response with durable, actor-owned persistence after the same validation. Migration `0009_workflows.sql` adds workflow, step, and dependency tables with bounded constraints, cascade lifecycle, and same-workflow dependency foreign keys. Creation is one transaction; root steps derive `READY`, dependent steps `BLOCKED`, and the workflow `READY`. Gateway alone assigns IDs, timestamps, and states.
+
+`GET /api/v1/workflows` and `GET /api/v1/workflows/:workflowId` require `workflow.read`; `POST /api/v1/workflows/:workflowId/cancel` requires `workflow.write`. Cancellation is an atomic, idempotent `READY → CANCELLED` transition. These APIs remain account-data controls, not an executor: they perform no Tool preparation/execution, provider resolution, approval creation, Memory/Knowledge access, Agent continuation, retry, result storage, scheduling, or worker activity.
 
 ## V1.5 — Complete
 
@@ -58,6 +62,9 @@ Phase 27 adds authenticated Google capability management. Status is derived from
 | `GET`    | `/api/v1/knowledge/documents/:documentId` | Bearer + knowledge.read  | Get one owned active document                    |
 | `DELETE` | `/api/v1/knowledge/documents/:documentId` | Bearer + knowledge.write | Soft-delete one owned document                   |
 | `POST`   | `/api/v1/knowledge/search`                | Bearer + knowledge.read  | Search owned active chunks by exact cosine rank  |
+| `GET`    | `/api/v1/workflows`                       | Bearer + workflow.read   | List bounded actor-owned workflow snapshots      |
+| `GET`    | `/api/v1/workflows/:workflowId`           | Bearer + workflow.read   | Get one actor-owned workflow graph               |
+| `POST`   | `/api/v1/workflows/:workflowId/cancel`    | Bearer + workflow.write  | Idempotently cancel one READY workflow           |
 | `POST`   | `/api/v1/tools/execute`                   | Bearer                   | Execute a validated Tool Service request         |
 | `POST`   | `/api/v1/agent/respond`                   | Bearer                   | Produce an unexecuted planning response          |
 | `POST`   | `/api/v1/agent/run`                       | Bearer                   | Run deterministic orchestration                  |

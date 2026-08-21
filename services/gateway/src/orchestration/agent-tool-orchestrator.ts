@@ -23,10 +23,11 @@ import type {
   KnowledgeSearchResultView,
   KnowledgeStore,
 } from "../knowledge/knowledge-service.js";
-import {
-  normalizeWorkflowPlan,
-  type WorkflowPlan,
-} from "../workflows/workflow-plan.js";
+import { normalizeWorkflowPlan } from "../workflows/workflow-plan.js";
+import type {
+  WorkflowStore,
+  WorkflowView,
+} from "../workflows/workflow-service.js";
 
 export interface KnowledgeCitation {
   readonly id: string;
@@ -58,16 +59,16 @@ export interface ApprovalRequiredAgentRunResult {
     readonly expiresAt: string;
   };
 }
-export interface WorkflowProposedAgentRunResult {
-  readonly status: "workflow_proposed";
+export interface WorkflowCreatedAgentRunResult {
+  readonly status: "workflow_created";
   readonly response: { readonly text: string };
-  readonly workflow: Omit<WorkflowPlan, "type">;
+  readonly workflow: WorkflowView;
   readonly steps: 1;
 }
 export type AgentRunResult =
   | CompletedAgentRunResult
   | ApprovalRequiredAgentRunResult
-  | WorkflowProposedAgentRunResult;
+  | WorkflowCreatedAgentRunResult;
 export interface OrchestrationLogger {
   info(bindings: object, message: string): void;
   error(bindings: object, message: string): void;
@@ -80,6 +81,7 @@ export interface AgentToolOrchestratorDependencies {
   readonly logger?: OrchestrationLogger;
   readonly memories?: MemoryStore;
   readonly knowledge?: Pick<KnowledgeStore, "searchOwned">;
+  readonly workflows?: Pick<WorkflowStore, "create">;
 }
 export interface OrchestrationControl {
   readonly signal?: AbortSignal;
@@ -126,10 +128,11 @@ export class AgentToolOrchestrator {
       return completed(initial.response, 1);
     }
     if (initial.plan.type === "workflow")
-      return this.proposeWorkflow(
+      return this.persistWorkflow(
         initial.plan,
         initial.response,
         requestId,
+        authorizationContext,
         startedAt,
       );
     if (initial.plan.type === "knowledge_search")
@@ -160,18 +163,33 @@ export class AgentToolOrchestrator {
     );
   }
 
-  private proposeWorkflow(
+  private async persistWorkflow(
     plan: WorkflowAgentPlan,
     response: string,
     requestId: string,
+    context: TrustedToolContext,
     startedAt: number,
-  ): WorkflowProposedAgentRunResult {
+  ): Promise<WorkflowCreatedAgentRunResult> {
+    if (!context.grantedPermissions.includes("workflow.write"))
+      throw new AppError({
+        code: "PERMISSION_DENIED",
+        httpStatus: 403,
+        message: "Permission denied",
+      });
+    const workflows = this.dependencies.workflows;
+    if (workflows === undefined)
+      throw new AppError({
+        code: "WORKFLOW_STORAGE_FAILED",
+        httpStatus: 500,
+        message: "Workflow storage operation failed",
+      });
     const normalized = normalizeWorkflowPlan(plan);
+    const workflow = await workflows.create(context.actorId, normalized);
     this.logCompleted(requestId, "workflow", 1, startedAt);
     return {
-      status: "workflow_proposed",
+      status: "workflow_created",
       response: { text: response },
-      workflow: { goal: normalized.goal, steps: normalized.steps },
+      workflow,
       steps: 1,
     };
   }

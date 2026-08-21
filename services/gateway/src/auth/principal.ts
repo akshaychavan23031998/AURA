@@ -11,6 +11,8 @@ export const allowedPermissions = [
   "memory.write",
   "knowledge.read",
   "knowledge.write",
+  "workflow.read",
+  "workflow.write",
 ] as const;
 export type AllowedPermission = (typeof allowedPermissions)[number];
 
