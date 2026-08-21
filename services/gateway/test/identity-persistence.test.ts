@@ -16,6 +16,7 @@ import {
   userMemories,
   users,
   workflowStepDependencies,
+  workflowStepExecutions,
   workflowSteps,
   workflows,
 } from "../src/db/schema.js";
@@ -38,6 +39,7 @@ import { KnowledgeEmbeddingRepository } from "../src/knowledge/knowledge-embeddi
 import { sha256 } from "../src/knowledge/knowledge-service.js";
 import { WorkflowRepository } from "../src/workflows/workflow-repository.js";
 import { WorkflowService } from "../src/workflows/workflow-service.js";
+import { WorkflowExecutor } from "../src/workflows/workflow-executor.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) {
@@ -798,5 +800,95 @@ describe.sequential("PostgreSQL identity persistence", () => {
         .from(workflows)
         .where(eq(workflows.goal, "Rollback dependency failure")),
     ).resolves.toEqual([]);
+  });
+
+  it("atomically claims one workflow step and forbids attempt two", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Claim exactly once",
+      steps: [
+        { id: "read", kind: "memory_read", dependsOn: [], memoryKind: null },
+      ],
+    });
+    const claims = await Promise.all([
+      workflowRepository.startOwned(actorId, created.id, new Date()),
+      workflowRepository.startOwned(actorId, created.id, new Date()),
+    ]);
+    expect(claims.filter((claim) => claim?.claimed)).toHaveLength(1);
+    const steps = await Promise.all([
+      workflowRepository.claimNext(created.id, new Date()),
+      workflowRepository.claimNext(created.id, new Date()),
+    ]);
+    expect(steps.filter(Boolean)).toHaveLength(1);
+    const [execution] = await database.db.select().from(workflowStepExecutions);
+    expect(execution?.attemptNumber).toBe(1);
+    await expect(
+      database.db.insert(workflowStepExecutions).values({
+        workflowId: created.id,
+        stepId: execution!.stepId,
+        attemptNumber: 2,
+        status: "RUNNING",
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it("executes dependency-ready account-data steps sequentially to completion", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Read memory then knowledge",
+      steps: [
+        { id: "memory", kind: "memory_read", dependsOn: [], memoryKind: null },
+        {
+          id: "knowledge",
+          kind: "knowledge_search",
+          dependsOn: ["memory"],
+          query: "notes",
+        },
+      ],
+    });
+    const calls: string[] = [];
+    const executor = new WorkflowExecutor(
+      workflowRepository,
+      workflowService,
+      {
+        execute: () => Promise.reject(new Error("unexpected Tool execution")),
+      },
+      {
+        create: () => Promise.reject(new Error("unexpected approval")),
+      },
+      {
+        create: () => Promise.reject(new Error("unexpected write")),
+        getOwned: () => Promise.reject(new Error("unexpected get")),
+        listOwned: () => {
+          calls.push("memory");
+          return Promise.resolve([]);
+        },
+        deleteOwned: () => Promise.reject(new Error("unexpected delete")),
+      },
+      {
+        searchOwned: () => {
+          calls.push("knowledge");
+          return Promise.resolve([]);
+        },
+      },
+    );
+    const result = await executor.run(
+      actorId,
+      created.id,
+      {
+        actorId,
+        grantedPermissions: ["workflow.write", "memory.read", "knowledge.read"],
+      },
+      "workflow-run-1",
+    );
+    expect(calls).toEqual(["memory", "knowledge"]);
+    expect(result.status).toBe("COMPLETED");
+    expect(result.steps.map((step) => step.status)).toEqual([
+      "SUCCEEDED",
+      "SUCCEEDED",
+    ]);
+    expect(result.steps.every((step) => step.hasResult)).toBe(true);
   });
 });

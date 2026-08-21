@@ -5,6 +5,8 @@ import { requirePrincipal } from "../../auth/auth-plugin.js";
 import type { AllowedPermission } from "../../auth/principal.js";
 import { AppError } from "../../errors/app-error.js";
 import type { WorkflowStore } from "../../workflows/workflow-service.js";
+import type { WorkflowRunner } from "../../workflows/workflow-executor.js";
+import { deriveAuthorizationContext } from "../../auth/authorization-context.js";
 
 const workflowIdSchema = z.uuid();
 const listSchema = z
@@ -15,6 +17,7 @@ export function registerWorkflowRoutes(
   app: FastifyInstance,
   authenticate: preHandlerHookHandler,
   workflows: WorkflowStore,
+  runner: WorkflowRunner,
 ): void {
   app.get(
     "/api/v1/workflows",
@@ -37,6 +40,28 @@ export function registerWorkflowRoutes(
         workflow: await workflows.getOwned(
           principal.actorId,
           parse(workflowIdSchema, request.params.workflowId),
+        ),
+      };
+    },
+  );
+
+  app.post<{ Params: { workflowId: string } }>(
+    "/api/v1/workflows/:workflowId/run",
+    { preHandler: authenticate },
+    async (request) => {
+      const principal = requirePermission(request, "workflow.write");
+      if (
+        request.body != null &&
+        (typeof request.body !== "object" ||
+          Object.keys(request.body).length !== 0)
+      )
+        throw inputInvalid();
+      return {
+        workflow: await runner.run(
+          principal.actorId,
+          parse(workflowIdSchema, request.params.workflowId),
+          deriveAuthorizationContext(principal),
+          request.id,
         ),
       };
     },

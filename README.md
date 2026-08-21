@@ -16,6 +16,10 @@ Phase 41 persists validated proposals as actor-owned PostgreSQL workflows. Workf
 
 Persistence still executes zero steps and creates no Tool preparation, approval, provider call, Memory/Knowledge operation, continuation, retry, result, worker, or schedule. Dependencies remain ordering metadata only.
 
+Phase 42 adds explicit authenticated `POST /api/v1/workflows/:workflowId/run` execution. Gateway claims persisted steps with PostgreSQL compare-and-set, dispatches sequentially by ordinal, unlocks dependencies only after success, and persists one bounded sanitized execution result per step. Native Tool, `memory.read`, and `knowledge.read` permissions remain mandatory.
+
+Required Tool approvals reuse the existing exact-action approval record and pause both workflow and step. Explicit approval resumes the linked step once; rejection, expiry, cancellation, or failure never retries. There are no workers, schedules, result substitutions, automatic recovery, Voice execution controls, or attempt two.
+
 ## V1.5 — Complete
 
 Phase 39 formally closes V1.5. AURA now provides explicit actor-owned Memory CRUD and Agent actions, semantic Memory retrieval, manual and TXT/PDF/DOCX Knowledge ingestion, deterministic transactional chunking, local 384-dimensional pgvector indexing, explicit semantic search, grounded Agent answers with Gateway-trusted citations, and authenticated Memory/Knowledge Web management.

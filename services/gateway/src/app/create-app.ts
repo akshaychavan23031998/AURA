@@ -69,6 +69,10 @@ import {
   WorkflowService,
   type WorkflowStore,
 } from "../workflows/workflow-service.js";
+import {
+  WorkflowExecutor,
+  type WorkflowRunner,
+} from "../workflows/workflow-executor.js";
 
 export interface CreateAppOptions {
   readonly config: GatewayConfig;
@@ -85,6 +89,7 @@ export interface CreateAppOptions {
   readonly memoryService?: MemoryStore;
   readonly knowledgeService?: KnowledgeStore;
   readonly workflowService?: WorkflowStore;
+  readonly workflowRunner?: WorkflowRunner;
 }
 
 export async function createApp(
@@ -205,6 +210,17 @@ export async function createApp(
   const voiceClient =
     options.voiceClient ??
     createVoiceServiceClient(options.config, fetch, app.log);
+  const workflowRunner =
+    options.workflowRunner ??
+    new WorkflowExecutor(
+      new WorkflowRepository(database),
+      workflowService,
+      toolClient,
+      approvalRepository,
+      memoryService,
+      knowledgeService,
+      options.config.approvals?.ttlSeconds ?? 300,
+    );
 
   await registerSecurity(app, options.config);
   await app.register(websocket, {
@@ -256,6 +272,7 @@ export async function createApp(
     memoryService,
     knowledgeService,
     workflowService,
+    workflowRunner,
   );
   app.addHook("onClose", async () => database.close());
   registerErrorHandling(app);

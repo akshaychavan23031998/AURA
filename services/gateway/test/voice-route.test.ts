@@ -147,6 +147,8 @@ describe("POST /api/v1/voice/run", () => {
           createdAt: "2026-08-21T00:00:00.000Z",
           updatedAt: "2026-08-21T00:00:00.000Z",
           cancelledAt: null,
+          startedAt: null,
+          completedAt: null,
           steps: [],
         }),
         getOwned: vi.fn(),

@@ -6,6 +6,7 @@ import type { ApprovalRepository } from "../../approvals/approval-repository.js"
 import { AppError } from "../../errors/app-error.js";
 import type { AgentToolOrchestrator } from "../../orchestration/agent-tool-orchestrator.js";
 import type { ApprovalRealtimeRegistry } from "../../approvals/approval-realtime-registry.js";
+import type { WorkflowRunner } from "../../workflows/workflow-executor.js";
 
 const paramsSchema = z.object({ approvalId: z.string().uuid() }).strict();
 const decisionBodySchema = z.union([
@@ -26,6 +27,14 @@ const continuationSchema = z
     originalRequestId: z.string(),
   })
   .strict();
+const workflowContinuationSchema = z
+  .object({
+    kind: z.literal("workflow_tool"),
+    workflowId: z.uuid(),
+    stepId: z.uuid(),
+    originalRequestId: z.string(),
+  })
+  .strict();
 
 export function registerApprovalRoutes(
   app: FastifyInstance,
@@ -34,6 +43,7 @@ export function registerApprovalRoutes(
   authenticate: preHandlerHookHandler,
   orchestrator?: AgentToolOrchestrator,
   realtime?: ApprovalRealtimeRegistry,
+  workflowRunner?: WorkflowRunner,
 ): void {
   app.get(
     "/api/v1/approvals/:approvalId",
@@ -60,6 +70,15 @@ export function registerApprovalRoutes(
         new Date(),
       );
       if (!row) throw approvalError("APPROVAL_NOT_PENDING", 409);
+      const workflow = workflowContinuationSchema.safeParse(
+        row.requestEnvelope,
+      );
+      if (workflow.success)
+        await workflowRunner?.rejectApproval(
+          requirePrincipal(request).actorId,
+          row.id,
+          "APPROVAL_REJECTED",
+        );
       realtime?.rejected(row.id);
       return publicApproval(row);
     },
@@ -71,10 +90,38 @@ export function registerApprovalRoutes(
       validateDecisionBody(request.body);
       const params = paramsSchema.parse(request.params);
       const principal = requirePrincipal(request);
+      const existing = await approvals.findOwned(
+        params.approvalId,
+        principal.actorId,
+      );
+      const workflowContinuation = workflowContinuationSchema.safeParse(
+        existing?.requestEnvelope,
+      );
+      const now = new Date();
+      if (
+        workflowContinuation.success &&
+        existing !== undefined &&
+        existing.expiresAt <= now
+      ) {
+        await workflowRunner?.rejectApproval(
+          principal.actorId,
+          params.approvalId,
+          "APPROVAL_EXPIRED",
+        );
+        throw approvalError("APPROVAL_NOT_PENDING", 409);
+      }
+      if (
+        workflowContinuation.success &&
+        !(await workflowRunner?.canResumeApproval(
+          principal.actorId,
+          params.approvalId,
+        ))
+      )
+        throw approvalError("APPROVAL_NOT_PENDING", 409);
       const row = await approvals.consume(
         params.approvalId,
         principal.actorId,
-        new Date(),
+        now,
       );
       if (!row) throw approvalError("APPROVAL_NOT_PENDING", 409);
       const context = {
@@ -90,6 +137,16 @@ export function registerApprovalRoutes(
         },
       } as const;
       const continuation = continuationSchema.safeParse(row.requestEnvelope);
+      if (workflowContinuation.success && workflowRunner !== undefined) {
+        const result = await workflowRunner.resumeApproved(
+          principal.actorId,
+          row.id,
+          { name: row.toolName, input: row.inputEnvelope },
+          context,
+          workflowContinuation.data.originalRequestId,
+        );
+        return { approval: publicApproval(row), workflow: result };
+      }
       if (continuation.success && orchestrator !== undefined) {
         try {
           const result = await orchestrator.resumeApproved(

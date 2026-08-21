@@ -323,6 +323,10 @@ Phase 41 adds the first durable runtime-owned state without adding execution. `w
 
 `workflow.read` and `workflow.write` are independent exact permissions. Owner-scoped bounded list/detail routes and an idempotent cancellation route expose only safe plan-local step keys and payloads. Cancellation atomically changes `READY → CANCELLED` and cancels all `READY`/`BLOCKED` steps. Foreign and missing IDs share `WORKFLOW_NOT_FOUND`. No route accepts actor or runtime state, and no workflow operation dispatches Tools, providers, approvals, Memory, Knowledge, embeddings, or Agent continuation.
 
+Phase 42 introduces explicit synchronous execution only. PostgreSQL compare-and-set transitions claim a `READY` workflow and the lowest-ordinal `READY` step; concurrent runs cannot create a second attempt or dispatch the same claim. Successful steps unlock only blocked children whose complete dependency set is `SUCCEEDED`. Failure marks remaining unstarted steps `SKIPPED`; completion requires every step to succeed.
+
+Tool steps reuse Tool Service preparation, native permissions, provider resolution, and exact approvals. Memory and Knowledge steps call their existing owner-scoped services and require their native read permissions. Results are recursively stripped of credential/vector fields and capped at 64 KiB. No output affects downstream payloads. Execution is never started at startup, by Voice, by a scheduler, or in the background; stuck `RUNNING` recovery is deliberately deferred.
+
 The responsive product navigation keeps Voice and Google capability management intact. Citation presentation consumes only Gateway-validated structured metadata and never parses answer text for source authority. Contents, drafts, queries, and results are not placed in persistent browser storage, URLs, analytics, or logs. No backend schema or authority boundary changes in this phase.
 
 ### Phase 35 grounded knowledge answers

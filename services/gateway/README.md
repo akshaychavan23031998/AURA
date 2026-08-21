@@ -10,6 +10,10 @@ Phase 41 replaces the transient proposal response with durable, actor-owned pers
 
 `GET /api/v1/workflows` and `GET /api/v1/workflows/:workflowId` require `workflow.read`; `POST /api/v1/workflows/:workflowId/cancel` requires `workflow.write`. Cancellation is an atomic, idempotent `READY → CANCELLED` transition. These APIs remain account-data controls, not an executor: they perform no Tool preparation/execution, provider resolution, approval creation, Memory/Knowledge access, Agent continuation, retry, result storage, scheduling, or worker activity.
 
+Phase 42 adds explicit `POST /api/v1/workflows/:workflowId/run` with `workflow.write`. Execution is synchronous, sequential, dependency-aware, and bounded to the persisted eight-step graph. PostgreSQL conditionally claims workflow and step state before dispatch, and `workflow_step_executions` permits exactly attempt one. Native Tool/Memory/Knowledge permissions remain independent.
+
+Tool preparation and exact approvals are reused without bypass. Required approval pauses the linked workflow and step; approval resume verifies the durable linkage before exact dispatch. Results are sanitized and limited to 64 KiB, never substituted into later inputs, and not exposed raw in workflow detail. No startup scan, retry, worker, scheduler, automatic crash recovery, Web control, or Voice authority exists.
+
 ## V1.5 — Complete
 
 Gateway now owns the complete explicit Memory and bounded Knowledge/RAG authority path: authenticated actor derivation, independent permissions, PostgreSQL ownership/lifecycle, local embedding access, owner-scoped retrieval, grounded continuation, and trusted citation resolution. Public clients and Agent cannot choose actors, permissions, vectors, models, thresholds, lifecycle, or citation metadata. V2 workflow persistence and multi-step execution remain unimplemented; Phase 40 adds proposals only.

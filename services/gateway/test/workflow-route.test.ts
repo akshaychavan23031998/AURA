@@ -7,6 +7,7 @@ import type {
   WorkflowStore,
   WorkflowView,
 } from "../src/workflows/workflow-service.js";
+import type { WorkflowRunner } from "../src/workflows/workflow-executor.js";
 import { testConfig } from "./test-config.js";
 
 const authorization = { authorization: "Bearer test.header.signature" };
@@ -19,6 +20,8 @@ const snapshot: WorkflowView = {
   createdAt: "2026-08-21T00:00:00.000Z",
   updatedAt: "2026-08-21T00:00:00.000Z",
   cancelledAt: null,
+  startedAt: null,
+  completedAt: null,
   steps: [
     {
       stepKey: "meeting",
@@ -27,6 +30,10 @@ const snapshot: WorkflowView = {
       status: "READY",
       dependsOn: [],
       payload: { tool: { name: "calendar.events.list", input: {} } },
+      startedAt: null,
+      completedAt: null,
+      errorCode: null,
+      hasResult: false,
     },
   ],
 };
@@ -57,6 +64,8 @@ function store(): WorkflowStore {
         createdAt: snapshot.createdAt,
         updatedAt: snapshot.updatedAt,
         cancelledAt: snapshot.cancelledAt,
+        startedAt: snapshot.startedAt,
+        completedAt: snapshot.completedAt,
       },
     ]),
     cancelOwned: vi.fn().mockResolvedValue({
@@ -66,6 +75,14 @@ function store(): WorkflowStore {
     }),
   };
 }
+function runner(): WorkflowRunner {
+  return {
+    run: vi.fn().mockResolvedValue(snapshot),
+    resumeApproved: vi.fn().mockResolvedValue(snapshot),
+    rejectApproval: vi.fn().mockResolvedValue(undefined),
+    canResumeApproval: vi.fn().mockResolvedValue(true),
+  };
+}
 
 describe("workflow routes", () => {
   const apps: Awaited<ReturnType<typeof createApp>>[] = [];
@@ -73,15 +90,17 @@ describe("workflow routes", () => {
   async function app(
     permissions: readonly AllowedPermission[],
     workflows = store(),
+    workflowRunner = runner(),
   ) {
     const instance = await createApp({
       config: testConfig,
       logger: false,
       tokenVerifier: verifier(permissions),
       workflowService: workflows,
+      workflowRunner,
     });
     apps.push(instance);
-    return { instance, workflows };
+    return { instance, workflows, workflowRunner };
   }
 
   it("requires authentication for list, detail, and cancellation", async () => {
@@ -136,6 +155,36 @@ describe("workflow routes", () => {
         })
       ).statusCode,
     ).toBe(200);
+  });
+
+  it("requires workflow.write to run and derives the actor server-side", async () => {
+    const reader = await app(["workflow.read"]);
+    expect(
+      (
+        await reader.instance.inject({
+          method: "POST",
+          url: `/api/v1/workflows/${workflowId}/run`,
+          headers: authorization,
+        })
+      ).statusCode,
+    ).toBe(403);
+    const writer = await app(["workflow.write"]);
+    const run = vi.spyOn(writer.workflowRunner, "run");
+    expect(
+      (
+        await writer.instance.inject({
+          method: "POST",
+          url: `/api/v1/workflows/${workflowId}/run`,
+          headers: authorization,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(run).toHaveBeenCalledWith(
+      actorId,
+      workflowId,
+      expect.objectContaining({ actorId }),
+      expect.any(String),
+    );
   });
 
   it("derives actor ownership and bounds list limits", async () => {

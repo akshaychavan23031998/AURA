@@ -70,6 +70,12 @@ export const workflowStepStatus = pgEnum("workflow_step_status", [
   "SKIPPED",
   "CANCELLED",
 ]);
+export const workflowExecutionStatus = pgEnum("workflow_execution_status", [
+  "RUNNING",
+  "AWAITING_APPROVAL",
+  "SUCCEEDED",
+  "FAILED",
+]);
 const vector384 = customType<{ data: number[]; driverData: string }>({
   dataType: () => "vector(384)",
   toDriver: (value) => `[${value.join(",")}]`,
@@ -480,6 +486,44 @@ export const workflowStepDependencies = pgTable(
     check(
       "workflow_step_dependencies_not_self_check",
       sql`${table.stepId} <> ${table.dependsOnStepId}`,
+    ),
+  ],
+);
+
+export const workflowStepExecutions = pgTable(
+  "workflow_step_executions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workflowId: uuid("workflow_id")
+      .notNull()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    stepId: uuid("step_id")
+      .notNull()
+      .references(() => workflowSteps.id, { onDelete: "cascade" }),
+    attemptNumber: integer("attempt_number").notNull().default(1),
+    status: workflowExecutionStatus("status").notNull(),
+    approvalId: uuid("approval_id").references(() => toolApprovals.id, {
+      onDelete: "restrict",
+    }),
+    result: jsonb("result"),
+    errorCode: text("error_code"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workflow_step_executions_step_attempt_uidx").on(
+      table.stepId,
+      table.attemptNumber,
+    ),
+    check(
+      "workflow_step_executions_attempt_check",
+      sql`${table.attemptNumber} = 1`,
+    ),
+    check(
+      "workflow_step_executions_error_code_check",
+      sql`${table.errorCode} is null or char_length(${table.errorCode}) between 1 and 64`,
     ),
   ],
 );

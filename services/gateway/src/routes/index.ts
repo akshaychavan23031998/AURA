@@ -26,6 +26,7 @@ import type { KnowledgeStore } from "../knowledge/knowledge-service.js";
 import { registerKnowledgeRoutes } from "./knowledge/knowledge.route.js";
 import type { WorkflowStore } from "../workflows/workflow-service.js";
 import { registerWorkflowRoutes } from "./workflows/workflow.route.js";
+import type { WorkflowRunner } from "../workflows/workflow-executor.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -46,6 +47,7 @@ export function registerRoutes(
   memories?: MemoryStore,
   knowledge?: KnowledgeStore,
   workflows?: WorkflowStore,
+  workflowRunner?: WorkflowRunner,
 ): void {
   registerHealthRoutes(app, checkDatabase);
   if (config !== undefined)
@@ -75,6 +77,7 @@ export function registerRoutes(
       authenticate,
       orchestrator,
       realtimeApprovals,
+      workflowRunner,
     );
   registerAgentResponseRoute(app, agentClient, authenticate);
   registerAgentRunRoute(app, orchestrator, authenticate);
@@ -90,6 +93,6 @@ export function registerRoutes(
   if (memories !== undefined) registerMemoryRoutes(app, authenticate, memories);
   if (knowledge !== undefined)
     registerKnowledgeRoutes(app, authenticate, knowledge);
-  if (workflows !== undefined)
-    registerWorkflowRoutes(app, authenticate, workflows);
+  if (workflows !== undefined && workflowRunner !== undefined)
+    registerWorkflowRoutes(app, authenticate, workflows, workflowRunner);
 }

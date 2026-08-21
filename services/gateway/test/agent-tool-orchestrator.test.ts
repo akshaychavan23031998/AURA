@@ -112,6 +112,8 @@ describe("AgentToolOrchestrator", () => {
       createdAt: "2026-08-21T00:00:00.000Z",
       updatedAt: "2026-08-21T00:00:00.000Z",
       cancelledAt: null,
+      startedAt: null,
+      completedAt: null,
       steps: [],
     });
     const orchestrator = new AgentToolOrchestrator({
@@ -138,6 +140,8 @@ describe("AgentToolOrchestrator", () => {
         createdAt: "2026-08-21T00:00:00.000Z",
         updatedAt: "2026-08-21T00:00:00.000Z",
         cancelledAt: null,
+        startedAt: null,
+        completedAt: null,
         steps: [],
       },
       steps: 1,

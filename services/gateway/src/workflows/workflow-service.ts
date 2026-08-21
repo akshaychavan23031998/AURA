@@ -27,6 +27,10 @@ export interface WorkflowStepView {
     | "CANCELLED";
   readonly dependsOn: readonly string[];
   readonly payload: Readonly<Record<string, unknown>>;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
+  readonly errorCode: string | null;
+  readonly hasResult: boolean;
 }
 export interface WorkflowView {
   readonly id: string;
@@ -42,6 +46,8 @@ export interface WorkflowView {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly cancelledAt: string | null;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
   readonly steps: readonly WorkflowStepView[];
 }
 export type WorkflowSummaryView = Omit<WorkflowView, "steps">;
@@ -128,6 +134,9 @@ export class WorkflowService implements WorkflowStore {
 function graphView(graph: PersistedWorkflowGraph): WorkflowView {
   const keyById = new Map(graph.steps.map((step) => [step.id, step.stepKey]));
   const dependencies = new Map<string, string[]>();
+  const executionByStep = new Map(
+    graph.executions.map((execution) => [execution.stepId, execution]),
+  );
   for (const dependency of graph.dependencies) {
     const stepKey = keyById.get(dependency.stepId);
     const dependsOnKey = keyById.get(dependency.dependsOnStepId);
@@ -142,16 +151,21 @@ function graphView(graph: PersistedWorkflowGraph): WorkflowView {
     steps: graph.steps
       .slice()
       .sort((left, right) => left.ordinal - right.ordinal)
-      .map((step) =>
-        Object.freeze({
+      .map((step) => {
+        const execution = executionByStep.get(step.id);
+        return Object.freeze({
           stepKey: step.stepKey,
           kind: step.kind,
           ordinal: step.ordinal,
           status: step.status,
           dependsOn: Object.freeze(dependencies.get(step.stepKey) ?? []),
           payload: Object.freeze(step.payload as Record<string, unknown>),
-        }),
-      ),
+          startedAt: step.startedAt?.toISOString() ?? null,
+          completedAt: step.completedAt?.toISOString() ?? null,
+          errorCode: execution?.errorCode ?? null,
+          hasResult: execution?.result != null,
+        });
+      }),
   });
 }
 
@@ -165,6 +179,8 @@ function summaryView(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     cancelledAt: row.cancelledAt?.toISOString() ?? null,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    completedAt: row.completedAt?.toISOString() ?? null,
   });
 }
 
