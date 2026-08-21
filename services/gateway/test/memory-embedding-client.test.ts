@@ -59,4 +59,25 @@ describe("memory embedding client", () => {
       message: "Memory embedding service is unavailable",
     });
   });
+
+  it("stops reading a chunked response once the body bound is exceeded", async () => {
+    let cancelled = false;
+    const oversized = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(70_000));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const client = createMemoryEmbeddingClient(
+      config,
+      vi.fn(() => Promise.resolve(new Response(oversized, { status: 200 }))),
+    );
+
+    await expect(
+      client.embed("private query", "r-bounded"),
+    ).rejects.toMatchObject({ code: "MEMORY_EMBEDDING_UNAVAILABLE" });
+    expect(cancelled).toBe(true);
+  });
 });

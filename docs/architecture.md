@@ -299,6 +299,12 @@ PDF processing does not render, run actions, extract attachments, fetch links, o
 
 Extraction precedes persistence, so invalid input creates no document. Valid extracted text enters the existing `KnowledgeService`: normalization, hashing, deterministic chunks, and document/chunk writes remain one transaction; embeddings remain post-commit best effort. Consequently existing backfill, cosine retrieval, Agent grounding, and trusted citations work without file-specific search or RAG paths. URL/Drive/attachment ingestion, scanned-PDF OCR, automatic ingestion, and autonomy remain outside Phase 37.
 
+### V1.5 Phase 38: security and reliability hardening
+
+The release-candidate audit confirms ownership and lifecycle filtering inside Memory/Knowledge SQL queries, exact independent permissions, final-response-only continuation, Gateway-derived response-local citations, non-replayable browser mutations, and inert retained rows after soft deletion. Model, vector, actor, threshold, lifecycle, permission, and citation metadata remain server-controlled.
+
+Hardening closes three concrete boundary gaps: every Agent plan variant now rejects unknown fields; embedding response streams stop at the configured body ceiling instead of buffering an unbounded chunked response; and DOCX validation rejects duplicate critical package entries, macro-enabled content types, external root document relationships, and unsafe declarations. Retrieved and uploaded content remains untrusted evidence, React renders it as text, and sensitive content/query/vector/response values remain outside logs and browser persistence.
+
 The responsive product navigation keeps Voice and Google capability management intact. Citation presentation consumes only Gateway-validated structured metadata and never parses answer text for source authority. Contents, drafts, queries, and results are not placed in persistent browser storage, URLs, analytics, or logs. No backend schema or authority boundary changes in this phase.
 
 ### Phase 35 grounded knowledge answers

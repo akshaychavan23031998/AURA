@@ -6,6 +6,8 @@ Authenticated users have responsive Conversation, Memory, Knowledge, and Connect
 
 All requests reuse `AuthenticatedFetch`: access JWTs stay memory-only, safe GET requests may use the existing refresh-and-replay behavior, and POST/DELETE mutations are never automatically replayed. Memory/document contents, drafts, queries, and results remain in React component memory and are not written to localStorage, sessionStorage, IndexedDB, cookies, URLs, persistent Redux, analytics, or console logs.
 
+Memory, document, search-result, and trusted citation strings are rendered as React text, never executable HTML or model-derived links. Structured citations come only from Gateway metadata; citation-like model text has no authority. File selection and mutation remain explicit, transient, and non-replayable.
+
 Citation UI trusts only the structured citation array returned by Gateway. It displays response-local reference labels and document titles without turning arbitrary model text into source authority or exposing chunk IDs, vectors, scores, model details, hashes, actor identity, or database metadata.
 
 Selected files remain component-local, uploads are never auto-replayed, and the request contains one multipart `file` field without client-derived title/source/actor/model metadata. The picker accepts `.txt,.pdf,.docx` for usability, while Gateway performs authoritative type and safety validation and enforces the 10 MiB limit.

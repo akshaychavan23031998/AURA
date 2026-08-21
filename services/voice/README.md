@@ -1,5 +1,9 @@
 # AURA Voice Service
 
+## V1.5 boundary
+
+Voice transports finalized transcript text and safe response text only. It receives no Memory/Knowledge database authority, upload capability, vectors, provider credentials, or citation-source content. Stale/interrupted turns cannot be replayed into duplicate persistence, and voice never approves Tool actions or initiates OAuth.
+
 ## V1 safety boundary
 
 Voice remains a content transformation service for bounded STT/TTS and owns no identity, OAuth, Tool, permission, or approval authority. Realtime speech can request work but cannot approve writes, reconnect/disconnect Google, inject provider credentials, or replay an interrupted side effect. Once a provider mutation is dispatched, cancellation only suppresses stale conversational output and never causes a retry.

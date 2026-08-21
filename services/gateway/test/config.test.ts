@@ -120,6 +120,19 @@ describe("gateway configuration", () => {
         MEMORY_EMBEDDING_DIMENSIONS: "3",
       }),
     ).toThrow(/384 dimensions/);
+    for (const unsafeBaseUrl of [
+      "ftp://127.0.0.1:8081",
+      "http://user:secret@127.0.0.1:8081",
+      "http://127.0.0.1:8081/proxy",
+      "http://127.0.0.1:8081?target=other",
+    ])
+      expect(() =>
+        loadConfig({
+          ...base,
+          MEMORY_EMBEDDING_BASE_URL: unsafeBaseUrl,
+          MEMORY_EMBEDDING_MODEL: "test",
+        }),
+      ).toThrow(/MEMORY_EMBEDDING_BASE_URL/);
   });
 
   it("bounds server-controlled knowledge search configuration", () => {

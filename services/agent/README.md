@@ -1,5 +1,9 @@
 # Agent Service
 
+## V1.5 security boundary
+
+All initial plan variants are strict, extra-field-forbidden members of the single-action union. Memory and retrieved Knowledge are untrusted user-authored context, never permission or instruction authority. Tool, memory, and knowledge continuations must end in `respond`; grounded continuation cannot recursively retrieve, mutate state, approve, start OAuth, or forge Gateway citation metadata.
+
 ## V1 — Complete
 
 Agent remains proposal-only and may select at most one of the 14 sanitized catalog tools per turn. Catalog entries contain only name, description, category, and safe input schema. JWTs, provider credentials/scopes, actor permissions, approval authority, risks, service tokens, and database details never enter the planner contract. Malformed or unknown Tool plans fail closed; Tool execution and approval remain Gateway/Tool Service responsibilities.

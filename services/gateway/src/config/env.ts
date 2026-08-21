@@ -111,12 +111,7 @@ const environmentSchema = z
       .transform((value) => value === "true"),
     MEMORY_EMBEDDING_BASE_URL: z.preprocess(
       (value) => (value === "" ? undefined : value),
-      z
-        .url()
-        .refine(
-          (url) => url.startsWith("http://") || url.startsWith("https://"),
-        )
-        .optional(),
+      z.url().refine(isSafeEmbeddingBaseUrl).optional(),
     ),
     MEMORY_EMBEDDING_MODEL: z.preprocess(
       (value) => (value === "" ? undefined : value),
@@ -246,6 +241,18 @@ const environmentSchema = z
         message: "Google OIDC redirect URI must use HTTPS in production",
       });
   });
+
+function isSafeEmbeddingBaseUrl(value: string): boolean {
+  const url = new URL(value);
+  return (
+    (url.protocol === "http:" || url.protocol === "https:") &&
+    url.username === "" &&
+    url.password === "" &&
+    url.search === "" &&
+    url.hash === "" &&
+    (url.pathname === "/" || url.pathname === "")
+  );
+}
 
 export type GatewayEnvironment = z.infer<typeof environmentSchema>;
 

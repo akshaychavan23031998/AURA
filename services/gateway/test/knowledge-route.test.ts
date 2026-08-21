@@ -215,6 +215,26 @@ describe("knowledge routes", () => {
     );
   });
 
+  it("rejects duplicate multipart files before knowledge persistence", async () => {
+    const { instance, knowledge } = await app(["knowledge.write"]);
+    const upload = multipartFiles([
+      { filename: "one.txt", bytes: Buffer.from("one") },
+      { filename: "two.txt", bytes: Buffer.from("two") },
+    ]);
+    const response = await instance.inject({
+      method: "POST",
+      url: "/api/v1/knowledge/files",
+      headers: { ...authorization, ...upload.headers },
+      payload: upload.payload,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe(
+      "KNOWLEDGE_FILE_INVALID",
+    );
+    expect(knowledge.create).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["extra", "notes.txt", "text/plain", Buffer.from("x")],
     ["file", "notes.exe", "application/octet-stream", Buffer.from("MZ")],
@@ -480,5 +500,20 @@ function multipartFile(
   return {
     headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
     payload: Buffer.concat([head, bytes, tail]),
+  };
+}
+
+function multipartFiles(files: readonly { filename: string; bytes: Buffer }[]) {
+  const boundary = "aura-knowledge-multiple-boundary";
+  const parts = files.flatMap(({ filename, bytes }) => [
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: text/plain\r\n\r\n`,
+    ),
+    bytes,
+    Buffer.from("\r\n"),
+  ]);
+  return {
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat([...parts, Buffer.from(`--${boundary}--\r\n`)]),
   };
 }

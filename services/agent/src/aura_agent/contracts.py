@@ -119,10 +119,14 @@ class ToolProposal(BaseModel):
 
 
 class RespondPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["respond"] = "respond"
 
 
 class ToolPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["tool"] = "tool"
     tool: ToolProposal
 

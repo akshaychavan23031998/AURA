@@ -27,4 +27,24 @@ describe("TrustedCitationList", () => {
     expect(sources).not.toHaveTextContent("K99");
     expect(sources.textContent).not.toMatch(/chunk|documentId|vector/i);
   });
+
+  it("renders attacker-controlled citation titles as inert text", () => {
+    const title = '<img src=x onerror="globalThis.compromised=true">';
+    render(
+      <TrustedCitationList
+        citations={[
+          {
+            id: "K1",
+            documentId: "00000000-0000-4000-8000-000000000010",
+            chunkId: "00000000-0000-4000-8000-000000000020",
+            title,
+            ordinal: 0,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(title)).toBeVisible();
+    expect(document.querySelector("img")).toBeNull();
+  });
 });

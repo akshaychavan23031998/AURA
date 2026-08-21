@@ -8,6 +8,12 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## V1.5 — Started
 
+### Phase 38 security hardening
+
+The V1.5 release candidate preserves direct SQL ownership and `ACTIVE` lifecycle predicates for Memory and Knowledge, independent `memory.read`/`memory.write` and `knowledge.read`/`knowledge.write` permissions, and Gateway-only persistence, retrieval, and citation authority. Retrieved and uploaded content remains untrusted data: it cannot authorize Tools, approvals, OAuth, recursive retrieval, or mutations. Embedding responses are streamed under a hard body bound, and the fixed embedding base URL rejects credentials, paths, queries, and fragments.
+
+File ingestion additionally rejects ambiguous duplicate DOCX package parts, macro-enabled Word content types, external root document relationships, unsafe XML declarations, traversal, encryption, and archive resource abuse. Sensitive content, queries, vectors, grounded answers, and upload bodies remain outside logs and persistent browser storage. Phase 38 adds no automatic extraction, autonomous behavior, new Tool, or provider, and does not mark V1.5 complete.
+
 Phase 36 adds an authenticated browser workspace for explicit Memory and Knowledge management. Users can list, create, filter, inspect, and deliberately confirm deletion of owned memories/documents; ingest manual plaintext; and run explicit semantic knowledge searches. Forms submit only the public contracts, block duplicate mutations, and keep drafts, selected files, stored content, and queries in transient component state rather than browser persistence or Redux.
 
 The responsive navigation preserves Conversation/Voice and connected Google capability management. Structured citation rendering accepts only Gateway-returned citation metadata; model-like `[K…]` text is never promoted into a trusted source. Gateway remains authoritative for identity, permissions, ownership, lifecycle, normalization, chunking, embeddings, and search policy.

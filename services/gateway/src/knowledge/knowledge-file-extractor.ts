@@ -122,7 +122,6 @@ async function extractDocx(bytes: Buffer): Promise<string> {
   if (!isZip(bytes)) throw invalid();
   try {
     const xml = await readDocxDocumentXml(bytes);
-    if (xml.includes("<!DOCTYPE") || xml.includes("<!ENTITY")) throw invalid();
     const content = xml
       .replace(/<w:tab\b[^>]*\/>/gu, "\t")
       .replace(/<w:br\b[^>]*\/>/gu, "\n")
@@ -152,9 +151,7 @@ function readDocxDocumentXml(bytes: Buffer): Promise<string> {
       let entryCount = 0;
       let totalUncompressed = 0;
       let settled = false;
-      let documentXml: string | undefined;
-      let hasContentTypes = false;
-      let hasRootRelationships = false;
+      const criticalEntries = new Map<string, string>();
       const fail = (error: unknown) => {
         if (settled) return;
         settled = true;
@@ -179,10 +176,12 @@ function readDocxDocumentXml(bytes: Buffer): Promise<string> {
           fail(invalid());
           return;
         }
-        if (entry.fileName !== "word/document.xml") {
-          if (entry.fileName === "[Content_Types].xml") hasContentTypes = true;
-          if (entry.fileName === "_rels/.rels") hasRootRelationships = true;
+        if (!DOCX_CRITICAL_ENTRIES.has(entry.fileName)) {
           archive.readEntry();
+          return;
+        }
+        if (criticalEntries.has(entry.fileName)) {
+          fail(invalid());
           return;
         }
         archive.openReadStream(entry, (streamError, stream) => {
@@ -204,9 +203,11 @@ function readDocxDocumentXml(bytes: Buffer): Promise<string> {
           stream.on("end", () => {
             if (settled) return;
             try {
-              documentXml = new TextDecoder("utf-8", { fatal: true }).decode(
+              const xml = new TextDecoder("utf-8", { fatal: true }).decode(
                 Buffer.concat(chunks),
               );
+              if (containsUnsafeXmlDeclaration(xml)) throw invalid();
+              criticalEntries.set(entry.fileName, xml);
               archive.readEntry();
             } catch {
               fail(invalid());
@@ -218,10 +219,15 @@ function readDocxDocumentXml(bytes: Buffer): Promise<string> {
         if (settled) return;
         settled = true;
         archive.close();
+        const contentTypes = criticalEntries.get("[Content_Types].xml");
+        const relationships = criticalEntries.get("_rels/.rels");
+        const documentXml = criticalEntries.get("word/document.xml");
         if (
+          contentTypes === undefined ||
+          relationships === undefined ||
           documentXml === undefined ||
-          !hasContentTypes ||
-          !hasRootRelationships
+          !isSafeDocxContentTypes(contentTypes) ||
+          !isSafeDocxRootRelationships(relationships)
         ) {
           reject(invalid());
           return;
@@ -231,6 +237,46 @@ function readDocxDocumentXml(bytes: Buffer): Promise<string> {
       archive.readEntry();
     });
   });
+}
+
+const DOCX_CRITICAL_ENTRIES = new Set([
+  "[Content_Types].xml",
+  "_rels/.rels",
+  "word/document.xml",
+]);
+
+const DOCX_MAIN_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+
+function containsUnsafeXmlDeclaration(xml: string): boolean {
+  return /<!DOCTYPE|<!ENTITY/iu.test(xml);
+}
+
+function isSafeDocxContentTypes(xml: string): boolean {
+  if (/macroEnabled|vbaProject/iu.test(xml)) return false;
+  for (const override of xml.matchAll(/<Override\b[^>]*>/giu)) {
+    const value = override[0];
+    if (
+      /PartName\s*=\s*["']\/word\/document\.xml["']/iu.test(value) &&
+      value.includes(DOCX_MAIN_CONTENT_TYPE)
+    )
+      return true;
+  }
+  return false;
+}
+
+function isSafeDocxRootRelationships(xml: string): boolean {
+  const officeDocumentRelationship = /<Relationship\b[^>]*>/giu;
+  for (const relationship of xml.matchAll(officeDocumentRelationship)) {
+    const value = relationship[0];
+    if (
+      /Type\s*=\s*["'][^"']*\/officeDocument["']/iu.test(value) &&
+      /Target\s*=\s*["']word\/document\.xml["']/iu.test(value) &&
+      !/TargetMode\s*=\s*["']External["']/iu.test(value)
+    )
+      return true;
+  }
+  return false;
 }
 
 function decodeXmlText(value: string): string {

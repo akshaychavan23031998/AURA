@@ -22,22 +22,18 @@ describe("knowledge file extraction", () => {
     });
   });
 
-  it(
-    "extracts text from a valid PDF without rendering",
-    async () => {
-      const result = await extractKnowledgeFile({
-        filename: "deployment.pdf",
-        contentType: "application/pdf",
-        bytes: tinyPdf("Deployment requires approval"),
-      });
-      expect(result).toMatchObject({
-        title: "deployment",
-        sourceType: "file_pdf",
-      });
-      expect(result.content).toContain("Deployment requires approval");
-    },
-    15_000,
-  );
+  it("extracts text from a valid PDF without rendering", async () => {
+    const result = await extractKnowledgeFile({
+      filename: "deployment.pdf",
+      contentType: "application/pdf",
+      bytes: tinyPdf("Deployment requires approval"),
+    });
+    expect(result).toMatchObject({
+      title: "deployment",
+      sourceType: "file_pdf",
+    });
+    expect(result.content).toContain("Deployment requires approval");
+  }, 15_000);
 
   it("extracts only the bounded Word document XML from DOCX", async () => {
     const result = await extractKnowledgeFile({
@@ -132,6 +128,66 @@ describe("knowledge file extraction", () => {
             content: "x",
           })),
         ]),
+      }),
+      "KNOWLEDGE_FILE_INVALID",
+    );
+  });
+
+  it("rejects ambiguous, macro-enabled, and externally rooted DOCX packages", async () => {
+    const entries = docxEntries("safe");
+    await expectCode(
+      extractKnowledgeFile({
+        filename: "duplicate.docx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        bytes: zip([
+          ...entries,
+          { name: "word/document.xml", content: entries[2]!.content },
+        ]),
+      }),
+      "KNOWLEDGE_FILE_INVALID",
+    );
+
+    await expectCode(
+      extractKnowledgeFile({
+        filename: "renamed-macro.docx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        bytes: zip(
+          entries.map((entry) =>
+            entry.name === "[Content_Types].xml"
+              ? {
+                  ...entry,
+                  content: entry.content.replace(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+                    "application/vnd.ms-word.document.macroEnabled.main+xml",
+                  ),
+                }
+              : entry,
+          ),
+        ),
+      }),
+      "KNOWLEDGE_FILE_INVALID",
+    );
+
+    await expectCode(
+      extractKnowledgeFile({
+        filename: "external.docx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        bytes: zip(
+          entries.map((entry) =>
+            entry.name === "_rels/.rels"
+              ? {
+                  ...entry,
+                  content: entry.content.replace(
+                    'Target="word/document.xml"',
+                    'Target="https://example.invalid/document.xml" TargetMode="External"',
+                  ),
+                }
+              : entry,
+          ),
+        ),
       }),
       "KNOWLEDGE_FILE_INVALID",
     );
