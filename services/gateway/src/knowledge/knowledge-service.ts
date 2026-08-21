@@ -22,12 +22,16 @@ import {
 export interface CreateKnowledgeInput {
   readonly title: string;
   readonly content: string;
+  readonly sourceType?: KnowledgeSourceType;
 }
+
+export type KnowledgeSourceType =
+  "manual_text" | "file_txt" | "file_pdf" | "file_docx";
 
 export interface KnowledgeDocumentMetadataView {
   readonly id: string;
   readonly title: string;
-  readonly sourceType: "manual_text";
+  readonly sourceType: KnowledgeSourceType;
   readonly chunkCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -329,6 +333,7 @@ function prepare(input: CreateKnowledgeInput): PreparedKnowledgeDocument {
   }
   return Object.freeze({
     title,
+    sourceType: input.sourceType ?? "manual_text",
     normalizedContent,
     contentHash: sha256(normalizedContent),
     chunks: chunks.map((content, ordinal) =>
@@ -344,7 +349,7 @@ export function sha256(value: string): string {
 function metadataView(row: {
   id: string;
   title: string;
-  sourceType: "manual_text";
+  sourceType: KnowledgeSourceType;
   chunkCount: number;
   createdAt: Date;
   updatedAt: Date;

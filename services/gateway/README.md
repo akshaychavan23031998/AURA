@@ -43,6 +43,7 @@ Phase 27 adds authenticated Google capability management. Status is derived from
 | `POST`   | `/api/v1/memories`                        | Bearer + memory.write    | Create one explicit actor-owned memory           |
 | `DELETE` | `/api/v1/memories/:memoryId`              | Bearer + memory.write    | Soft-delete one actor-owned memory               |
 | `POST`   | `/api/v1/knowledge/documents`             | Bearer + knowledge.write | Ingest one owned manual-text document            |
+| `POST`   | `/api/v1/knowledge/files`                 | Bearer + knowledge.write | Ingest one bounded TXT, PDF, or DOCX file        |
 | `GET`    | `/api/v1/knowledge/documents`             | Bearer + knowledge.read  | List owned active document metadata              |
 | `GET`    | `/api/v1/knowledge/documents/:documentId` | Bearer + knowledge.read  | Get one owned active document                    |
 | `DELETE` | `/api/v1/knowledge/documents/:documentId` | Bearer + knowledge.write | Soft-delete one owned document                   |
@@ -74,6 +75,10 @@ Only clear requests such as “remember that …”, explicit saved-memory reads
 ## Knowledge ingestion foundation
 
 Phase 32 adds Gateway-owned manual plaintext ingestion only. `knowledge.read` and `knowledge.write` are independent exact permissions, actor identity is always derived from the verified principal, and foreign-owned IDs use the same `KNOWLEDGE_NOT_FOUND` behavior as missing or deleted IDs. Creation accepts only strict `{ title, content }` JSON; the server assigns `manual_text`, lifecycle, hashes, chunk ordinals, timestamps, and ownership.
+
+Phase 37 extends this same service with explicit multipart file ingestion. Exactly one `file` field is accepted, up to 10 MiB, and title/source are derived server-side. TXT requires valid UTF-8 and rejects binary signatures/NUL; PDF requires `%PDF-` and is parsed for bounded text without rendering, actions, attachments, OCR, or external fetching; DOCX requires a valid ZIP/Word Open XML structure and reads only `word/document.xml` in memory. DOCX processing rejects traversal, more than 200 entries, entries over 10 MiB, total uncompressed data over 20 MiB, or compression ratios over 100:1. DOCM and all unsupported formats fail closed.
+
+No original file bytes are persisted. Extraction failures create no document; successful extracted text reuses existing normalization, deterministic chunking, transactional persistence, best-effort embeddings, backfill, semantic search, and grounded citations. Logs contain bounded operational counts only—not filename, bytes, extracted text, chunks, vectors, or parser details. Scanned PDFs, OCR, macros, URL/Drive/attachment ingestion, and automatic ingestion are unsupported.
 
 Content is deterministically normalized from CRLF/CR to LF, trimmed only at its boundary, rejected when empty or control-unsafe, and limited to 128 KiB after UTF-8 encoding. SHA-256 covers normalized content. Paragraph-aware local chunking targets 1,200 characters, never exceeds 2,000 characters per chunk, uses zero-based stable ordinals with no overlap, and fails above 128 chunks. A single PostgreSQL transaction inserts the document and complete chunk set, so chunk failure leaves no partial document.
 

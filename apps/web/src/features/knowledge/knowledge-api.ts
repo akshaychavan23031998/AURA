@@ -7,7 +7,7 @@ const metadataSchema = z
   .object({
     id: z.uuid(),
     title: z.string().max(200),
-    sourceType: z.literal("manual_text"),
+    sourceType: z.enum(["manual_text", "file_txt", "file_pdf", "file_docx"]),
     chunkCount: z.number().int().min(1).max(128),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
@@ -82,6 +82,16 @@ export class KnowledgeApi {
       ),
       { method: "DELETE" },
     );
+  }
+
+  public async upload(file: File): Promise<KnowledgeMetadata> {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await this.http.request(
+      new URL("api/v1/knowledge/files", this.baseUrl),
+      { method: "POST", body },
+    );
+    return parse(createResponseSchema, await response.json()).document;
   }
 
   public async search(query: string): Promise<KnowledgeSearchResult[]> {

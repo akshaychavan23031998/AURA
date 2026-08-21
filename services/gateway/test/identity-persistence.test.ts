@@ -421,6 +421,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
     const [otherActor] = await database.db.insert(users).values({}).returning();
     const created = await knowledge.createTransactional(actorId, {
       title: "Architecture",
+      sourceType: "file_txt",
       normalizedContent: "First paragraph.\n\nSecond paragraph.",
       contentHash: sha256("First paragraph.\n\nSecond paragraph."),
       chunks: [
@@ -440,7 +441,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
       knowledge.getOwned(actorId, created.id),
     ).resolves.toMatchObject({
       actorId,
-      sourceType: "manual_text",
+      sourceType: "file_txt",
       status: "ACTIVE",
       chunkCount: 2,
     });

@@ -291,6 +291,14 @@ The Web application adds thin, schema-validating Memory and Knowledge API client
 
 Memory management covers owned active list/create/delete with optional exact-kind filtering. Knowledge management covers metadata list, manual plaintext create, explicit full-document get, delete, and semantic search. The browser performs no normalization, chunking, hashing, embedding, or ranking. Server errors are reduced to bounded user-facing messages, while unknown failures remain generic.
 
+### V1.5 Phase 37: secure knowledge file ingestion
+
+Authenticated users with exact `knowledge.write` may explicitly upload one TXT, PDF, or DOCX file to `/api/v1/knowledge/files`. Multipart handling is bounded to one `file` part and 10 MiB. Extension and media type are advisory layers backed by content checks: TXT must be valid non-binary UTF-8, PDF must carry the PDF signature and yields text only, and DOCX must be a bounded Word Open XML ZIP with required package entries. The browser cannot supply actor, title, source, lifecycle, chunk, hash, vector, model, or path authority.
+
+PDF processing does not render, run actions, extract attachments, fetch links, or perform OCR. DOCX processing remains in memory, reads only `word/document.xml`, rejects traversal, macros/unsupported extensions, excessive entries, oversized expansion, and compression-bomb ratios, and never extracts embedded files. Original binaries and filenames are neither persisted nor logged.
+
+Extraction precedes persistence, so invalid input creates no document. Valid extracted text enters the existing `KnowledgeService`: normalization, hashing, deterministic chunks, and document/chunk writes remain one transaction; embeddings remain post-commit best effort. Consequently existing backfill, cosine retrieval, Agent grounding, and trusted citations work without file-specific search or RAG paths. URL/Drive/attachment ingestion, scanned-PDF OCR, automatic ingestion, and autonomy remain outside Phase 37.
+
 The responsive product navigation keeps Voice and Google capability management intact. Citation presentation consumes only Gateway-validated structured metadata and never parses answer text for source authority. Contents, drafts, queries, and results are not placed in persistent browser storage, URLs, analytics, or logs. No backend schema or authority boundary changes in this phase.
 
 ### Phase 35 grounded knowledge answers

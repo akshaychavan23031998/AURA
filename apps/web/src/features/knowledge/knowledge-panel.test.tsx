@@ -2,8 +2,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { KnowledgePanel } from "./knowledge-panel";
+import type { KnowledgeMetadata } from "./knowledge-api";
 
-const metadata = {
+const metadata: KnowledgeMetadata = {
   id: "00000000-0000-4000-8000-000000000010",
   title: "Architecture",
   sourceType: "manual_text" as const,
@@ -21,6 +22,7 @@ function api(rows = [metadata]) {
     list: vi.fn().mockResolvedValue(rows),
     get: vi.fn().mockResolvedValue(knowledgeDocument),
     create: vi.fn().mockResolvedValue(metadata),
+    upload: vi.fn().mockResolvedValue(metadata),
     delete: vi.fn().mockResolvedValue(undefined),
     search: vi.fn().mockResolvedValue([]),
   };
@@ -56,7 +58,7 @@ describe("KnowledgePanel", () => {
   it("searches with the query only and renders a truthful no-match", async () => {
     const client = api([]);
     render(<KnowledgePanel api={client} />);
-    await screen.findByText("No manual knowledge documents found.");
+    await screen.findByText("No knowledge documents found.");
     fireEvent.change(screen.getByLabelText("Search query"), {
       target: { value: "deployment" },
     });
@@ -100,5 +102,36 @@ describe("KnowledgePanel", () => {
       await screen.findByText("Gateway owns authorization."),
     ).toBeVisible();
     expect(document.body.textContent).not.toMatch(/vector|similarity|model/i);
+  });
+
+  it("uploads explicitly, blocks a duplicate, keeps the file ephemeral, and refreshes", async () => {
+    const client = api([]);
+    let resolveUpload: (value: typeof metadata) => void = () => undefined;
+    client.upload.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+    const persistentWrite = vi.spyOn(Storage.prototype, "setItem");
+    render(<KnowledgePanel api={client} />);
+    const file = new File(["private upload"], "architecture.txt", {
+      type: "text/plain",
+    });
+    fireEvent.change(screen.getByLabelText("Choose file"), {
+      target: { files: [file] },
+    });
+    const button = screen.getByRole("button", { name: "Upload file" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.submit(button.closest("form")!);
+    expect(await screen.findByText("Selected: architecture.txt")).toBeVisible();
+    await waitFor(() => expect(client.upload).toHaveBeenCalledWith(file));
+    expect(screen.getByRole("button", { name: "Uploading…" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Uploading…" }));
+    expect(client.upload).toHaveBeenCalledTimes(1);
+    resolveUpload({ ...metadata, sourceType: "file_txt" });
+    await waitFor(() => expect(client.list).toHaveBeenCalledTimes(2));
+    expect(persistentWrite).not.toHaveBeenCalled();
+    persistentWrite.mockRestore();
   });
 });

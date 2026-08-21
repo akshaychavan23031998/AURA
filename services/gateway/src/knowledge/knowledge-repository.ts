@@ -11,6 +11,7 @@ export interface PreparedKnowledgeChunk {
 
 export interface PreparedKnowledgeDocument {
   readonly title: string;
+  readonly sourceType?: "manual_text" | "file_txt" | "file_pdf" | "file_docx";
   readonly normalizedContent: string;
   readonly contentHash: string;
   readonly chunks: readonly PreparedKnowledgeChunk[];
@@ -33,6 +34,7 @@ export class KnowledgeRepository {
         .values({
           actorId,
           title: value.title,
+          sourceType: value.sourceType ?? "manual_text",
           normalizedContent: value.normalizedContent,
           contentHash: value.contentHash,
         })

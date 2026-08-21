@@ -57,6 +57,13 @@
       "when": 1787350000000,
       "tag": "0007_knowledge_chunk_embeddings",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787450000000,
+      "tag": "0008_knowledge_file_sources",
+      "breakpoints": true
     }
   ]
 }

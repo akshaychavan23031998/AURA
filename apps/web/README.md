@@ -2,13 +2,15 @@
 
 ## V1.5 data management
 
-Authenticated users have responsive Conversation, Memory, Knowledge, and Connected Accounts surfaces. Memory supports explicit kind/content creation, bounded listing/filtering, and two-step deletion. Knowledge supports metadata listing, manual plaintext ingestion, explicit single-document viewing, two-step deletion, and deliberate semantic search with a truthful no-match state. The browser does not chunk, hash, embed, rank, or select search policy.
+Authenticated users have responsive Conversation, Memory, Knowledge, and Connected Accounts surfaces. Memory supports explicit kind/content creation, bounded listing/filtering, and two-step deletion. Knowledge supports metadata listing, manual plaintext ingestion, an explicit TXT/PDF/DOCX upload form, single-document viewing, two-step deletion, and deliberate semantic search with a truthful no-match state. The browser does not parse, chunk, hash, embed, rank, or select search policy.
 
 All requests reuse `AuthenticatedFetch`: access JWTs stay memory-only, safe GET requests may use the existing refresh-and-replay behavior, and POST/DELETE mutations are never automatically replayed. Memory/document contents, drafts, queries, and results remain in React component memory and are not written to localStorage, sessionStorage, IndexedDB, cookies, URLs, persistent Redux, analytics, or console logs.
 
 Citation UI trusts only the structured citation array returned by Gateway. It displays response-local reference labels and document titles without turning arbitrary model text into source authority or exposing chunk IDs, vectors, scores, model details, hashes, actor identity, or database metadata.
 
-Current boundaries remain explicit manual user memory and plaintext knowledge ingestion. There is no automatic transcript persistence, background retrieval, file/URL upload, or autonomous behavior.
+Selected files remain component-local, uploads are never auto-replayed, and the request contains one multipart `file` field without client-derived title/source/actor/model metadata. The picker accepts `.txt,.pdf,.docx` for usability, while Gateway performs authoritative type and safety validation and enforces the 10 MiB limit.
+
+Current boundaries remain explicit user memory and explicit knowledge ingestion. Scanned PDFs/OCR, macro-enabled Office files, URL/Drive ingestion, automatic transcript persistence, background retrieval, and autonomous behavior are not implemented.
 
 ## V1 — Complete
 

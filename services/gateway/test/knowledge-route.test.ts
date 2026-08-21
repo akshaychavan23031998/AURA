@@ -100,6 +100,11 @@ describe("knowledge routes", () => {
         url: "/api/v1/knowledge/search",
         payload: { query: "deployment" },
       },
+      {
+        method: "POST" as const,
+        url: "/api/v1/knowledge/files",
+        ...multipartFile("file", "notes.txt", "text/plain", Buffer.from("x")),
+      },
     ])
       expect((await instance.inject(request)).statusCode).toBe(401);
   });
@@ -139,6 +144,29 @@ describe("knowledge routes", () => {
         })
       ).statusCode,
     ).toBe(403);
+    expect(
+      (
+        await reader.instance.inject({
+          method: "POST",
+          url: "/api/v1/knowledge/files",
+          headers: {
+            ...authorization,
+            ...multipartFile(
+              "file",
+              "notes.txt",
+              "text/plain",
+              Buffer.from("x"),
+            ).headers,
+          },
+          payload: multipartFile(
+            "file",
+            "notes.txt",
+            "text/plain",
+            Buffer.from("x"),
+          ).payload,
+        })
+      ).statusCode,
+    ).toBe(403);
     const writer = await app(["knowledge.write"]);
     expect(
       (
@@ -160,6 +188,54 @@ describe("knowledge routes", () => {
       ).statusCode,
     ).toBe(403);
   });
+
+  it("ingests exactly one authenticated TXT file through the existing service", async () => {
+    const { instance, knowledge } = await app(["knowledge.write"]);
+    const upload = multipartFile(
+      "file",
+      "C:\\fakepath\\architecture.txt",
+      "text/plain",
+      Buffer.from("Gateway\r\nowns persistence."),
+    );
+    const response = await instance.inject({
+      method: "POST",
+      url: "/api/v1/knowledge/files",
+      headers: { ...authorization, ...upload.headers },
+      payload: upload.payload,
+    });
+    expect(response.statusCode).toBe(201);
+    expect(knowledge.create).toHaveBeenCalledWith(
+      actorId,
+      {
+        title: "architecture",
+        sourceType: "file_txt",
+        content: "Gateway\r\nowns persistence.",
+      },
+      expect.any(String),
+    );
+  });
+
+  it.each([
+    ["extra", "notes.txt", "text/plain", Buffer.from("x")],
+    ["file", "notes.exe", "application/octet-stream", Buffer.from("MZ")],
+    ["file", "notes.txt", "application/pdf", Buffer.from("plain")],
+    ["file", "fake.pdf", "application/pdf", Buffer.from("plain")],
+  ])(
+    "rejects malformed, unsupported, or mismatched file uploads",
+    async (field, filename, mime, bytes) => {
+      const { instance, knowledge } = await app(["knowledge.write"]);
+      const upload = multipartFile(field, filename, mime, bytes);
+      const response = await instance.inject({
+        method: "POST",
+        url: "/api/v1/knowledge/files",
+        headers: { ...authorization, ...upload.headers },
+        payload: upload.payload,
+      });
+      expect(response.statusCode).toBeGreaterThanOrEqual(400);
+      expect(knowledge.create).not.toHaveBeenCalled();
+      expect(response.body).not.toContain("plain");
+    },
+  );
 
   it("derives search ownership and returns only sanitized chunks", async () => {
     const { instance, knowledge } = await app(["knowledge.read"]);
@@ -367,5 +443,42 @@ describe("knowledge routes", () => {
     expect(response.statusCode).toBe(201);
     expect(logs).not.toContain(secret);
     expect(logs).not.toContain("Private title");
+
+    const uploadSecret = "uploaded-secret-must-never-enter-logs";
+    const upload = multipartFile(
+      "file",
+      "secret.txt",
+      "text/plain",
+      Buffer.from(uploadSecret),
+    );
+    expect(
+      (
+        await instance.inject({
+          method: "POST",
+          url: "/api/v1/knowledge/files",
+          headers: { ...authorization, ...upload.headers },
+          payload: upload.payload,
+        })
+      ).statusCode,
+    ).toBe(201);
+    expect(logs).not.toContain(uploadSecret);
+    expect(logs).not.toContain("secret.txt");
   });
 });
+
+function multipartFile(
+  field: string,
+  filename: string,
+  contentType: string,
+  bytes: Buffer,
+) {
+  const boundary = "aura-knowledge-boundary";
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="${field}"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat([head, bytes, tail]),
+  };
+}

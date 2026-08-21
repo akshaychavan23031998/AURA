@@ -34,6 +34,9 @@ export const memorySource = pgEnum("memory_source", ["user_explicit"]);
 export const memoryStatus = pgEnum("memory_status", ["ACTIVE", "DELETED"]);
 export const knowledgeSourceType = pgEnum("knowledge_source_type", [
   "manual_text",
+  "file_txt",
+  "file_pdf",
+  "file_docx",
 ]);
 export const knowledgeStatus = pgEnum("knowledge_status", [
   "ACTIVE",

@@ -35,4 +35,26 @@ describe("KnowledgeApi", () => {
       /actor|limit|threshold|vector|model/i,
     );
   });
+
+  it("uploads exactly one file without client authority fields or a manual boundary", async () => {
+    const request = vi.fn().mockResolvedValue(
+      Response.json({
+        document: { ...metadata, sourceType: "file_txt" },
+      }),
+    );
+    const api = new KnowledgeApi({ request }, new URL("http://gateway.test/"));
+    const file = new File(["private text"], "notes.txt", {
+      type: "text/plain",
+    });
+    await api.upload(file);
+    const init = request.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(init.headers).toBeUndefined();
+    expect(init.body).toBeInstanceOf(FormData);
+    const entries = Array.from((init.body as FormData).entries());
+    expect(entries).toEqual([["file", file]]);
+    expect(entries.map(([key]) => key)).not.toEqual(
+      expect.arrayContaining(["actorId", "sourceType", "model", "vector"]),
+    );
+  });
 });

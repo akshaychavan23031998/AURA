@@ -4,6 +4,10 @@ import { z } from "zod";
 import { requirePrincipal } from "../../auth/auth-plugin.js";
 import type { AllowedPermission } from "../../auth/principal.js";
 import { AppError } from "../../errors/app-error.js";
+import {
+  KNOWLEDGE_FILE_MAX_BYTES,
+  extractKnowledgeFile,
+} from "../../knowledge/knowledge-file-extractor.js";
 import type { KnowledgeStore } from "../../knowledge/knowledge-service.js";
 import { KNOWLEDGE_CONTENT_MAX_BYTES } from "../../knowledge/text-normalizer.js";
 
@@ -64,6 +68,50 @@ export function registerKnowledgeRoutes(
       const document = await knowledge.create(
         principal.actorId,
         input,
+        request.id,
+      );
+      return reply.status(201).send({ document });
+    },
+  );
+
+  app.post(
+    "/api/v1/knowledge/files",
+    { preHandler: authenticate, bodyLimit: KNOWLEDGE_FILE_MAX_BYTES + 65_536 },
+    async (request, reply) => {
+      const principal = requirePermission(request, "knowledge.write");
+      if (!request.isMultipart()) throw fileInvalid();
+      let upload:
+        { filename: string; contentType: string; bytes: Buffer } | undefined;
+      try {
+        for await (const part of request.parts({
+          limits: { files: 1, fields: 0, fileSize: KNOWLEDGE_FILE_MAX_BYTES },
+        })) {
+          if (part.type !== "file" || part.fieldname !== "file" || upload)
+            throw fileInvalid();
+          const bytes = await part.toBuffer();
+          if (part.file.truncated) throw fileTooLarge();
+          upload = {
+            filename: part.filename,
+            contentType: part.mimetype,
+            bytes,
+          };
+        }
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "FST_REQ_FILE_TOO_LARGE"
+        )
+          throw fileTooLarge();
+        throw fileInvalid();
+      }
+      if (upload === undefined) throw fileInvalid();
+      const extracted = await extractKnowledgeFile(upload);
+      const document = await knowledge.create(
+        principal.actorId,
+        extracted,
         request.id,
       );
       return reply.status(201).send({ document });
@@ -162,4 +210,20 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
       message: "Knowledge input is invalid",
     });
   return parsed.data;
+}
+
+function fileInvalid(): AppError {
+  return new AppError({
+    code: "KNOWLEDGE_FILE_INVALID",
+    httpStatus: 400,
+    message: "Knowledge file is invalid",
+  });
+}
+
+function fileTooLarge(): AppError {
+  return new AppError({
+    code: "KNOWLEDGE_FILE_TOO_LARGE",
+    httpStatus: 413,
+    message: "Knowledge file is too large",
+  });
 }

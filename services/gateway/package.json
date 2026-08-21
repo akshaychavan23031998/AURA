@@ -28,7 +28,9 @@
     "fastify": "5.11.3",
     "jose": "6.2.8",
     "openid-client": "6.8.5",
+    "pdfjs-dist": "5.4.149",
     "pg": "^8.23.0",
+    "yauzl": "3.2.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -36,6 +38,7 @@
     "@types/node": "26.2.0",
     "@types/pg": "^8.21.0",
     "@types/ws": "8.18.1",
+    "@types/yauzl": "2.10.3",
     "drizzle-kit": "^0.31.10",
     "eslint": "9.39.5",
     "tsx": "4.23.12",
