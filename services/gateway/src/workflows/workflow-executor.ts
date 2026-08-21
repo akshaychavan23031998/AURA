@@ -12,12 +12,17 @@ import type { WorkflowStore, WorkflowView } from "./workflow-service.js";
 
 export const WORKFLOW_RESULT_MAX_BYTES = 65_536;
 
+export interface WorkflowExecutionFence {
+  assertOwned(): Promise<void>;
+}
+
 export interface WorkflowRunner {
   run(
     actorId: string,
     workflowId: string,
     context: TrustedToolContext,
     requestId: string,
+    fence?: WorkflowExecutionFence,
   ): Promise<WorkflowView>;
   resumeApproved(
     actorId: string,
@@ -37,6 +42,7 @@ export interface WorkflowRunner {
     workflowId: string,
     context: TrustedToolContext,
     requestId: string,
+    fence?: WorkflowExecutionFence,
   ): Promise<WorkflowView>;
 }
 
@@ -59,7 +65,17 @@ export class WorkflowExecutor implements WorkflowRunner {
     workflowId: string,
     context: TrustedToolContext,
     requestId: string,
+    fence?: WorkflowExecutionFence,
   ) {
+    await fence?.assertOwned();
+    const requested = await this.repository.requestExecutionOwned(
+      actorId,
+      workflowId,
+      context.grantedPermissions,
+      this.clock(),
+    );
+    if (requested === undefined) throw notFound();
+    await fence?.assertOwned();
     const started = await this.repository.startOwned(
       actorId,
       workflowId,
@@ -67,7 +83,7 @@ export class WorkflowExecutor implements WorkflowRunner {
     );
     if (started === undefined) throw notFound();
     if (!started.claimed) return this.workflows.getOwned(actorId, workflowId);
-    return this.executeLoop(actorId, workflowId, context, requestId);
+    return this.executeLoop(actorId, workflowId, context, requestId, fence);
   }
 
   public async resumeApproved(
@@ -164,7 +180,9 @@ export class WorkflowExecutor implements WorkflowRunner {
     workflowId: string,
     context: TrustedToolContext,
     requestId: string,
+    fence?: WorkflowExecutionFence,
   ): Promise<WorkflowView> {
+    await fence?.assertOwned();
     const now = this.clock();
     const graph = await this.repository.getOwned(actorId, workflowId);
     if (graph === undefined) throw notFound();
@@ -213,10 +231,11 @@ export class WorkflowExecutor implements WorkflowRunner {
       context,
       requestId,
       true,
+      fence,
     );
     const current = await this.workflows.getOwned(actorId, workflowId);
     return current.status === "RUNNING"
-      ? this.executeLoop(actorId, workflowId, context, requestId)
+      ? this.executeLoop(actorId, workflowId, context, requestId, fence)
       : current;
   }
 
@@ -225,8 +244,10 @@ export class WorkflowExecutor implements WorkflowRunner {
     workflowId: string,
     context: TrustedToolContext,
     requestId: string,
+    fence?: WorkflowExecutionFence,
   ): Promise<WorkflowView> {
     for (let count = 0; count < 8; count += 1) {
+      await fence?.assertOwned();
       const claimed = await this.repository.claimNext(workflowId, new Date());
       if (claimed === undefined)
         return this.workflows.getOwned(actorId, workflowId);
@@ -237,6 +258,7 @@ export class WorkflowExecutor implements WorkflowRunner {
         context,
         requestId,
         false,
+        fence,
       );
       const current = await this.workflows.getOwned(actorId, workflowId);
       if (current.status !== "RUNNING") return current;
@@ -251,6 +273,7 @@ export class WorkflowExecutor implements WorkflowRunner {
     context: TrustedToolContext,
     requestId: string,
     recovering: boolean,
+    fence?: WorkflowExecutionFence,
   ): Promise<void> {
     let unsafeDispatch = false;
     try {
@@ -356,12 +379,14 @@ export class WorkflowExecutor implements WorkflowRunner {
             this.clock(),
           ),
         );
+        await fence?.assertOwned();
         unsafeDispatch = preparation.idempotency === "NON_IDEMPOTENT";
         const result = await this.tools.execute(
           { tool: tool.name, input: resolvedInput },
           context,
           requestId,
         );
+        await fence?.assertOwned();
         await this.persistSuccess(
           workflowId,
           claimed.step.id,
@@ -370,6 +395,7 @@ export class WorkflowExecutor implements WorkflowRunner {
         );
       } else if (claimed.step.kind === "memory_read") {
         await this.prepareSafeDispatch(claimed.execution.id);
+        await fence?.assertOwned();
         requirePermission(context, "memory.read");
         const memoryKind = payload.memoryKind as
           "preference" | "fact" | "instruction" | "note" | null;
@@ -385,6 +411,7 @@ export class WorkflowExecutor implements WorkflowRunner {
         );
       } else if (claimed.step.kind === "memory_search") {
         await this.prepareSafeDispatch(claimed.execution.id);
+        await fence?.assertOwned();
         requirePermission(context, "memory.read");
         if (this.memories.searchOwnedRelevant === undefined)
           throw new Error("Memory search unavailable");
@@ -401,6 +428,7 @@ export class WorkflowExecutor implements WorkflowRunner {
         );
       } else {
         await this.prepareSafeDispatch(claimed.execution.id);
+        await fence?.assertOwned();
         requirePermission(context, "knowledge.read");
         const result = await this.knowledge.searchOwned(
           actorId,
@@ -415,6 +443,8 @@ export class WorkflowExecutor implements WorkflowRunner {
         );
       }
     } catch (error) {
+      if (error instanceof AppError && error.code === "WORKFLOW_LEASE_LOST")
+        return;
       if (unsafeDispatch) {
         await this.repository.markAmbiguous(
           workflowId,

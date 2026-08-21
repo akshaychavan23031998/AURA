@@ -88,6 +88,12 @@ describe("Gateway to Tool Service contract", () => {
       googleContacts: { enabled: false },
       memoryEmbeddings: { enabled: false },
       knowledgeSearch: { limit: 5, minimumSimilarity: 0.5 },
+      workflowWorker: {
+        enabled: false,
+        pollMs: 1000,
+        leaseMs: 30_000,
+        heartbeatMs: 10_000,
+      },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
         poolMax: 10,

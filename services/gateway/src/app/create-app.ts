@@ -90,6 +90,7 @@ export interface CreateAppOptions {
   readonly knowledgeService?: KnowledgeStore;
   readonly workflowService?: WorkflowStore;
   readonly workflowRunner?: WorkflowRunner;
+  readonly onWorkflowRuntimeReady?: (runner: WorkflowRunner) => void;
 }
 
 export async function createApp(
@@ -221,6 +222,7 @@ export async function createApp(
       knowledgeService,
       options.config.approvals?.ttlSeconds ?? 300,
     );
+  options.onWorkflowRuntimeReady?.(workflowRunner);
 
   await registerSecurity(app, options.config);
   await app.register(websocket, {

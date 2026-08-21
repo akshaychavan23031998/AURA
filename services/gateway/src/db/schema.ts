@@ -418,6 +418,9 @@ export const workflows = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    executionRequestedAt: timestamp("execution_requested_at", {
+      withTimezone: true,
+    }),
   },
   (table) => [
     check(
@@ -426,6 +429,60 @@ export const workflows = pgTable(
     ),
     index("workflows_actor_created_idx").on(table.actorId, table.createdAt),
     index("workflows_actor_status_idx").on(table.actorId, table.status),
+    index("workflows_worker_eligible_idx").on(
+      table.status,
+      table.executionRequestedAt,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const workflowWorkerLeases = pgTable(
+  "workflow_worker_leases",
+  {
+    workflowId: uuid("workflow_id")
+      .primaryKey()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    leaseOwner: varchar("lease_owner", { length: 128 }).notNull(),
+    leaseGeneration: integer("lease_generation").notNull(),
+    leasedAt: timestamp("leased_at", { withTimezone: true }).notNull(),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check(
+      "workflow_worker_leases_generation_positive",
+      sql`${table.leaseGeneration} > 0`,
+    ),
+    check(
+      "workflow_worker_leases_owner_bounded",
+      sql`char_length(${table.leaseOwner}) between 1 and 128`,
+    ),
+    check(
+      "workflow_worker_leases_expiry_valid",
+      sql`${table.expiresAt} >= ${table.heartbeatAt}`,
+    ),
+    index("workflow_worker_leases_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export const workflowPermissionGrants = pgTable(
+  "workflow_permission_grants",
+  {
+    workflowId: uuid("workflow_id")
+      .notNull()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    permission: varchar("permission", { length: 64 }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "workflow_permission_grants_pk",
+      columns: [table.workflowId, table.permission],
+    }),
+    check(
+      "workflow_permission_grants_permission_bounded",
+      sql`char_length(${table.permission}) between 1 and 64`,
+    ),
   ],
 );
 

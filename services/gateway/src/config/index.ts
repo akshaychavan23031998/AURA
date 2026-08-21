@@ -45,6 +45,10 @@ const DEVELOPMENT_DEFAULTS = {
   MEMORY_SEARCH_MIN_SIMILARITY: "0.5",
   KNOWLEDGE_SEARCH_LIMIT: "5",
   KNOWLEDGE_SEARCH_MIN_SIMILARITY: "0.5",
+  WORKFLOW_WORKER_ENABLED: "false",
+  WORKFLOW_WORKER_POLL_MS: "1000",
+  WORKFLOW_WORKER_LEASE_MS: "30000",
+  WORKFLOW_WORKER_HEARTBEAT_MS: "10000",
 } as const;
 
 export interface AuthConfig {
@@ -145,6 +149,12 @@ export interface GatewayConfig {
   readonly knowledgeSearch: {
     readonly limit: number;
     readonly minimumSimilarity: number;
+  };
+  readonly workflowWorker: {
+    readonly enabled: boolean;
+    readonly pollMs: number;
+    readonly leaseMs: number;
+    readonly heartbeatMs: number;
   };
   readonly database: {
     readonly url: string;
@@ -290,6 +300,12 @@ export function loadConfig(
     knowledgeSearch: Object.freeze({
       limit: parsed.KNOWLEDGE_SEARCH_LIMIT,
       minimumSimilarity: parsed.KNOWLEDGE_SEARCH_MIN_SIMILARITY,
+    }),
+    workflowWorker: Object.freeze({
+      enabled: parsed.WORKFLOW_WORKER_ENABLED,
+      pollMs: parsed.WORKFLOW_WORKER_POLL_MS,
+      leaseMs: parsed.WORKFLOW_WORKER_LEASE_MS,
+      heartbeatMs: parsed.WORKFLOW_WORKER_HEARTBEAT_MS,
     }),
     database: Object.freeze({
       url: parsed.DATABASE_URL,

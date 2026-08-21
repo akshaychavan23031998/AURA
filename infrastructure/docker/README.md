@@ -15,6 +15,8 @@ docker compose -f infrastructure/docker/postgres.compose.yml up -d
 
 `production.compose.yml` builds Web, Gateway, Tools, Agent, and Voice, runs PostgreSQL, applies Drizzle migrations once, and terminates TLS with Caddy. Only Caddy publishes host ports. Agent, Voice, Tools, Gateway, and PostgreSQL are reachable only on the private Compose network.
 
+The stack also defines a private `gateway-worker` using the Gateway image and `dist/workflow-worker.js`. The public Gateway explicitly disables polling; the worker enables it, exposes no ports, processes one workflow at a time, and coordinates replicas through PostgreSQL leases and fencing generations. This is configuration only and does not deploy the stack.
+
 Copy `production.env.example` to an ignored file outside source control, replace every placeholder, and use an absolute model directory:
 
 ```powershell

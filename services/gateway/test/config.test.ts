@@ -4,6 +4,21 @@ import { loadConfig } from "../src/config/index.js";
 import { ConfigurationError, parseEnvironment } from "../src/config/env.js";
 
 describe("gateway configuration", () => {
+  it("rejects a workflow heartbeat that cannot safely precede lease expiry", () => {
+    expect(() =>
+      loadConfig({
+        NODE_ENV: "test",
+        AUTH_JWT_SECRET: "gateway-jwt-test-secret-at-least-32-characters",
+        TOOLS_SERVICE_TOKEN: "gateway-test-token-at-least-32-characters",
+        AGENT_SERVICE_TOKEN: "agent-test-token-at-least-32-characters",
+        VOICE_SERVICE_TOKEN: "voice-test-token-at-least-32-characters",
+        DATABASE_URL: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
+        WORKFLOW_WORKER_LEASE_MS: "10000",
+        WORKFLOW_WORKER_HEARTBEAT_MS: "5000",
+      }),
+    ).toThrow(ConfigurationError);
+  });
+
   it("loads a valid, typed configuration", () => {
     const config = loadConfig({
       NODE_ENV: "production",
@@ -92,6 +107,12 @@ describe("gateway configuration", () => {
       googleContacts: { enabled: false },
       memoryEmbeddings: { enabled: false },
       knowledgeSearch: { limit: 5, minimumSimilarity: 0.5 },
+      workflowWorker: {
+        enabled: false,
+        pollMs: 1000,
+        leaseMs: 30_000,
+        heartbeatMs: 10_000,
+      },
       database: {
         url: "postgresql://aura:aura@127.0.0.1:5432/aura_test",
         poolMax: 8,

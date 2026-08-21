@@ -18,6 +18,7 @@ import {
   workflowStepDependencies,
   workflowStepExecutions,
   workflowSteps,
+  workflowWorkerLeases,
   workflows,
 } from "../src/db/schema.js";
 import { ApprovalRepository } from "../src/approvals/approval-repository.js";
@@ -40,6 +41,9 @@ import { sha256 } from "../src/knowledge/knowledge-service.js";
 import { WorkflowRepository } from "../src/workflows/workflow-repository.js";
 import { WorkflowService } from "../src/workflows/workflow-service.js";
 import { WorkflowExecutor } from "../src/workflows/workflow-executor.js";
+import { WorkflowLeaseRepository } from "../src/workflows/workflow-lease-repository.js";
+import { WorkflowActorPolicy } from "../src/workflows/workflow-actor-policy.js";
+import { WorkflowWorker } from "../src/workflows/workflow-worker.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) {
@@ -1330,6 +1334,140 @@ describe.sequential("PostgreSQL identity persistence", () => {
     expect(
       await database.db.select().from(workflowStepExecutions),
     ).toHaveLength(1);
+  });
+
+  it("fences two durable workers and preserves one attempt and dispatch", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Worker calculator",
+      steps: [
+        {
+          id: "calculate",
+          kind: "tool",
+          dependsOn: [],
+          tool: {
+            name: "utility.calculator",
+            input: { expression: "12 * 7" },
+          },
+        },
+      ],
+    });
+    const now = new Date("2026-08-21T00:00:00Z");
+    await workflowRepository.requestExecutionOwned(
+      actorId,
+      created.id,
+      ["workflow.write", "utility.calculator"],
+      now,
+    );
+    let dispatches = 0;
+    const tools = {
+      prepare: (request: { tool: string; input: unknown }) =>
+        Promise.resolve(preparation(request, "IDEMPOTENT")),
+      execute: (request: { tool: string; input: unknown }) => {
+        dispatches += 1;
+        return Promise.resolve({
+          status: "success" as const,
+          tool: request.tool,
+          data: { result: 84 },
+        });
+      },
+    };
+    const makeWorker = () =>
+      new WorkflowWorker(
+        {
+          enabled: true,
+          pollMs: 1000,
+          leaseMs: 30_000,
+          heartbeatMs: 10_000,
+        },
+        new WorkflowLeaseRepository(database),
+        new WorkflowActorPolicy(database),
+        new WorkflowExecutor(
+          new WorkflowRepository(database),
+          new WorkflowService(new WorkflowRepository(database)),
+          tools,
+          approvals,
+          unexpectedMemories(),
+          unexpectedKnowledge(),
+        ),
+        { info() {}, warn() {}, error() {} },
+        () => now,
+      );
+    const [first, second] = await Promise.all([
+      makeWorker().pollOnce(),
+      makeWorker().pollOnce(),
+    ]);
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect(dispatches).toBe(1);
+    expect(await workflowService.getOwned(actorId, created.id)).toMatchObject({
+      status: "COMPLETED",
+    });
+    expect(
+      await database.db.select().from(workflowStepExecutions),
+    ).toHaveLength(1);
+    const [storedLease] = await database.db.select().from(workflowWorkerLeases);
+    expect(storedLease?.leaseGeneration).toBe(1);
+  });
+
+  it("increments an expired lease generation and rejects the stale owner", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Lease generation",
+      steps: [
+        {
+          id: "calculate",
+          kind: "tool",
+          dependsOn: [],
+          tool: {
+            name: "utility.calculator",
+            input: { expression: "1 + 1" },
+          },
+        },
+      ],
+    });
+    const leases = new WorkflowLeaseRepository(database);
+    const start = new Date("2026-08-21T00:00:00Z");
+    await workflowRepository.requestExecutionOwned(
+      actorId,
+      created.id,
+      ["workflow.write", "utility.calculator"],
+      start,
+    );
+    const first = await leases.acquireNext("worker-a", start, 5000);
+    expect(first?.generation).toBe(1);
+    const renewed = await leases.heartbeat(
+      first!,
+      new Date(start.getTime() + 1000),
+      5000,
+    );
+    expect(renewed?.expiresAt).toEqual(new Date(start.getTime() + 6000));
+    await expect(
+      leases.heartbeat(
+        { ...first!, owner: "wrong-worker" },
+        new Date(start.getTime() + 1001),
+        5000,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      leases.acquireNext("worker-b", new Date(start.getTime() + 5001), 5000),
+    ).resolves.toBeUndefined();
+    const second = await leases.acquireNext(
+      "worker-b",
+      new Date(start.getTime() + 6001),
+      5000,
+    );
+    expect(second?.generation).toBe(2);
+    await expect(
+      leases.assertOwned(first!, new Date(start.getTime() + 6002)),
+    ).resolves.toBe(false);
+    await expect(
+      leases.heartbeat(first!, new Date(start.getTime() + 6002), 5000),
+    ).resolves.toBeUndefined();
+    await expect(
+      leases.assertOwned(second!, new Date(start.getTime() + 6002)),
+    ).resolves.toBe(true);
   });
 });
 

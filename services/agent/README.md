@@ -20,6 +20,8 @@ Phase 43 extends only supported workflow Tool input fields with strict `{ "fromS
 
 Phase 44 does not change the Agent contract. Recovery checkpoints, staleness, idempotency classification, ambiguity, result reconciliation, approval recovery, and the recovery endpoint are exclusively Gateway-owned. Agent cannot request replay, choose a recovery strategy, mark success/failure, set checkpoints, or resolve ambiguous provider outcomes.
 
+Phase 45 also leaves Agent contracts unchanged. The Agent proposes bounded plans only; explicit Gateway run authorization establishes worker eligibility, while leases, fencing generations, heartbeats, actor policy, and execution remain Gateway-owned.
+
 ## V1 — Complete
 
 Agent remains proposal-only and may select at most one of the 14 sanitized catalog tools per turn. Catalog entries contain only name, description, category, and safe input schema. JWTs, provider credentials/scopes, actor permissions, approval authority, risks, service tokens, and database details never enter the planner contract. Malformed or unknown Tool plans fail closed; Tool execution and approval remain Gateway/Tool Service responsibilities.

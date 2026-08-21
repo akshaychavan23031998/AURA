@@ -5,6 +5,7 @@ import {
   workflowStepDependencies,
   workflowSteps,
   workflowStepExecutions,
+  workflowPermissionGrants,
   workflows,
 } from "../db/schema.js";
 import type { WorkflowPlan, WorkflowStep } from "./workflow-plan.js";
@@ -160,6 +161,44 @@ export class WorkflowRepository {
     return owned === undefined
       ? undefined
       : ({ claimed: false, workflow: owned } as const);
+  }
+
+  public async requestExecutionOwned(
+    actorId: string,
+    workflowId: string,
+    permissions: readonly string[],
+    now: Date,
+  ) {
+    const workflow = await this.database.db.transaction(async (transaction) => {
+      const [updated] = await transaction
+        .update(workflows)
+        .set({ executionRequestedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(workflows.id, workflowId),
+            eq(workflows.actorId, actorId),
+            eq(workflows.status, "READY"),
+          ),
+        )
+        .returning();
+      if (updated === undefined) return undefined;
+      await transaction
+        .delete(workflowPermissionGrants)
+        .where(eq(workflowPermissionGrants.workflowId, workflowId));
+      const unique = [...new Set(permissions)].sort();
+      if (unique.length > 0)
+        await transaction
+          .insert(workflowPermissionGrants)
+          .values(unique.map((permission) => ({ workflowId, permission })));
+      return updated;
+    });
+    if (workflow !== undefined) return workflow;
+    const [owned] = await this.database.db
+      .select()
+      .from(workflows)
+      .where(and(eq(workflows.id, workflowId), eq(workflows.actorId, actorId)))
+      .limit(1);
+    return owned;
   }
 
   public claimNext(workflowId: string, now: Date) {

@@ -133,7 +133,7 @@ services:
       tools: { condition: service_healthy }
       agent: { condition: service_healthy }
       voice: { condition: service_healthy }
-    environment:
+    environment: &gateway-environment
       NODE_ENV: production
       GATEWAY_HOST: 0.0.0.0
       GATEWAY_PORT: 4000
@@ -184,6 +184,10 @@ services:
       MEMORY_SEARCH_MIN_SIMILARITY: ${MEMORY_SEARCH_MIN_SIMILARITY:-0.5}
       KNOWLEDGE_SEARCH_LIMIT: ${KNOWLEDGE_SEARCH_LIMIT:-5}
       KNOWLEDGE_SEARCH_MIN_SIMILARITY: ${KNOWLEDGE_SEARCH_MIN_SIMILARITY:-0.5}
+      WORKFLOW_WORKER_ENABLED: "false"
+      WORKFLOW_WORKER_POLL_MS: ${WORKFLOW_WORKER_POLL_MS:-1000}
+      WORKFLOW_WORKER_LEASE_MS: ${WORKFLOW_WORKER_LEASE_MS:-30000}
+      WORKFLOW_WORKER_HEARTBEAT_MS: ${WORKFLOW_WORKER_HEARTBEAT_MS:-10000}
     healthcheck:
       test:
         [
@@ -195,6 +199,19 @@ services:
       interval: 10s
       timeout: 3s
       retries: 15
+
+  gateway-worker:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: services/gateway/Dockerfile
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      tools: { condition: service_healthy }
+    environment:
+      <<: *gateway-environment
+      WORKFLOW_WORKER_ENABLED: "true"
+    command: ["node", "dist/workflow-worker.js"]
 
   web:
     <<: *service-defaults

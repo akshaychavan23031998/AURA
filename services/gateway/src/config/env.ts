@@ -123,6 +123,12 @@ const environmentSchema = z
     MEMORY_SEARCH_MIN_SIMILARITY: z.coerce.number().min(-1).max(1),
     KNOWLEDGE_SEARCH_LIMIT: z.coerce.number().int().min(1).max(10),
     KNOWLEDGE_SEARCH_MIN_SIMILARITY: z.coerce.number().min(-1).max(1),
+    WORKFLOW_WORKER_ENABLED: z
+      .enum(["true", "false"])
+      .transform((value) => value === "true"),
+    WORKFLOW_WORKER_POLL_MS: z.coerce.number().int().min(100).max(60_000),
+    WORKFLOW_WORKER_LEASE_MS: z.coerce.number().int().min(5_000).max(600_000),
+    WORKFLOW_WORKER_HEARTBEAT_MS: z.coerce.number().int().min(500).max(300_000),
     GOOGLE_PROVIDER_TOKEN_ENCRYPTION_KEY: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z
@@ -140,6 +146,15 @@ const environmentSchema = z
     ...databaseEnvironmentSchema.shape,
   })
   .superRefine((value, context) => {
+    if (
+      value.WORKFLOW_WORKER_HEARTBEAT_MS * 2 >=
+      value.WORKFLOW_WORKER_LEASE_MS
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["WORKFLOW_WORKER_HEARTBEAT_MS"],
+        message: "Worker heartbeat must be less than half the lease duration",
+      });
     const trustedProxies = value.GATEWAY_TRUST_PROXY.split(",").map((entry) =>
       entry.trim(),
     );
