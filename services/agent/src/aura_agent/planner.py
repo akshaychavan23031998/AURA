@@ -26,6 +26,9 @@ from aura_agent.contracts import (
     RespondPlan,
     ToolPlan,
     ToolProposal,
+    WorkflowKnowledgeSearchStep,
+    WorkflowPlan,
+    WorkflowToolStep,
 )
 from aura_agent.inference import ChatMessage, InferenceClient
 from aura_agent.prompt import SYSTEM_PROMPT, SYSTEM_PROMPT_VERSION
@@ -179,6 +182,33 @@ class DeterministicDevelopmentPlanner:
 
         normalized = request.message.strip()
         lowered = normalized.casefold()
+        if lowered == (
+            "check my next calendar meeting and then search my saved project notes "
+            "for it."
+        ):
+            return AgentResult(
+                intent="propose_workflow",
+                response="I can propose a two-step workflow for your review.",
+                plan=WorkflowPlan(
+                    goal="Review the next meeting and relevant saved project notes",
+                    steps=[
+                        WorkflowToolStep(
+                            id="next_meeting",
+                            kind="tool",
+                            dependsOn=[],
+                            tool=ToolProposal(
+                                name="calendar.events.list", input={"maxResults": 1}
+                            ),
+                        ),
+                        WorkflowKnowledgeSearchStep(
+                            id="project_notes",
+                            kind="knowledge_search",
+                            dependsOn=["next_meeting"],
+                            query="project meeting notes",
+                        ),
+                    ],
+                ),
+            )
         knowledge_plan = _parse_deterministic_knowledge(normalized)
         if knowledge_plan is not None:
             return AgentResult(
@@ -605,6 +635,21 @@ class _KnowledgeSearchOutput(BaseModel):
     plan: KnowledgeSearchPlan
 
 
+class _WorkflowOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["propose_workflow"]
+    response: str = Field(min_length=1, max_length=8192)
+    plan: WorkflowPlan
+
+    @model_validator(mode="after")
+    def validate_workflow_tools(self) -> "_WorkflowOutput":
+        for step in self.plan.steps:
+            if isinstance(step, WorkflowToolStep):
+                _CatalogTool.model_validate(step.tool.model_dump())
+        return self
+
+
 class _GroundedRespondOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -622,6 +667,7 @@ InitialOutput = (
     | _MemoryCreateOutput
     | _MemoryDeleteOutput
     | _KnowledgeSearchOutput
+    | _WorkflowOutput
 )
 
 
@@ -762,6 +808,7 @@ def _initial_output_schema() -> dict[str, object]:
             _memory_output_schema("memory_create"),
             _memory_output_schema("memory_delete"),
             _knowledge_search_output_schema(),
+            _workflow_output_schema(),
         ]
     }
 
@@ -811,6 +858,77 @@ def _knowledge_search_output_schema() -> dict[str, object]:
                     "query": {"type": "string", "minLength": 1, "maxLength": 1024},
                 },
                 "required": ["type", "query"],
+            },
+        },
+        "required": ["intent", "response", "plan"],
+    }
+
+
+def _workflow_output_schema() -> dict[str, object]:
+    step_id = {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"}
+    dependencies = {"type": "array", "maxItems": 7, "items": step_id}
+    common: dict[str, object] = {
+        "id": step_id,
+        "dependsOn": dependencies,
+    }
+    steps = [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                **common,
+                "kind": {"const": "tool"},
+                "tool": {"oneOf": [_tool_schema(item) for item in AGENT_TOOL_CATALOG]},
+            },
+            "required": ["id", "kind", "dependsOn", "tool"],
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                **common,
+                "kind": {"const": "memory_read"},
+                "memoryKind": {
+                    "type": ["string", "null"],
+                    "enum": ["preference", "fact", "instruction", "note", None],
+                },
+            },
+            "required": ["id", "kind", "dependsOn", "memoryKind"],
+        },
+    ]
+    for kind in ("memory_search", "knowledge_search"):
+        steps.append(
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    **common,
+                    "kind": {"const": kind},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 1024},
+                },
+                "required": ["id", "kind", "dependsOn", "query"],
+            }
+        )
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "intent": {"const": "propose_workflow"},
+            "response": {"type": "string", "minLength": 1},
+            "plan": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "type": {"const": "workflow"},
+                    "goal": {"type": "string", "minLength": 1, "maxLength": 1024},
+                    "steps": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "items": {"oneOf": steps},
+                    },
+                },
+                "required": ["type", "goal", "steps"],
             },
         },
         "required": ["intent", "response", "plan"],
@@ -885,6 +1003,7 @@ def _parse_initial_output(value: object) -> InitialOutput:
         _MemoryCreateOutput,
         _MemoryDeleteOutput,
         _KnowledgeSearchOutput,
+        _WorkflowOutput,
     ):
         try:
             return output_type.model_validate(value)

@@ -69,6 +69,86 @@ function dependencies(agentResults: readonly AgentResult[] = [finalPlan]) {
 }
 
 describe("AgentToolOrchestrator", () => {
+  it("returns a normalized workflow proposal with zero side effects", async () => {
+    const workflowPlan: AgentResult = {
+      requestId,
+      intent: "propose_workflow",
+      response: "I can propose that workflow.",
+      plan: {
+        type: "workflow",
+        goal: "Prepare for the meeting",
+        steps: [
+          {
+            id: "notes",
+            kind: "knowledge_search",
+            dependsOn: ["meeting"],
+            query: "project notes",
+          },
+          {
+            id: "meeting",
+            kind: "tool",
+            dependsOn: [],
+            tool: {
+              name: "calendar.events.list",
+              input: { maxResults: 1 },
+            },
+          },
+        ],
+      },
+    };
+    const respond = vi
+      .fn<AgentServiceClient["respond"]>()
+      .mockResolvedValue(workflowPlan);
+    const prepare = vi.fn<NonNullable<ToolServiceClient["prepare"]>>();
+    const execute = vi.fn<ToolServiceClient["execute"]>();
+    const createApproval = vi.fn();
+    const memories = memoryStore();
+    const searchOwned = vi.fn();
+    const orchestrator = new AgentToolOrchestrator({
+      agentClient: { respond },
+      toolClient: { prepare, execute },
+      approvals: { create: createApproval },
+      memories,
+      knowledge: { searchOwned },
+    });
+
+    await expect(
+      orchestrator.run(request, requestId, authorizationContext),
+    ).resolves.toEqual({
+      status: "workflow_proposed",
+      response: { text: "I can propose that workflow." },
+      workflow: {
+        goal: "Prepare for the meeting",
+        steps: [
+          {
+            id: "meeting",
+            kind: "tool",
+            dependsOn: [],
+            tool: {
+              name: "calendar.events.list",
+              input: { maxResults: 1 },
+            },
+          },
+          {
+            id: "notes",
+            kind: "knowledge_search",
+            dependsOn: ["meeting"],
+            query: "project notes",
+          },
+        ],
+      },
+      steps: 1,
+    });
+    expect(respond).toHaveBeenCalledOnce();
+    expect(prepare).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(createApproval).not.toHaveBeenCalled();
+    expect(memories.create).not.toHaveBeenCalled();
+    expect(memories.deleteOwned).not.toHaveBeenCalled();
+    expect(memories.listOwned).not.toHaveBeenCalled();
+    expect(searchOwned).not.toHaveBeenCalled();
+  });
+
   it("persists and suspends an authoritative REQUIRED proposal without executing", async () => {
     const respond = vi
       .fn<AgentServiceClient["respond"]>()

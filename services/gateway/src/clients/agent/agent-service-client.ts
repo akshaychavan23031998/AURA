@@ -6,6 +6,7 @@ import type { GatewayConfig } from "../../config/index.js";
 import { AppError } from "../../errors/app-error.js";
 import { withTimeout } from "../abort-signal.js";
 import { isAbortError } from "../../voice/cancellation.js";
+import { workflowPlanSchema } from "../../workflows/workflow-plan.js";
 
 export const INTERNAL_SERVICE_ID_HEADER = "x-aura-service-id";
 export const INTERNAL_SERVICE_TOKEN_HEADER = "x-aura-service-token";
@@ -63,6 +64,7 @@ const agentResponseSchema = z
             .refine((value) => !hasUnsafeControl(value)),
         })
         .strict(),
+      workflowPlanSchema,
     ]),
     citationIds: z
       .array(

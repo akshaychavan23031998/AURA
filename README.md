@@ -6,6 +6,12 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## Current status
 
+## V2 — Started
+
+Phase 40 establishes proposal-only workflow planning. Agent may propose one strict workflow with a bounded goal and at most eight ordering-only steps drawn from existing Tool, Memory read/search, and Knowledge search capabilities. Gateway independently validates the structure and dependency DAG, produces a deterministic topological proposal, and executes zero steps.
+
+Workflow proposals contain no actor, permission, approval, provider, retry, timeout, idempotency, runtime status, result, or credential authority. There is no workflow persistence, execution API, result substitution, template language, scheduler, worker, retry engine, or UI. Existing Tool approvals remain mandatory in any future runtime; a workflow proposal can never satisfy approval.
+
 ## V1.5 — Complete
 
 Phase 39 formally closes V1.5. AURA now provides explicit actor-owned Memory CRUD and Agent actions, semantic Memory retrieval, manual and TXT/PDF/DOCX Knowledge ingestion, deterministic transactional chunking, local 384-dimensional pgvector indexing, explicit semantic search, grounded Agent answers with Gateway-trusted citations, and authenticated Memory/Knowledge Web management.
@@ -113,7 +119,7 @@ pnpm build
 - **V0:** Listen → Understand → Think → Speak
 - **V1:** Tools and actions
 - **V1.5:** Explicit Memory, bounded Knowledge/RAG, and trusted citations — complete
-- **V2:** Autonomous multi-step workflows — not started
+- **V2:** Autonomous multi-step workflows — started with proposal-only planning
 
 V2 begins only after this checkpoint. It may introduce a strict workflow plan contract, durable workflow and step state, dependency ordering, pause/resume and recovery, idempotency, workflow-scoped approvals, bounded autonomy policy, and workflow UI. None of those capabilities exists in V1.5.
 

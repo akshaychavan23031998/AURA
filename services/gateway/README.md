@@ -1,8 +1,14 @@
 # Gateway Service
 
+## V2 Phase 40 workflow proposals
+
+Gateway accepts one new strict Agent `workflow` proposal containing a bounded goal and one to eight `tool`, `memory_read`, `memory_search`, or `knowledge_search` steps. It independently validates step IDs, bounds, dependency existence, duplicate/self dependencies, and cycles, then returns a deterministic topologically ordered proposal.
+
+This path performs zero Tool calls, approvals, provider resolution, Memory operations, Knowledge searches, or database writes. Agent cannot provide actor, permissions, approval proof, provider credentials, retry/timeout/idempotency controls, runtime state, results, or timestamps. Dependencies represent ordering only; there is no result substitution, persistence, execution API, scheduler, worker, retry engine, or workflow UI. Existing Tool approval rules remain unchanged.
+
 ## V1.5 — Complete
 
-Gateway now owns the complete explicit Memory and bounded Knowledge/RAG authority path: authenticated actor derivation, independent permissions, PostgreSQL ownership/lifecycle, local embedding access, owner-scoped retrieval, grounded continuation, and trusted citation resolution. Public clients and Agent cannot choose actors, permissions, vectors, models, thresholds, lifecycle, or citation metadata. V2 workflow persistence and multi-step execution are not implemented.
+Gateway now owns the complete explicit Memory and bounded Knowledge/RAG authority path: authenticated actor derivation, independent permissions, PostgreSQL ownership/lifecycle, local embedding access, owner-scoped retrieval, grounded continuation, and trusted citation resolution. Public clients and Agent cannot choose actors, permissions, vectors, models, thresholds, lifecycle, or citation metadata. V2 workflow persistence and multi-step execution remain unimplemented; Phase 40 adds proposals only.
 
 ## V1 — Complete
 

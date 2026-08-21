@@ -181,6 +181,57 @@ describe("Agent Service client", () => {
     expect(body).not.toHaveProperty("similarity");
   });
 
+  it("accepts only a strict authority-free workflow proposal", async () => {
+    const workflow = {
+      requestId: "request-workflow",
+      intent: "propose_workflow",
+      response: "I can propose that workflow.",
+      plan: {
+        type: "workflow",
+        goal: "Prepare for the meeting",
+        steps: [
+          {
+            id: "meeting",
+            kind: "tool",
+            dependsOn: [],
+            tool: { name: "calendar.events.list", input: { maxResults: 1 } },
+          },
+        ],
+      },
+    };
+    const accepted = createAgentServiceClient(
+      testConfig,
+      vi.fn(() => Promise.resolve(Response.json(workflow))),
+    );
+    await expect(
+      accepted.respond({ message: "plan it" }, "request-workflow"),
+    ).resolves.toMatchObject({ plan: { type: "workflow" } });
+
+    for (const injected of [
+      { actorId: "attacker" },
+      { permissions: ["admin"] },
+      { status: "RUNNING" },
+      { retry: 3 },
+      { idempotencyKey: "forged" },
+      { providerToken: "secret" },
+    ]) {
+      const rejected = createAgentServiceClient(
+        testConfig,
+        vi.fn(() =>
+          Promise.resolve(
+            Response.json({
+              ...workflow,
+              plan: { ...workflow.plan, ...injected },
+            }),
+          ),
+        ),
+      );
+      await expect(
+        rejected.respond({ message: "unsafe" }, "request-workflow"),
+      ).rejects.toMatchObject({ code: "UPSTREAM_PROTOCOL_ERROR" });
+    }
+  });
+
   it.each([
     { type: "knowledge_search", query: "deployment", actorId: "attacker" },
     { type: "knowledge_search", query: "deployment", limit: 10 },

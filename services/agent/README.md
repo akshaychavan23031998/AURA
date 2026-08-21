@@ -4,7 +4,13 @@
 
 All initial plan variants are strict, extra-field-forbidden members of the single-action union. Memory and retrieved Knowledge are untrusted user-authored context, never permission or instruction authority. Tool, memory, and knowledge continuations must end in `respond`; grounded continuation cannot recursively retrieve, mutate state, approve, start OAuth, or forge Gateway citation metadata.
 
-V1.5 closes with the exact initial union `respond | tool | memory_read | memory_search | memory_create | memory_delete | knowledge_search`. There is no workflow, step, schedule, loop, or other V2 plan type.
+At the V1.5 closure checkpoint, the exact initial union was `respond | tool | memory_read | memory_search | memory_create | memory_delete | knowledge_search`; it contained no V2 plan type. Phase 40 extends that sealed baseline only as described below.
+
+## V2 Phase 40 workflow proposals
+
+The initial union now adds exactly one `workflow` variant. A proposal has a bounded goal and one to eight strict ordering-only steps: `tool`, `memory_read`, `memory_search`, or `knowledge_search`. The deterministic planner recognizes one narrow multi-step development phrase; the LLM schema exposes the same bounded structure. Simple requests retain their existing single-action plans, and every continuation remains `respond`-only.
+
+Workflow plans cannot contain actors, permissions, approval state, provider credentials, retry/timeout/idempotency controls, runtime state, results, or timestamps. Retrieved content cannot authorize a workflow. Agent proposes structure only and has no persistence or execution authority.
 
 ## V1 — Complete
 

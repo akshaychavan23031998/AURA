@@ -23,6 +23,10 @@ import type {
   KnowledgeSearchResultView,
   KnowledgeStore,
 } from "../knowledge/knowledge-service.js";
+import {
+  normalizeWorkflowPlan,
+  type WorkflowPlan,
+} from "../workflows/workflow-plan.js";
 
 export interface KnowledgeCitation {
   readonly id: string;
@@ -54,8 +58,16 @@ export interface ApprovalRequiredAgentRunResult {
     readonly expiresAt: string;
   };
 }
+export interface WorkflowProposedAgentRunResult {
+  readonly status: "workflow_proposed";
+  readonly response: { readonly text: string };
+  readonly workflow: Omit<WorkflowPlan, "type">;
+  readonly steps: 1;
+}
 export type AgentRunResult =
-  CompletedAgentRunResult | ApprovalRequiredAgentRunResult;
+  | CompletedAgentRunResult
+  | ApprovalRequiredAgentRunResult
+  | WorkflowProposedAgentRunResult;
 export interface OrchestrationLogger {
   info(bindings: object, message: string): void;
   error(bindings: object, message: string): void;
@@ -87,6 +99,10 @@ type KnowledgePlan = Extract<
   AgentResult["plan"],
   { readonly type: "knowledge_search" }
 >;
+type WorkflowAgentPlan = Extract<
+  AgentResult["plan"],
+  { readonly type: "workflow" }
+>;
 
 export const KNOWLEDGE_RAG_CONTEXT_MAX_CHARACTERS = 16_000;
 
@@ -109,6 +125,13 @@ export class AgentToolOrchestrator {
       this.logCompleted(requestId, "respond", 1, startedAt);
       return completed(initial.response, 1);
     }
+    if (initial.plan.type === "workflow")
+      return this.proposeWorkflow(
+        initial.plan,
+        initial.response,
+        requestId,
+        startedAt,
+      );
     if (initial.plan.type === "knowledge_search")
       return this.executeKnowledge(
         request,
@@ -135,6 +158,22 @@ export class AgentToolOrchestrator {
       startedAt,
       control,
     );
+  }
+
+  private proposeWorkflow(
+    plan: WorkflowAgentPlan,
+    response: string,
+    requestId: string,
+    startedAt: number,
+  ): WorkflowProposedAgentRunResult {
+    const normalized = normalizeWorkflowPlan(plan);
+    this.logCompleted(requestId, "workflow", 1, startedAt);
+    return {
+      status: "workflow_proposed",
+      response: { text: response },
+      workflow: { goal: normalized.goal, steps: normalized.steps },
+      steps: 1,
+    };
   }
 
   private async executeKnowledge(
@@ -518,7 +557,8 @@ export class AgentToolOrchestrator {
       | "memory_search"
       | "memory_create"
       | "memory_delete"
-      | "knowledge_search",
+      | "knowledge_search"
+      | "workflow",
     step: 1 | 2,
     startedAt: number,
     toolName?: string,

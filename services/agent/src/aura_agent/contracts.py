@@ -181,6 +181,110 @@ class KnowledgeSearchPlan(BaseModel):
     ]
 
 
+WorkflowStepId = Annotated[
+    str, StringConstraints(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$", max_length=64)
+]
+WorkflowDependencies = Annotated[list[WorkflowStepId], Field(max_length=7)]
+
+
+class WorkflowToolStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: WorkflowStepId
+    kind: Literal["tool"]
+    depends_on: WorkflowDependencies = Field(alias="dependsOn")
+    tool: ToolProposal
+
+
+class WorkflowMemoryReadStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: WorkflowStepId
+    kind: Literal["memory_read"]
+    depends_on: WorkflowDependencies = Field(alias="dependsOn")
+    memory_kind: MemoryKind | None = Field(default=None, alias="memoryKind")
+
+
+class WorkflowMemorySearchStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: WorkflowStepId
+    kind: Literal["memory_search"]
+    depends_on: WorkflowDependencies = Field(alias="dependsOn")
+    query: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1024)
+    ]
+
+
+class WorkflowKnowledgeSearchStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: WorkflowStepId
+    kind: Literal["knowledge_search"]
+    depends_on: WorkflowDependencies = Field(alias="dependsOn")
+    query: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=1,
+            max_length=1024,
+            pattern=r"^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]+$",
+        ),
+    ]
+
+
+WorkflowStep = Annotated[
+    WorkflowToolStep
+    | WorkflowMemoryReadStep
+    | WorkflowMemorySearchStep
+    | WorkflowKnowledgeSearchStep,
+    Field(discriminator="kind"),
+]
+
+
+class WorkflowPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["workflow"] = "workflow"
+    goal: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=1,
+            max_length=1024,
+            pattern=r"^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]+$",
+        ),
+    ]
+    steps: Annotated[list[WorkflowStep], Field(min_length=1, max_length=8)]
+
+    @model_validator(mode="after")
+    def validate_dag(self) -> "WorkflowPlan":
+        identifiers = [step.id for step in self.steps]
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError("Duplicate workflow step ID")
+        known = set(identifiers)
+        dependencies: dict[str, set[str]] = {}
+        for step in self.steps:
+            if len(set(step.depends_on)) != len(step.depends_on):
+                raise ValueError("Duplicate workflow dependency")
+            if step.id in step.depends_on:
+                raise ValueError("Workflow step cannot depend on itself")
+            if any(item not in known for item in step.depends_on):
+                raise ValueError("Workflow dependency is missing")
+            dependencies[step.id] = set(step.depends_on)
+        ready = [
+            identifier for identifier in identifiers if not dependencies[identifier]
+        ]
+        visited: set[str] = set()
+        while ready:
+            identifier = ready.pop(0)
+            if identifier in visited:
+                continue
+            visited.add(identifier)
+            for candidate in identifiers:
+                dependencies[candidate].discard(identifier)
+                if not dependencies[candidate] and candidate not in visited:
+                    ready.append(candidate)
+        if len(visited) != len(identifiers):
+            raise ValueError("Workflow contains a cycle")
+        return self
+
+
 Plan = Annotated[
     RespondPlan
     | ToolPlan
@@ -188,7 +292,8 @@ Plan = Annotated[
     | MemorySearchPlan
     | MemoryCreatePlan
     | MemoryDeletePlan
-    | KnowledgeSearchPlan,
+    | KnowledgeSearchPlan
+    | WorkflowPlan,
     Field(discriminator="type"),
 ]
 

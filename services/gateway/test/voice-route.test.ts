@@ -106,6 +106,50 @@ describe("POST /api/v1/voice/run", () => {
     expect(deps.synthesize).toHaveBeenCalledWith("AURA", "en", "voice-route-1");
     await app.close();
   });
+  it("speaks proposal text without giving Voice workflow execution authority", async () => {
+    const deps = dependencies();
+    deps.respond.mockResolvedValueOnce({
+      requestId: "workflow-voice",
+      intent: "propose_workflow",
+      response: "I prepared a workflow proposal for review.",
+      plan: {
+        type: "workflow",
+        goal: "Review the meeting",
+        steps: [
+          {
+            id: "meeting",
+            kind: "tool",
+            dependsOn: [],
+            tool: { name: "calendar.events.list", input: { maxResults: 1 } },
+          },
+        ],
+      },
+    });
+    const app = await createApp({
+      config: testConfig,
+      ...deps,
+      tokenVerifier: testTokenVerifier,
+    });
+    const data = multipart(Buffer.from("RIFFaudio"));
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/voice/run",
+      headers: { ...testAuthorizationHeader, "content-type": data.contentType },
+      payload: data.body,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      responseText: "I prepared a workflow proposal for review.",
+    });
+    expect(deps.synthesize).toHaveBeenCalledWith(
+      "I prepared a workflow proposal for review.",
+      "en",
+      expect.any(String),
+    );
+    expect(deps.execute).not.toHaveBeenCalled();
+    expect(deps.respond).toHaveBeenCalledOnce();
+    await app.close();
+  });
   it("does not rerun the Agent when synthesis fails", async () => {
     const deps = dependencies();
     deps.synthesize.mockRejectedValueOnce(new Error("tts unavailable"));
