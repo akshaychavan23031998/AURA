@@ -6,13 +6,17 @@ AURA is a production-minded platform for multilingual voice interaction, self-ho
 
 ## Current status
 
-## V1.5 — Started
+## V1.5 — Complete
+
+Phase 39 formally closes V1.5. AURA now provides explicit actor-owned Memory CRUD and Agent actions, semantic Memory retrieval, manual and TXT/PDF/DOCX Knowledge ingestion, deterministic transactional chunking, local 384-dimensional pgvector indexing, explicit semantic search, grounded Agent answers with Gateway-trusted citations, and authenticated Memory/Knowledge Web management.
+
+The completed milestone remains deliberately bounded: persistence and retrieval are explicit, permissions are exact and independent, ownership and `ACTIVE` lifecycle filters are enforced in PostgreSQL, retrieved content remains untrusted data, mutations are not replayed, and private content stays outside logs and persistent browser storage.
 
 ### Phase 38 security hardening
 
 The V1.5 release candidate preserves direct SQL ownership and `ACTIVE` lifecycle predicates for Memory and Knowledge, independent `memory.read`/`memory.write` and `knowledge.read`/`knowledge.write` permissions, and Gateway-only persistence, retrieval, and citation authority. Retrieved and uploaded content remains untrusted data: it cannot authorize Tools, approvals, OAuth, recursive retrieval, or mutations. Embedding responses are streamed under a hard body bound, and the fixed embedding base URL rejects credentials, paths, queries, and fragments.
 
-File ingestion additionally rejects ambiguous duplicate DOCX package parts, macro-enabled Word content types, external root document relationships, unsafe XML declarations, traversal, encryption, and archive resource abuse. Sensitive content, queries, vectors, grounded answers, and upload bodies remain outside logs and persistent browser storage. Phase 38 adds no automatic extraction, autonomous behavior, new Tool, or provider, and does not mark V1.5 complete.
+File ingestion additionally rejects ambiguous duplicate DOCX package parts, macro-enabled Word content types, external root document relationships, unsafe XML declarations, traversal, encryption, and archive resource abuse. Sensitive content, queries, vectors, grounded answers, and upload bodies remain outside logs and persistent browser storage. Phase 38 added no automatic extraction, autonomous behavior, new Tool, or provider.
 
 Phase 36 adds an authenticated browser workspace for explicit Memory and Knowledge management. Users can list, create, filter, inspect, and deliberately confirm deletion of owned memories/documents; ingest manual plaintext; and run explicit semantic knowledge searches. Forms submit only the public contracts, block duplicate mutations, and keep drafts, selected files, stored content, and queries in transient component state rather than browser persistence or Redux.
 
@@ -48,11 +52,11 @@ Phase 28 formally closes V1. The sealed production registry contains exactly 14 
 
 Google credentials stay encrypted behind Gateway. Capability status and explicit re-consent cover Calendar, Gmail, and Contacts while preserving stable-subject binding and AURA-session independence. Provider failure, reconnect, browser refresh, WebSocket reconnect, voice input, and consumed approval state never replay a Tool action.
 
-V1 intentionally excluded memory. V1.5 now includes explicit memory persistence/actions, semantic memory retrieval, manual text knowledge ingestion, knowledge chunk embedding persistence, and an explicit authenticated semantic knowledge-search API. Agent RAG, citations, multi-step planning, autonomous or scheduled workflows, Drive/Tasks, arbitrary HTTP, browser control, shell/filesystem access, and production deployment execution remain excluded.
+V1 intentionally excluded memory. The completed V1.5 milestone adds explicit and semantic memory, bounded knowledge ingestion and indexing, semantic knowledge retrieval, grounded Agent answers, trusted citations, and authenticated management UI without changing the sealed V1 Tool surface. Multi-step planning, autonomous or scheduled workflows, Drive/Tasks, arbitrary HTTP, browser control, shell/filesystem access, and production deployment execution remain excluded.
 
 **Phase 17 — production deployment foundation.** AURA now has non-root production images, an explicit migration job, a private service network, and a Caddy HTTPS/WSS edge for a repeatable production-like stack. Models and secrets remain external to images, and llama.cpp remains a separately managed inference runtime.
 
-Implemented application capabilities include Google OIDC account entry, PostgreSQL sessions and refresh rotation, authenticated realtime voice, VAD and safe interruption, local Whisper/Piper speech, self-hosted Qwen through llama.cpp, and server-authoritative Tool execution. Kubernetes, RAG, memory, new tools, and autonomous workflows remain outside the current scope.
+Implemented application capabilities include Google OIDC account entry, PostgreSQL sessions and refresh rotation, authenticated realtime voice, VAD and safe interruption, local Whisper/Piper speech, self-hosted Qwen through llama.cpp, server-authoritative Tool execution, explicit Memory, and bounded Knowledge/RAG. Kubernetes execution, new tools, and autonomous workflows remain outside the current scope.
 
 ## Architecture
 
@@ -108,7 +112,10 @@ pnpm build
 
 - **V0:** Listen → Understand → Think → Speak
 - **V1:** Tools and actions
-- **Later:** Memory, RAG, and explicitly bounded workflows
+- **V1.5:** Explicit Memory, bounded Knowledge/RAG, and trusted citations — complete
+- **V2:** Autonomous multi-step workflows — not started
+
+V2 begins only after this checkpoint. It may introduce a strict workflow plan contract, durable workflow and step state, dependency ordering, pause/resume and recovery, idempotency, workflow-scoped approvals, bounded autonomy policy, and workflow UI. None of those capabilities exists in V1.5.
 
 V1 registers three local utilities, five Google Calendar tools, four Gmail tools, and two read-only Contacts tools through the sealed Tool Registry and centralized policy pipeline. Gmail list/get and Contacts list/get are read-only; Gmail send/reply and Calendar mutations require explicit approval. Drive and other SaaS integrations remain unimplemented.
 

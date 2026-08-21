@@ -1,5 +1,9 @@
 # Gateway Service
 
+## V1.5 — Complete
+
+Gateway now owns the complete explicit Memory and bounded Knowledge/RAG authority path: authenticated actor derivation, independent permissions, PostgreSQL ownership/lifecycle, local embedding access, owner-scoped retrieval, grounded continuation, and trusted citation resolution. Public clients and Agent cannot choose actors, permissions, vectors, models, thresholds, lifecycle, or citation metadata. V2 workflow persistence and multi-step execution are not implemented.
+
 ## V1 — Complete
 
 Gateway is the sole public orchestration and identity boundary for all 14 V1 tools. It derives actor permissions, resolves encrypted provider credentials, persists/consumes exact approvals, propagates request IDs, and never retries unsafe Tool writes. Agent, Voice, Web, and public request bodies cannot supply trusted actor, permission, OAuth scope, provider token, or approval proof state.

@@ -2,6 +2,8 @@
 
 ## V1.5 data management
 
+V1.5 is complete. The authenticated application provides Conversation/Voice, Memory, Knowledge, and Connected Accounts without giving the browser ownership, permission, embedding, retrieval-policy, citation, or provider authority. V2 workflow management is not implemented.
+
 Authenticated users have responsive Conversation, Memory, Knowledge, and Connected Accounts surfaces. Memory supports explicit kind/content creation, bounded listing/filtering, and two-step deletion. Knowledge supports metadata listing, manual plaintext ingestion, an explicit TXT/PDF/DOCX upload form, single-document viewing, two-step deletion, and deliberate semantic search with a truthful no-match state. The browser does not parse, chunk, hash, embed, rank, or select search policy.
 
 All requests reuse `AuthenticatedFetch`: access JWTs stay memory-only, safe GET requests may use the existing refresh-and-replay behavior, and POST/DELETE mutations are never automatically replayed. Memory/document contents, drafts, queries, and results remain in React component memory and are not written to localStorage, sessionStorage, IndexedDB, cookies, URLs, persistent Redux, analytics, or console logs.

@@ -4,6 +4,8 @@
 
 All initial plan variants are strict, extra-field-forbidden members of the single-action union. Memory and retrieved Knowledge are untrusted user-authored context, never permission or instruction authority. Tool, memory, and knowledge continuations must end in `respond`; grounded continuation cannot recursively retrieve, mutate state, approve, start OAuth, or forge Gateway citation metadata.
 
+V1.5 closes with the exact initial union `respond | tool | memory_read | memory_search | memory_create | memory_delete | knowledge_search`. There is no workflow, step, schedule, loop, or other V2 plan type.
+
 ## V1 — Complete
 
 Agent remains proposal-only and may select at most one of the 14 sanitized catalog tools per turn. Catalog entries contain only name, description, category, and safe input schema. JWTs, provider credentials/scopes, actor permissions, approval authority, risks, service tokens, and database details never enter the planner contract. Malformed or unknown Tool plans fail closed; Tool execution and approval remain Gateway/Tool Service responsibilities.
@@ -21,7 +23,7 @@ The catalog permits the three local tools, five Calendar tools, and Gmail list/g
 - `deterministic` is the safe default for tests and development without model weights.
 - `llm` uses `SelfHostedLlmPlanner` and fails startup if its configured local runtime is unavailable. It never silently falls back.
 
-Both modes return the existing strict `RespondPlan` or `ToolPlan` contract. Model output is untrusted: llama.cpp constrains JSON generation, then Pydantic rejects malformed structures, extra fields, privileged metadata, and tools outside the sanitized catalog.
+Both modes return the same strict single-action discriminated union. Model output is untrusted: llama.cpp constrains JSON generation, then Pydantic rejects malformed structures, extra fields, privileged metadata, and tools outside the sanitized catalog.
 
 ## Local model
 

@@ -14,7 +14,13 @@ Phase 27 makes Google authorization status visible without conflating it with AU
 
 V1 closes with a sealed 14-tool registry, exact non-wildcard permissions, schema-validated inputs and outputs, one Tool proposal per Agent turn, Gateway-owned orchestration, and Tool-Service-owned policy. Nine read/local tools require no approval; Calendar create/update/delete and Gmail send/reply require persistent exact-action approval and permit at most one provider dispatch. Request IDs correlate browser or voice ingress through Agent, Tool Service, provider adapters, and continuation without becoming authorization material.
 
-V1.5/V2 capabilities are absent by design: no memory, RAG, embeddings/vector database, document ingestion, multi-step planning, durable autonomous workflows, schedules, arbitrary network/browser execution, shell/filesystem tools, Drive, or Tasks.
+V2 capabilities remain absent by design: no multi-step planning, durable autonomous workflows, schedules, arbitrary network/browser execution, shell/filesystem tools, Drive, or Tasks.
+
+### V1.5 — Complete
+
+V1.5 closes with explicit PostgreSQL-backed user Memory, local pgvector semantic Memory retrieval, bounded manual/TXT/PDF/DOCX Knowledge ingestion, deterministic transactional chunks, best-effort local embeddings with operator backfill, owner-scoped semantic Knowledge retrieval, grounded Agent continuation, Gateway-trusted response-local citations, and authenticated Web management. Memory and Knowledge permissions remain independent, ownership and soft-delete lifecycle are constrained in SQL, and untrusted stored/retrieved content never becomes action or authorization authority.
+
+The completed boundary excludes automatic memory extraction or personalization, transcript ingestion, OCR, URL/Drive/attachment ingestion, hybrid search or reranking, background autonomous indexing, multi-step workflows, scheduling, and autonomous actions.
 
 - Phase 1 monorepo and web foundation
 - Phase 2 Fastify Gateway runtime with validated configuration, operational endpoints, request correlation, structured logging, security headers, stable external errors, and graceful shutdown
@@ -35,7 +41,7 @@ V1.5/V2 capabilities are absent by design: no memory, RAG, embeddings/vector dat
 
 ### Planned
 
-True streaming STT/TTS, partial transcripts, full-duplex overlap, knowledge/RAG, memory, analytics, additional credential providers, non-identity domain persistence, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability.
+True streaming STT/TTS, partial transcripts, full-duplex overlap, analytics, additional credential providers, external tool integrations, and event infrastructure remain architectural direction rather than implemented capability. Memory and bounded Knowledge/RAG are implemented through V1.5.
 
 ### Safe interruption boundary
 
@@ -304,6 +310,10 @@ Extraction precedes persistence, so invalid input creates no document. Valid ext
 The release-candidate audit confirms ownership and lifecycle filtering inside Memory/Knowledge SQL queries, exact independent permissions, final-response-only continuation, Gateway-derived response-local citations, non-replayable browser mutations, and inert retained rows after soft deletion. Model, vector, actor, threshold, lifecycle, permission, and citation metadata remain server-controlled.
 
 Hardening closes three concrete boundary gaps: every Agent plan variant now rejects unknown fields; embedding response streams stop at the configured body ceiling instead of buffering an unbounded chunked response; and DOCX validation rejects duplicate critical package entries, macro-enabled content types, external root document relationships, and unsafe declarations. Retrieved and uploaded content remains untrusted evidence, React renders it as text, and sensitive content/query/vector/response values remain outside logs and browser persistence.
+
+### V2 boundary
+
+V2 is the next milestone and is not implemented by V1.5. A future phase may define a strict workflow plan contract, persisted workflow/step state, dependency-aware execution, pause/resume and recovery, idempotency, workflow approvals, bounded autonomy policy, and management UI. Until then, Agent planning remains one action per turn with no workflow type, scheduler, autonomous loop, or durable multi-step executor.
 
 The responsive product navigation keeps Voice and Google capability management intact. Citation presentation consumes only Gateway-validated structured metadata and never parses answer text for source authority. Contents, drafts, queries, and results are not placed in persistent browser storage, URLs, analytics, or logs. No backend schema or authority boundary changes in this phase.
 
