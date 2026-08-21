@@ -110,4 +110,138 @@ describe("workflow plan", () => {
   ])("rejects runtime and authority injection", (plan) => {
     expect(workflowPlanSchema.safeParse(plan).success).toBe(false);
   });
+
+  it("accepts a typed scalar reference from a declared ancestor", () => {
+    const plan = referencePlan({ fromStep: "calculate", field: "result" });
+    expect(normalizeWorkflowPlan(workflowPlanSchema.parse(plan))).toMatchObject(
+      {
+        steps: [
+          { id: "calculate" },
+          {
+            id: "list",
+            tool: {
+              input: { maxResults: { fromStep: "calculate", field: "result" } },
+            },
+          },
+        ],
+      },
+    );
+  });
+
+  it.each([
+    { fromStep: "calculate", field: "result", nested: true },
+    { fromStep: "missing", field: "result" },
+    { fromStep: "list", field: "result" },
+    { fromStep: "calculate", field: "missing" },
+    { fromStep: "calculate", field: "expression" },
+  ])(
+    "rejects malformed, unavailable, and incompatible references",
+    (reference) => {
+      expect(() =>
+        normalizeWorkflowPlan(
+          workflowPlanSchema.parse(referencePlan(reference)),
+        ),
+      ).toThrow(AppError);
+    },
+  );
+
+  it("rejects a parallel sibling reference without adding a dependency", () => {
+    const plan = referencePlan({ fromStep: "calculate", field: "result" });
+    plan.steps[1]!.dependsOn = [];
+    try {
+      normalizeWorkflowPlan(workflowPlanSchema.parse(plan));
+      throw new Error("Expected workflow reference validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AppError);
+      expect((error as AppError).code).toBe("WORKFLOW_REFERENCE_NOT_ANCESTOR");
+    }
+    expect(plan.steps[1]!.dependsOn).toEqual([]);
+  });
+
+  it("accepts a transitive ancestor reference", () => {
+    const plan = {
+      ...referencePlan({ fromStep: "calculate", field: "result" }),
+      steps: [
+        referencePlan(null).steps[0]!,
+        {
+          id: "middle",
+          kind: "memory_read" as const,
+          dependsOn: ["calculate"],
+          memoryKind: null,
+        },
+        {
+          ...referencePlan({ fromStep: "calculate", field: "result" })
+            .steps[1]!,
+          dependsOn: ["middle"],
+        },
+      ],
+    };
+    expect(() =>
+      normalizeWorkflowPlan(workflowPlanSchema.parse(plan)),
+    ).not.toThrow();
+  });
+
+  it("does not interpret template-like strings as references", () => {
+    const plan = referencePlan("${calculate.result}");
+    expect(() =>
+      normalizeWorkflowPlan(workflowPlanSchema.parse(plan)),
+    ).not.toThrow();
+  });
+
+  it("enforces the per-step reference bound before destination resolution", () => {
+    const plan = referencePlan(null);
+    const destinationInput = plan.steps[1]!.tool.input as Record<
+      string,
+      unknown
+    >;
+    for (const key of Object.keys(destinationInput))
+      delete destinationInput[key];
+    Object.assign(
+      destinationInput,
+      Object.fromEntries(
+        Array.from({ length: 9 }, (_, index) => [
+          `field${index}`,
+          { fromStep: "calculate", field: "result" },
+        ]),
+      ),
+    );
+    try {
+      normalizeWorkflowPlan(workflowPlanSchema.parse(plan));
+      throw new Error("Expected reference bound validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AppError);
+      expect((error as AppError).code).toBe("WORKFLOW_REFERENCE_INVALID");
+    }
+  });
 });
+
+function referencePlan(reference: unknown) {
+  return {
+    type: "workflow" as const,
+    goal: "Use a safe scalar result",
+    steps: [
+      {
+        id: "calculate",
+        kind: "tool" as const,
+        dependsOn: [],
+        tool: {
+          name: "utility.calculator" as const,
+          input: { expression: "1+2" },
+        },
+      },
+      {
+        id: "list",
+        kind: "tool" as const,
+        dependsOn: ["calculate"],
+        tool: {
+          name: "calendar.events.list" as const,
+          input: {
+            timeMin: "2026-01-01T00:00:00Z",
+            timeMax: "2026-01-02T00:00:00Z",
+            maxResults: reference,
+          },
+        },
+      },
+    ],
+  };
+}

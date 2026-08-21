@@ -14,6 +14,8 @@ Phase 42 adds explicit `POST /api/v1/workflows/:workflowId/run` with `workflow.w
 
 Tool preparation and exact approvals are reused without bypass. Required approval pauses the linked workflow and step; approval resume verifies the durable linkage before exact dispatch. Results are sanitized and limited to 64 KiB, never substituted into later inputs, and not exposed raw in workflow detail. No startup scan, retry, worker, scheduler, automatic crash recovery, Web control, or Voice authority exists.
 
+Phase 43 allows selected Tool input fields to contain a strict scalar reference with exactly `fromStep` and `field`. Gateway-owned metadata defines the Tool result export, primitive type, and compatible destination. References must point to a transitive ancestor in the same workflow; resolution reads only its immutable SUCCEEDED attempt-one result after the destination is claimed. Resolved input is ephemeral and re-enters normal Tool validation. Approval records bind that resolved action. Raw results, arbitrary properties, nested paths, templates, expressions, memory/knowledge results, and resolved values remain unavailable through workflow APIs and logs.
+
 ## V1.5 — Complete
 
 Gateway now owns the complete explicit Memory and bounded Knowledge/RAG authority path: authenticated actor derivation, independent permissions, PostgreSQL ownership/lifecycle, local embedding access, owner-scoped retrieval, grounded continuation, and trusted citation resolution. Public clients and Agent cannot choose actors, permissions, vectors, models, thresholds, lifecycle, or citation metadata. V2 workflow persistence and multi-step execution remain unimplemented; Phase 40 adds proposals only.

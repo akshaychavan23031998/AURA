@@ -16,6 +16,8 @@ Phase 41 does not change the Agent schema. Gateway may persist a validated propo
 
 Phase 42 also leaves Agent contracts unchanged. Explicit Gateway execution consumes only the already persisted safe proposal, performs no Agent continuation, and cannot use retrieved or persisted results to rewrite downstream inputs. Agent has no run, approval, retry, status, or recovery authority.
 
+Phase 43 extends only supported workflow Tool input fields with strict `{ "fromStep": "step_key", "field": "export" }` scalar references. Agent validation requires a declared ancestor and a known, type-compatible Gateway export. References are not strings, templates, nested paths, expressions, authorization, or runtime state; Gateway alone resolves them after claim. Memory and Knowledge results are not referenceable.
+
 ## V1 — Complete
 
 Agent remains proposal-only and may select at most one of the 14 sanitized catalog tools per turn. Catalog entries contain only name, description, category, and safe input schema. JWTs, provider credentials/scopes, actor permissions, approval authority, risks, service tokens, and database details never enter the planner contract. Malformed or unknown Tool plans fail closed; Tool execution and approval remain Gateway/Tool Service responsibilities.

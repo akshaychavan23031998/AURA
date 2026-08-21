@@ -891,4 +891,179 @@ describe.sequential("PostgreSQL identity persistence", () => {
     ]);
     expect(result.steps.every((step) => step.hasResult)).toBe(true);
   });
+
+  it("resolves a persisted scalar ancestor reference without mutating its template", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const reference = { fromStep: "calculate", field: "result" };
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Calculate a bounded list size",
+      steps: [
+        {
+          id: "calculate",
+          kind: "tool",
+          dependsOn: [],
+          tool: { name: "utility.calculator", input: { expression: "1+2" } },
+        },
+        {
+          id: "list",
+          kind: "tool",
+          dependsOn: ["calculate"],
+          tool: {
+            name: "calendar.events.list",
+            input: {
+              timeMin: "2026-01-01T00:00:00Z",
+              timeMax: "2026-01-02T00:00:00Z",
+              maxResults: reference,
+            },
+          },
+        },
+      ],
+    });
+    const dispatched: unknown[] = [];
+    const executor = new WorkflowExecutor(
+      new WorkflowRepository(database),
+      new WorkflowService(new WorkflowRepository(database)),
+      {
+        execute: (request) => {
+          dispatched.push(request);
+          return Promise.resolve({
+            status: "success" as const,
+            tool: request.tool,
+            data:
+              request.tool === "utility.calculator"
+                ? { expression: "1+2", result: 3 }
+                : { events: [] },
+          });
+        },
+      },
+      { create: () => Promise.reject(new Error("unexpected approval")) },
+      {
+        create: () => Promise.reject(new Error("unexpected memory")),
+        getOwned: () => Promise.reject(new Error("unexpected memory")),
+        listOwned: () => Promise.reject(new Error("unexpected memory")),
+        deleteOwned: () => Promise.reject(new Error("unexpected memory")),
+      },
+      { searchOwned: () => Promise.reject(new Error("unexpected knowledge")) },
+    );
+    const completed = await executor.run(
+      actorId,
+      created.id,
+      { actorId, grantedPermissions: ["workflow.write"] },
+      "workflow-reference-1",
+    );
+    expect(completed.status).toBe("COMPLETED");
+    expect(dispatched).toEqual([
+      { tool: "utility.calculator", input: { expression: "1+2" } },
+      {
+        tool: "calendar.events.list",
+        input: {
+          timeMin: "2026-01-01T00:00:00Z",
+          timeMax: "2026-01-02T00:00:00Z",
+          maxResults: 3,
+        },
+      },
+    ]);
+    const graph = await new WorkflowRepository(database).getOwned(
+      actorId,
+      created.id,
+    );
+    const persistedInput = (
+      graph!.steps[1]!.payload as {
+        tool: { input: Record<string, unknown> };
+      }
+    ).tool.input;
+    expect(persistedInput.maxResults).toEqual(reference);
+    expect(graph!.executions[0]!.result).toEqual({
+      expression: "1+2",
+      result: 3,
+    });
+  });
+
+  it("binds an approval to resolved input and resumes that exact action", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Calculate then list",
+      steps: [
+        {
+          id: "calculate",
+          kind: "tool",
+          dependsOn: [],
+          tool: { name: "utility.calculator", input: { expression: "2+2" } },
+        },
+        {
+          id: "list",
+          kind: "tool",
+          dependsOn: ["calculate"],
+          tool: {
+            name: "calendar.events.list",
+            input: {
+              timeMin: "2026-01-01T00:00:00Z",
+              timeMax: "2026-01-02T00:00:00Z",
+              maxResults: { fromStep: "calculate", field: "result" },
+            },
+          },
+        },
+      ],
+    });
+    const executions: unknown[] = [];
+    const executor = new WorkflowExecutor(
+      workflowRepository,
+      workflowService,
+      {
+        execute: (request) => {
+          executions.push(request);
+          return Promise.resolve({
+            status: "success" as const,
+            tool: request.tool,
+            data:
+              request.tool === "utility.calculator"
+                ? { expression: "2+2", result: 4 }
+                : { events: [] },
+          });
+        },
+        prepare: (request) =>
+          Promise.resolve({
+            tool: request.tool,
+            version: 1,
+            title: "Workflow tool",
+            approvalPolicy:
+              request.tool === "calendar.events.list"
+                ? ("REQUIRED" as const)
+                : ("NONE" as const),
+            input: request.input,
+            inputDigest: "a".repeat(64),
+            preview: "safe preview",
+          }),
+      },
+      approvals,
+      {
+        create: () => Promise.reject(new Error("unexpected memory")),
+        getOwned: () => Promise.reject(new Error("unexpected memory")),
+        listOwned: () => Promise.reject(new Error("unexpected memory")),
+        deleteOwned: () => Promise.reject(new Error("unexpected memory")),
+      },
+      { searchOwned: () => Promise.reject(new Error("unexpected knowledge")) },
+    );
+    const waiting = await executor.run(
+      actorId,
+      created.id,
+      { actorId, grantedPermissions: ["workflow.write"] },
+      "workflow-reference-approval",
+    );
+    expect(waiting.status).toBe("AWAITING_APPROVAL");
+    const [approval] = await database.db.select().from(toolApprovals);
+    expect(approval!.inputEnvelope).toMatchObject({ maxResults: 4 });
+    expect(approval!.inputDigest).toBe("a".repeat(64));
+    const completed = await executor.resumeApproved(
+      actorId,
+      approval!.id,
+      { name: approval!.toolName, input: approval!.inputEnvelope },
+      { actorId, grantedPermissions: ["workflow.write"] },
+      "workflow-reference-approved",
+    );
+    expect(completed.status).toBe("COMPLETED");
+    expect(executions.at(-1)).toMatchObject({ input: { maxResults: 4 } });
+  });
 });

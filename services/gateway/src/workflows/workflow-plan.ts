@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AppError } from "../errors/app-error.js";
+import { validateWorkflowReferences } from "./workflow-references.js";
 
 export const WORKFLOW_MAX_STEPS = 8;
 export const WORKFLOW_MAX_GOAL_CHARACTERS = 1024;
@@ -144,7 +145,7 @@ export function normalizeWorkflowPlan(plan: WorkflowPlan): WorkflowPlan {
     remaining.delete(next.id);
     for (const dependencies of remaining.values()) dependencies.delete(next.id);
   }
-  return {
+  const normalized: WorkflowPlan = {
     type: "workflow",
     goal: plan.goal,
     steps: ordered.map((step) => ({
@@ -152,6 +153,8 @@ export function normalizeWorkflowPlan(plan: WorkflowPlan): WorkflowPlan {
       dependsOn: [...step.dependsOn],
     })),
   };
+  validateWorkflowReferences(normalized);
+  return normalized;
 }
 
 function dependencyInvalid(): AppError {

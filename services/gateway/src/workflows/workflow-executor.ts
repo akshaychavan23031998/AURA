@@ -7,6 +7,7 @@ import { AppError } from "../errors/app-error.js";
 import type { KnowledgeStore } from "../knowledge/knowledge-service.js";
 import type { MemoryStore } from "../memory/memory-service.js";
 import type { WorkflowRepository } from "./workflow-repository.js";
+import { resolveWorkflowToolInput } from "./workflow-references.js";
 import type { WorkflowStore, WorkflowView } from "./workflow-service.js";
 
 export const WORKFLOW_RESULT_MAX_BYTES = 65_536;
@@ -136,8 +137,16 @@ export class WorkflowExecutor implements WorkflowRunner {
         const payload = claimed.step.payload as Record<string, unknown>;
         if (claimed.step.kind === "tool") {
           const tool = payload.tool as { name: string; input: unknown };
+          const graph = await this.repository.getForResolution(workflowId);
+          if (graph === undefined) throw stateInvalid();
+          const resolvedInput = resolveWorkflowToolInput(
+            graph,
+            claimed.step.id,
+            tool.name,
+            tool.input as Record<string, unknown>,
+          );
           const preparation = await this.tools.prepare?.(
-            { tool: tool.name, input: tool.input },
+            { tool: tool.name, input: resolvedInput },
             context,
             requestId,
           );
@@ -168,7 +177,7 @@ export class WorkflowExecutor implements WorkflowRunner {
             return this.workflows.getOwned(actorId, workflowId);
           }
           const result = await this.tools.execute(
-            { tool: tool.name, input: tool.input },
+            { tool: tool.name, input: resolvedInput },
             context,
             requestId,
           );

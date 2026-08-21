@@ -20,6 +20,8 @@ Phase 42 adds explicit authenticated `POST /api/v1/workflows/:workflowId/run` ex
 
 Required Tool approvals reuse the existing exact-action approval record and pause both workflow and step. Explicit approval resumes the linked step once; rejection, expiry, cancellation, or failure never retries. There are no workers, schedules, result substitutions, automatic recovery, Voice execution controls, or attempt two.
 
+Phase 43 adds narrowly typed inter-step data flow for selected Tool inputs. A reference is exactly a structured `{ fromStep, field }` scalar object, must target a persisted SUCCEEDED ancestor, and resolves through a Gateway-owned export/destination allowlist after atomic claim. The durable template remains unresolved, while approval-required actions bind the resolved exact input. There is no interpolation, JSONPath, expression language, branching, looping, retry, recovery, scheduling, or Voice authority.
+
 ## V1.5 — Complete
 
 Phase 39 formally closes V1.5. AURA now provides explicit actor-owned Memory CRUD and Agent actions, semantic Memory retrieval, manual and TXT/PDF/DOCX Knowledge ingestion, deterministic transactional chunking, local 384-dimensional pgvector indexing, explicit semantic search, grounded Agent answers with Gateway-trusted citations, and authenticated Memory/Knowledge Web management.

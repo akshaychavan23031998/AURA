@@ -186,6 +186,32 @@ WorkflowStepId = Annotated[
 ]
 WorkflowDependencies = Annotated[list[WorkflowStepId], Field(max_length=7)]
 
+WORKFLOW_EXPORTS: dict[str, dict[str, str]] = {
+    "utility.calculator": {"expression": "string", "result": "number"},
+    "calendar.events.create": {"eventId": "string"},
+    "calendar.events.get": {"eventId": "string"},
+    "calendar.events.update": {"eventId": "string"},
+    "gmail.messages.send": {"messageId": "string", "threadId": "string"},
+    "gmail.messages.reply": {"messageId": "string", "threadId": "string"},
+    "contacts.people.get": {"resourceName": "string"},
+}
+WORKFLOW_REFERENCE_DESTINATIONS: dict[str, dict[str, str]] = {
+    "calendar.events.list": {"maxResults": "number"},
+    "calendar.events.get": {"eventId": "string"},
+    "calendar.events.update": {"eventId": "string"},
+    "calendar.events.delete": {"eventId": "string"},
+    "gmail.messages.reply": {"messageId": "string"},
+    "gmail.messages.list": {"maxResults": "number"},
+    "contacts.people.list": {"maxResults": "number"},
+    "contacts.people.get": {"resourceName": "string"},
+}
+
+
+class WorkflowReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    from_step: WorkflowStepId = Field(alias="fromStep")
+    field: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+
 
 class WorkflowToolStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -282,6 +308,46 @@ class WorkflowPlan(BaseModel):
                     ready.append(candidate)
         if len(visited) != len(identifiers):
             raise ValueError("Workflow contains a cycle")
+        by_id = {step.id: step for step in self.steps}
+        for step in self.steps:
+            if not isinstance(step, WorkflowToolStep):
+                continue
+            references: list[tuple[str, WorkflowReference]] = []
+            for destination, value in step.tool.input.items():
+                if not isinstance(value, dict) or not (
+                    "fromStep" in value or "field" in value
+                ):
+                    continue
+                reference = WorkflowReference.model_validate(value)
+                references.append((destination, reference))
+            if len(references) > 8:
+                raise ValueError("Too many workflow references")
+            for destination, reference in references:
+                source = by_id.get(reference.from_step)
+                if source is None or source.id == step.id:
+                    raise ValueError("Workflow reference source is invalid")
+                pending = list(step.depends_on)
+                ancestors: set[str] = set()
+                while pending:
+                    candidate = pending.pop(0)
+                    if candidate in ancestors:
+                        continue
+                    ancestors.add(candidate)
+                    pending.extend(by_id[candidate].depends_on)
+                if source.id not in ancestors:
+                    raise ValueError("Workflow reference source is not an ancestor")
+                if not isinstance(source, WorkflowToolStep):
+                    raise ValueError("Workflow reference source has no exports")
+                exported = WORKFLOW_EXPORTS.get(source.tool.name, {}).get(
+                    reference.field
+                )
+                destination_type = WORKFLOW_REFERENCE_DESTINATIONS.get(
+                    step.tool.name, {}
+                ).get(destination)
+                if exported is None or destination_type is None:
+                    raise ValueError("Workflow reference field is invalid")
+                if exported != destination_type:
+                    raise ValueError("Workflow reference type is incompatible")
         return self
 
 

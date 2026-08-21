@@ -35,6 +35,19 @@ def test_valid_bounded_workflow_contract_is_accepted() -> None:
     assert [step.id for step in plan.steps] == ["preferences", "notes"]
 
 
+def test_structured_reference_contract_is_ancestor_only_and_strict() -> None:
+    plan = reference_plan()
+    assert WorkflowPlan.model_validate(plan).steps[1].id == "list"
+    plan["steps"][1]["tool"]["input"]["maxResults"]["extra"] = True
+    with pytest.raises(ValidationError):
+        WorkflowPlan.model_validate(plan)
+
+    plan = reference_plan()
+    plan["steps"][1]["dependsOn"] = []
+    with pytest.raises(ValidationError, match="ancestor"):
+        WorkflowPlan.model_validate(plan)
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -104,6 +117,16 @@ async def test_llm_workflow_schema_accepts_valid_and_rejects_malformed_output() 
     ).plan(AgentRequest(message="prepare using my memories and notes"))
     assert isinstance(result.plan, WorkflowPlan)
 
+    referenced = {
+        "intent": "propose_workflow",
+        "response": "I can use a safe scalar output.",
+        "plan": reference_plan(),
+    }
+    referenced_result = await SelfHostedLlmPlanner(
+        FakeInferenceClient(json.dumps(referenced)), "test-model"
+    ).plan(AgentRequest(message="calculate a bounded list size"))
+    assert isinstance(referenced_result.plan, WorkflowPlan)
+
     output["plan"]["steps"][0]["retry"] = 3
     with pytest.raises(ValueError, match="Invalid structured model output"):
         await SelfHostedLlmPlanner(
@@ -143,3 +166,34 @@ async def test_continuation_schema_cannot_return_workflow() -> None:
                 memoryContext=[],
             )
         )
+
+
+def reference_plan() -> dict[str, Any]:
+    return {
+        "type": "workflow",
+        "goal": "Calculate a bounded list size",
+        "steps": [
+            {
+                "id": "calculate",
+                "kind": "tool",
+                "dependsOn": [],
+                "tool": {
+                    "name": "utility.calculator",
+                    "input": {"expression": "1+2"},
+                },
+            },
+            {
+                "id": "list",
+                "kind": "tool",
+                "dependsOn": ["calculate"],
+                "tool": {
+                    "name": "calendar.events.list",
+                    "input": {
+                        "timeMin": "2026-01-01T00:00:00Z",
+                        "timeMax": "2026-01-02T00:00:00Z",
+                        "maxResults": {"fromStep": "calculate", "field": "result"},
+                    },
+                },
+            },
+        ],
+    }

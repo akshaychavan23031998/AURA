@@ -202,6 +202,31 @@ export class WorkflowRepository {
     });
   }
 
+  public async getForResolution(workflowId: string) {
+    const [workflow] = await this.database.db
+      .select()
+      .from(workflows)
+      .where(eq(workflows.id, workflowId))
+      .limit(1);
+    if (workflow === undefined) return undefined;
+    const [steps, dependencies, executions] = await Promise.all([
+      this.database.db
+        .select()
+        .from(workflowSteps)
+        .where(eq(workflowSteps.workflowId, workflowId))
+        .orderBy(workflowSteps.ordinal),
+      this.database.db
+        .select()
+        .from(workflowStepDependencies)
+        .where(eq(workflowStepDependencies.workflowId, workflowId)),
+      this.database.db
+        .select()
+        .from(workflowStepExecutions)
+        .where(eq(workflowStepExecutions.workflowId, workflowId)),
+    ]);
+    return { workflow, steps, dependencies, executions };
+  }
+
   public async succeed(
     workflowId: string,
     stepId: string,

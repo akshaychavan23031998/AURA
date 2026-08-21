@@ -3,6 +3,7 @@ import logging
 import re
 import time
 from collections.abc import Mapping
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Literal, Protocol, cast
 
@@ -646,7 +647,28 @@ class _WorkflowOutput(BaseModel):
     def validate_workflow_tools(self) -> "_WorkflowOutput":
         for step in self.plan.steps:
             if isinstance(step, WorkflowToolStep):
-                _CatalogTool.model_validate(step.tool.model_dump())
+                tool = step.tool.model_dump()
+                tool_input = cast(dict[str, JsonValue], tool["input"])
+                for field, value in tool_input.items():
+                    if not isinstance(value, dict) or set(value) != {
+                        "fromStep",
+                        "field",
+                    }:
+                        continue
+                    placeholder: dict[tuple[str, str], JsonValue] = {
+                        ("calendar.events.list", "maxResults"): 1,
+                        ("calendar.events.get", "eventId"): "placeholder",
+                        ("calendar.events.update", "eventId"): "placeholder",
+                        ("calendar.events.delete", "eventId"): "placeholder",
+                        ("gmail.messages.list", "maxResults"): 1,
+                        ("gmail.messages.reply", "messageId"): "placeholder",
+                        ("contacts.people.list", "maxResults"): 1,
+                        ("contacts.people.get", "resourceName"): "people/placeholder",
+                    }
+                    replacement = placeholder.get((step.tool.name, field))
+                    if replacement is not None:
+                        tool_input[field] = replacement
+                _CatalogTool.model_validate(tool)
         return self
 
 
@@ -878,7 +900,11 @@ def _workflow_output_schema() -> dict[str, object]:
             "properties": {
                 **common,
                 "kind": {"const": "tool"},
-                "tool": {"oneOf": [_tool_schema(item) for item in AGENT_TOOL_CATALOG]},
+                "tool": {
+                    "oneOf": [
+                        _workflow_tool_schema(item) for item in AGENT_TOOL_CATALOG
+                    ]
+                },
             },
             "required": ["id", "kind", "dependsOn", "tool"],
         },
@@ -941,10 +967,46 @@ def _tool_schema(capability: Mapping[str, object]) -> dict[str, object]:
         "additionalProperties": False,
         "properties": {
             "name": {"const": capability["name"]},
-            "input": capability["inputSchema"],
+            "input": deepcopy(capability["inputSchema"]),
         },
         "required": ["name", "input"],
     }
+
+
+def _workflow_tool_schema(capability: Mapping[str, object]) -> dict[str, object]:
+    schema = _tool_schema(capability)
+    name = str(capability["name"])
+    destinations: dict[str, set[str]] = {
+        "calendar.events.list": {"maxResults"},
+        "calendar.events.get": {"eventId"},
+        "calendar.events.update": {"eventId"},
+        "calendar.events.delete": {"eventId"},
+        "gmail.messages.reply": {"messageId"},
+        "gmail.messages.list": {"maxResults"},
+        "contacts.people.list": {"maxResults"},
+        "contacts.people.get": {"resourceName"},
+    }
+    fields = destinations.get(name)
+    if not fields:
+        return schema
+    tool_input = schema["properties"]["input"]  # type: ignore[index]
+    properties = tool_input["properties"]  # type: ignore[index]
+    reference = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "fromStep": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+            },
+            "field": {"type": "string", "minLength": 1, "maxLength": 64},
+        },
+        "required": ["fromStep", "field"],
+    }
+    for field in fields:
+        literal = cast(dict[str, object], properties[field])
+        properties[field] = {"oneOf": [literal, reference]}
+    return schema
 
 
 def _memory_output_schema(operation: str) -> dict[str, object]:
