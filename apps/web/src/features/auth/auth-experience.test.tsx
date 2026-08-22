@@ -1,10 +1,12 @@
 import { configureStore } from "@reduxjs/toolkit";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
 import { appReducer } from "@/store/slices/app.slice";
 import { authReducer } from "@/store/slices/auth.slice";
 import { voiceReducer } from "@/store/slices/voice.slice";
+
 import { accessTokenStore } from "./access-token";
 import { AuthExperience, isDevelopmentSessionEnabled } from "./auth-experience";
 
@@ -19,8 +21,11 @@ describe("AuthExperience", () => {
       "fetch",
       vi.fn().mockReturnValue(new Promise(() => undefined)),
     );
+
     renderExperience();
+
     expect(screen.getByRole("status")).toHaveTextContent(/checking/i);
+
     expect(
       screen.queryByRole("button", { name: "Start voice session" }),
     ).not.toBeInTheDocument();
@@ -28,27 +33,85 @@ describe("AuthExperience", () => {
 
   it("renders the authenticated voice application after valid bootstrap", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(tokenResponse()));
+
     renderExperience();
+
     expect(
       await screen.findByRole("button", { name: "Start voice session" }),
     ).toBeEnabled();
+
     expect(
       screen.getByRole("button", { name: "Log out of AURA" }),
     ).toBeEnabled();
+
     expect(screen.queryByText("Google Account")).not.toBeInTheDocument();
   });
 
   it("renders Google capability management only when OIDC is configured", async () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_OIDC_ENABLED", "true");
+
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(tokenResponse())
       .mockResolvedValueOnce(
-        Response.json({ provider: "google", linked: false, capabilities: [] }),
+        Response.json({
+          provider: "google",
+          linked: false,
+          capabilities: [],
+        }),
       );
+
     vi.stubGlobal("fetch", fetcher);
+
     renderExperience();
+
     expect(await screen.findByText("Google Account")).toBeVisible();
+  });
+
+  it("opens the authenticated workflow management surface from navigation", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(Response.json({ workflows: [] }));
+
+    vi.stubGlobal("fetch", fetcher);
+
+    renderExperience();
+
+    const workflowsButton = await screen.findByRole("button", {
+      name: "Workflows",
+    });
+
+    expect(
+      screen.queryByRole("heading", { name: "Workflows" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(workflowsButton);
+
+    expect(
+      await screen.findByRole("heading", { name: "Workflows" }),
+    ).toBeVisible();
+
+    expect(
+      screen.queryByRole("button", { name: "Start voice session" }),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    const workflowRequest = fetcher.mock.calls[1]?.[0];
+
+    expect(workflowRequest).toBeDefined();
+
+    const workflowRequestUrl =
+      workflowRequest instanceof Request
+        ? workflowRequest.url
+        : workflowRequest instanceof URL
+          ? workflowRequest.toString()
+          : String(workflowRequest);
+
+    expect(new URL(workflowRequestUrl).pathname).toBe("/api/v1/workflows");
   });
 
   it("renders unauthenticated UX when no session exists", async () => {
@@ -56,12 +119,15 @@ describe("AuthExperience", () => {
       "fetch",
       vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
     );
+
     renderExperience();
+
     await waitFor(() =>
       expect(
         screen.getByText(/no authenticated browser session/i),
       ).toBeVisible(),
     );
+
     expect(
       screen.queryByRole("button", { name: /local development session/i }),
     ).not.toBeInTheDocument();
@@ -74,35 +140,50 @@ describe("AuthExperience", () => {
         NEXT_PUBLIC_ENABLE_DEV_SESSION: "true",
       }),
     ).toBe(true);
+
     expect(
       isDevelopmentSessionEnabled({
         NODE_ENV: "production",
         NEXT_PUBLIC_ENABLE_DEV_SESSION: "true",
       }),
     ).toBe(false);
-    expect(isDevelopmentSessionEnabled({ NODE_ENV: "development" })).toBe(
-      false,
-    );
+
+    expect(
+      isDevelopmentSessionEnabled({
+        NODE_ENV: "development",
+      }),
+    ).toBe(false);
   });
 
   it("shows Google account entry only when explicitly configured", async () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_OIDC_ENABLED", "true");
+
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
     );
+
     renderExperience();
+
     expect(
-      await screen.findByRole("button", { name: "Continue with Google" }),
+      await screen.findByRole("button", {
+        name: "Continue with Google",
+      }),
     ).toBeVisible();
+
     vi.unstubAllEnvs();
   });
 });
 
 function renderExperience() {
   const store = configureStore({
-    reducer: { app: appReducer, auth: authReducer, voice: voiceReducer },
+    reducer: {
+      app: appReducer,
+      auth: authReducer,
+      voice: voiceReducer,
+    },
   });
+
   return render(
     <Provider store={store}>
       <AuthExperience />
@@ -111,8 +192,15 @@ function renderExperience() {
 }
 
 function tokenResponse(): Response {
-  return new Response(JSON.stringify({ accessToken: "one.two.three" }), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
+  return new Response(
+    JSON.stringify({
+      accessToken: "one.two.three",
+    }),
+    {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    },
+  );
 }
