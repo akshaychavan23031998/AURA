@@ -1,16 +1,25 @@
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { z } from "zod";
 
+import { deriveAuthorizationContext } from "../../auth/authorization-context.js";
 import { requirePrincipal } from "../../auth/auth-plugin.js";
 import type { AllowedPermission } from "../../auth/principal.js";
 import { AppError } from "../../errors/app-error.js";
-import type { WorkflowStore } from "../../workflows/workflow-service.js";
 import type { WorkflowRunner } from "../../workflows/workflow-executor.js";
-import { deriveAuthorizationContext } from "../../auth/authorization-context.js";
+import type { WorkflowStore } from "../../workflows/workflow-service.js";
 
 const workflowIdSchema = z.uuid();
+
 const listSchema = z
-  .object({ limit: z.coerce.number().int().min(1).max(50).default(20) })
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .strict();
+
+const ambiguityResolutionSchema = z
+  .object({
+    resolution: z.enum(["CONFIRMED_EXECUTED", "CONFIRMED_NOT_EXECUTED"]),
+  })
   .strict();
 
 export function registerWorkflowRoutes(
@@ -25,6 +34,7 @@ export function registerWorkflowRoutes(
     async (request) => {
       const principal = requirePermission(request, "workflow.read");
       const query = parse(listSchema, request.query);
+
       return {
         workflows: await workflows.listOwned(principal.actorId, query.limit),
       };
@@ -36,6 +46,7 @@ export function registerWorkflowRoutes(
     { preHandler: authenticate },
     async (request) => {
       const principal = requirePermission(request, "workflow.read");
+
       return {
         workflow: await workflows.getOwned(
           principal.actorId,
@@ -50,12 +61,9 @@ export function registerWorkflowRoutes(
     { preHandler: authenticate },
     async (request) => {
       const principal = requirePermission(request, "workflow.write");
-      if (
-        request.body != null &&
-        (typeof request.body !== "object" ||
-          Object.keys(request.body).length !== 0)
-      )
-        throw inputInvalid();
+
+      requireEmptyBody(request.body);
+
       return {
         workflow: await runner.run(
           principal.actorId,
@@ -72,12 +80,9 @@ export function registerWorkflowRoutes(
     { preHandler: authenticate },
     async (request) => {
       const principal = requirePermission(request, "workflow.write");
-      if (
-        request.body != null &&
-        (typeof request.body !== "object" ||
-          Object.keys(request.body).length !== 0)
-      )
-        throw inputInvalid();
+
+      requireEmptyBody(request.body);
+
       return {
         workflow: await runner.recover(
           principal.actorId,
@@ -89,17 +94,39 @@ export function registerWorkflowRoutes(
     },
   );
 
+  app.post<{
+    Params: { workflowId: string };
+    Body: {
+      resolution: "CONFIRMED_EXECUTED" | "CONFIRMED_NOT_EXECUTED";
+    };
+  }>(
+    "/api/v1/workflows/:workflowId/resolve-ambiguity",
+    { preHandler: authenticate },
+    async (request) => {
+      const principal = requirePermission(request, "workflow.write");
+
+      const workflowId = parse(workflowIdSchema, request.params.workflowId);
+
+      const body = parse(ambiguityResolutionSchema, request.body);
+
+      return {
+        workflow: await workflows.resolveAmbiguousOwned(
+          principal.actorId,
+          workflowId,
+          body.resolution,
+        ),
+      };
+    },
+  );
+
   app.post<{ Params: { workflowId: string } }>(
     "/api/v1/workflows/:workflowId/cancel",
     { preHandler: authenticate },
     async (request) => {
       const principal = requirePermission(request, "workflow.write");
-      if (
-        request.body != null &&
-        (typeof request.body !== "object" ||
-          Object.keys(request.body).length !== 0)
-      )
-        throw inputInvalid();
+
+      requireEmptyBody(request.body);
+
       return {
         workflow: await workflows.cancelOwned(
           principal.actorId,
@@ -115,20 +142,38 @@ function requirePermission(
   permission: AllowedPermission,
 ) {
   const principal = requirePrincipal(request);
-  if (!principal.permissions.includes(permission))
+
+  if (!principal.permissions.includes(permission)) {
     throw new AppError({
       code: "PERMISSION_DENIED",
       httpStatus: 403,
       message: "Permission denied",
     });
+  }
+
   return principal;
 }
+
+function requireEmptyBody(value: unknown): void {
+  if (
+    value != null &&
+    (typeof value !== "object" ||
+      Array.isArray(value) ||
+      Object.keys(value).length !== 0)
+  ) {
+    throw inputInvalid();
+  }
+}
+
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value);
+
   if (!parsed.success) throw inputInvalid();
+
   return parsed.data;
 }
-function inputInvalid() {
+
+function inputInvalid(): AppError {
   return new AppError({
     code: "WORKFLOW_INPUT_INVALID",
     httpStatus: 400,

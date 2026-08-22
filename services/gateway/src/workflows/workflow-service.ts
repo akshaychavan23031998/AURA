@@ -6,6 +6,7 @@ import {
 } from "./workflow-plan.js";
 import type {
   PersistedWorkflowGraph,
+  WorkflowAmbiguityResolution,
   WorkflowRepository,
 } from "./workflow-repository.js";
 
@@ -33,6 +34,7 @@ export interface WorkflowStepView {
   readonly errorCode: string | null;
   readonly hasResult: boolean;
 }
+
 export interface WorkflowView {
   readonly id: string;
   readonly goal: string;
@@ -52,13 +54,23 @@ export interface WorkflowView {
   readonly completedAt: string | null;
   readonly steps: readonly WorkflowStepView[];
 }
+
 export type WorkflowSummaryView = Omit<WorkflowView, "steps">;
 
 export interface WorkflowStore {
   create(actorId: string, plan: WorkflowPlan): Promise<WorkflowView>;
+
   getOwned(actorId: string, workflowId: string): Promise<WorkflowView>;
+
   listOwned(actorId: string, limit: number): Promise<WorkflowSummaryView[]>;
+
   cancelOwned(actorId: string, workflowId: string): Promise<WorkflowView>;
+
+  resolveAmbiguousOwned(
+    actorId: string,
+    workflowId: string,
+    resolution: WorkflowAmbiguityResolution,
+  ): Promise<WorkflowView>;
 }
 
 export class WorkflowService implements WorkflowStore {
@@ -69,19 +81,24 @@ export class WorkflowService implements WorkflowStore {
     plan: WorkflowPlan,
   ): Promise<WorkflowView> {
     const parsed = workflowPlanSchema.safeParse(plan);
-    if (!parsed.success)
+
+    if (!parsed.success) {
       throw new AppError({
         code: "WORKFLOW_INPUT_INVALID",
         httpStatus: 400,
         message: "Workflow input is invalid",
       });
+    }
+
     const normalized = normalizeWorkflowPlan(parsed.data);
+
     try {
       return graphView(
         await this.repository.createTransactional(actorId, normalized),
       );
     } catch (error) {
       if (error instanceof AppError) throw error;
+
       throw storageFailed(error);
     }
   }
@@ -92,10 +109,13 @@ export class WorkflowService implements WorkflowStore {
   ): Promise<WorkflowView> {
     try {
       const graph = await this.repository.getOwned(actorId, workflowId);
+
       if (graph === undefined) throw notFound();
+
       return graphView(graph);
     } catch (error) {
       if (error instanceof AppError) throw error;
+
       throw storageFailed(error);
     }
   }
@@ -107,6 +127,8 @@ export class WorkflowService implements WorkflowStore {
     try {
       return (await this.repository.listOwned(actorId, limit)).map(summaryView);
     } catch (error) {
+      if (error instanceof AppError) throw error;
+
       throw storageFailed(error);
     }
   }
@@ -121,13 +143,57 @@ export class WorkflowService implements WorkflowStore {
         workflowId,
         new Date(),
       );
+
       if (row === undefined) throw notFound();
+
       if (row.status !== "CANCELLED") throw stateInvalid();
+
       const graph = await this.repository.getOwned(actorId, workflowId);
+
       if (graph === undefined) throw notFound();
+
       return graphView(graph);
     } catch (error) {
       if (error instanceof AppError) throw error;
+
+      throw storageFailed(error);
+    }
+  }
+
+  public async resolveAmbiguousOwned(
+    actorId: string,
+    workflowId: string,
+    resolution: WorkflowAmbiguityResolution,
+  ): Promise<WorkflowView> {
+    try {
+      const result = await this.repository.resolveAmbiguousOwned(
+        actorId,
+        workflowId,
+        resolution,
+        new Date(),
+      );
+
+      switch (result.outcome) {
+        case "NOT_FOUND":
+          throw notFound();
+
+        case "STATE_INVALID":
+          throw stateInvalid();
+
+        case "RESULT_REQUIRED":
+          throw ambiguityResultRequired();
+
+        case "RESOLVED": {
+          const graph = await this.repository.getOwned(actorId, workflowId);
+
+          if (graph === undefined) throw notFound();
+
+          return graphView(graph);
+        }
+      }
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+
       throw storageFailed(error);
     }
   }
@@ -135,26 +201,37 @@ export class WorkflowService implements WorkflowStore {
 
 function graphView(graph: PersistedWorkflowGraph): WorkflowView {
   const keyById = new Map(graph.steps.map((step) => [step.id, step.stepKey]));
+
   const dependencies = new Map<string, string[]>();
+
   const executionByStep = new Map(
     graph.executions.map((execution) => [execution.stepId, execution]),
   );
+
   for (const dependency of graph.dependencies) {
     const stepKey = keyById.get(dependency.stepId);
     const dependsOnKey = keyById.get(dependency.dependsOnStepId);
-    if (stepKey === undefined || dependsOnKey === undefined)
+
+    if (stepKey === undefined || dependsOnKey === undefined) {
       throw storageFailed();
+    }
+
     const current = dependencies.get(stepKey) ?? [];
+
     current.push(dependsOnKey);
+
     dependencies.set(stepKey, current);
   }
+
   return Object.freeze({
     ...summaryView(graph.workflow),
+
     steps: graph.steps
       .slice()
       .sort((left, right) => left.ordinal - right.ordinal)
       .map((step) => {
         const execution = executionByStep.get(step.id);
+
         return Object.freeze({
           stepKey: step.stepKey,
           kind: step.kind,
@@ -186,21 +263,32 @@ function summaryView(
   });
 }
 
-function notFound() {
+function notFound(): AppError {
   return new AppError({
     code: "WORKFLOW_NOT_FOUND",
     httpStatus: 404,
     message: "Workflow not found",
   });
 }
-function stateInvalid() {
+
+function stateInvalid(): AppError {
   return new AppError({
     code: "WORKFLOW_STATE_INVALID",
     httpStatus: 409,
     message: "Workflow state transition is invalid",
   });
 }
-function storageFailed(cause?: unknown) {
+
+function ambiguityResultRequired(): AppError {
+  return new AppError({
+    code: "WORKFLOW_AMBIGUITY_RESULT_REQUIRED",
+    httpStatus: 409,
+    message:
+      "Workflow ambiguity cannot be resolved as executed because a downstream step requires its result",
+  });
+}
+
+function storageFailed(cause?: unknown): AppError {
   return new AppError({
     code: "WORKFLOW_STORAGE_FAILED",
     httpStatus: 500,

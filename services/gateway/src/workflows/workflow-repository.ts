@@ -17,6 +17,24 @@ export interface PersistedWorkflowGraph {
   readonly executions: readonly (typeof workflowStepExecutions.$inferSelect)[];
 }
 
+export type WorkflowAmbiguityResolution =
+  "CONFIRMED_EXECUTED" | "CONFIRMED_NOT_EXECUTED";
+
+export type WorkflowAmbiguityResolutionResult =
+  | {
+      readonly outcome: "RESOLVED";
+      readonly workflow: typeof workflows.$inferSelect;
+    }
+  | {
+      readonly outcome: "RESULT_REQUIRED";
+    }
+  | {
+      readonly outcome: "NOT_FOUND";
+    }
+  | {
+      readonly outcome: "STATE_INVALID";
+    };
+
 export class WorkflowRepository {
   public constructor(private readonly database: DatabaseClient) {}
 
@@ -24,10 +42,16 @@ export class WorkflowRepository {
     return this.database.db.transaction(async (transaction) => {
       const [workflow] = await transaction
         .insert(workflows)
-        .values({ actorId, goal: plan.goal, status: "READY" })
+        .values({
+          actorId,
+          goal: plan.goal,
+          status: "READY",
+        })
         .returning();
-      if (workflow === undefined)
+
+      if (workflow === undefined) {
         throw new Error("Workflow persistence failed");
+      }
 
       const steps = await transaction
         .insert(workflowSteps)
@@ -45,10 +69,13 @@ export class WorkflowRepository {
           })),
         )
         .returning();
-      if (steps.length !== plan.steps.length)
+
+      if (steps.length !== plan.steps.length) {
         throw new Error("Workflow step persistence failed");
+      }
 
       const byKey = new Map(steps.map((step) => [step.stepKey, step.id]));
+
       const values = plan.steps.flatMap((step) =>
         step.dependsOn.map((dependency) => ({
           workflowId: workflow.id,
@@ -56,6 +83,7 @@ export class WorkflowRepository {
           dependsOnStepId: requireStepId(byKey, dependency),
         })),
       );
+
       const dependencies =
         values.length === 0
           ? []
@@ -63,9 +91,17 @@ export class WorkflowRepository {
               .insert(workflowStepDependencies)
               .values(values)
               .returning();
-      if (dependencies.length !== values.length)
+
+      if (dependencies.length !== values.length) {
         throw new Error("Workflow dependency persistence failed");
-      return { workflow, steps, dependencies, executions: [] };
+      }
+
+      return {
+        workflow,
+        steps,
+        dependencies,
+        executions: [],
+      };
     });
   }
 
@@ -75,21 +111,31 @@ export class WorkflowRepository {
       .from(workflows)
       .where(and(eq(workflows.id, workflowId), eq(workflows.actorId, actorId)))
       .limit(1);
+
     if (workflow === undefined) return undefined;
+
     const steps = await this.database.db
       .select()
       .from(workflowSteps)
       .where(eq(workflowSteps.workflowId, workflow.id))
       .orderBy(workflowSteps.ordinal);
+
     const dependencies = await this.database.db
       .select()
       .from(workflowStepDependencies)
       .where(eq(workflowStepDependencies.workflowId, workflow.id));
+
     const executions = await this.database.db
       .select()
       .from(workflowStepExecutions)
       .where(eq(workflowStepExecutions.workflowId, workflow.id));
-    return { workflow, steps, dependencies, executions };
+
+    return {
+      workflow,
+      steps,
+      dependencies,
+      executions,
+    };
   }
 
   public listOwned(actorId: string, limit: number) {
@@ -105,7 +151,11 @@ export class WorkflowRepository {
     return this.database.db.transaction(async (transaction) => {
       const [cancelled] = await transaction
         .update(workflows)
-        .set({ status: "CANCELLED", cancelledAt: now, updatedAt: now })
+        .set({
+          status: "CANCELLED",
+          cancelledAt: now,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(workflows.id, workflowId),
@@ -114,10 +164,14 @@ export class WorkflowRepository {
           ),
         )
         .returning();
-      if (cancelled !== undefined)
+
+      if (cancelled !== undefined) {
         await transaction
           .update(workflowSteps)
-          .set({ status: "CANCELLED", updatedAt: now })
+          .set({
+            status: "CANCELLED",
+            updatedAt: now,
+          })
           .where(
             and(
               eq(workflowSteps.workflowId, workflowId),
@@ -128,6 +182,8 @@ export class WorkflowRepository {
               ]),
             ),
           );
+      }
+
       const [owned] = await transaction
         .select()
         .from(workflows)
@@ -135,6 +191,7 @@ export class WorkflowRepository {
           and(eq(workflows.id, workflowId), eq(workflows.actorId, actorId)),
         )
         .limit(1);
+
       return owned;
     });
   }
@@ -142,7 +199,11 @@ export class WorkflowRepository {
   public async startOwned(actorId: string, workflowId: string, now: Date) {
     const [claimed] = await this.database.db
       .update(workflows)
-      .set({ status: "RUNNING", startedAt: now, updatedAt: now })
+      .set({
+        status: "RUNNING",
+        startedAt: now,
+        updatedAt: now,
+      })
       .where(
         and(
           eq(workflows.id, workflowId),
@@ -151,16 +212,26 @@ export class WorkflowRepository {
         ),
       )
       .returning();
-    if (claimed !== undefined)
-      return { claimed: true, workflow: claimed } as const;
+
+    if (claimed !== undefined) {
+      return {
+        claimed: true,
+        workflow: claimed,
+      } as const;
+    }
+
     const [owned] = await this.database.db
       .select()
       .from(workflows)
       .where(and(eq(workflows.id, workflowId), eq(workflows.actorId, actorId)))
       .limit(1);
+
     return owned === undefined
       ? undefined
-      : ({ claimed: false, workflow: owned } as const);
+      : ({
+          claimed: false,
+          workflow: owned,
+        } as const);
   }
 
   public async requestExecutionOwned(
@@ -172,7 +243,10 @@ export class WorkflowRepository {
     const workflow = await this.database.db.transaction(async (transaction) => {
       const [updated] = await transaction
         .update(workflows)
-        .set({ executionRequestedAt: now, updatedAt: now })
+        .set({
+          executionRequestedAt: now,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(workflows.id, workflowId),
@@ -181,23 +255,35 @@ export class WorkflowRepository {
           ),
         )
         .returning();
+
       if (updated === undefined) return undefined;
+
       await transaction
         .delete(workflowPermissionGrants)
         .where(eq(workflowPermissionGrants.workflowId, workflowId));
+
       const unique = [...new Set(permissions)].sort();
-      if (unique.length > 0)
-        await transaction
-          .insert(workflowPermissionGrants)
-          .values(unique.map((permission) => ({ workflowId, permission })));
+
+      if (unique.length > 0) {
+        await transaction.insert(workflowPermissionGrants).values(
+          unique.map((permission) => ({
+            workflowId,
+            permission,
+          })),
+        );
+      }
+
       return updated;
     });
+
     if (workflow !== undefined) return workflow;
+
     const [owned] = await this.database.db
       .select()
       .from(workflows)
       .where(and(eq(workflows.id, workflowId), eq(workflows.actorId, actorId)))
       .limit(1);
+
     return owned;
   }
 
@@ -214,10 +300,16 @@ export class WorkflowRepository {
         )
         .orderBy(asc(workflowSteps.ordinal))
         .limit(1);
+
       if (candidate === undefined) return undefined;
+
       const [step] = await transaction
         .update(workflowSteps)
-        .set({ status: "RUNNING", startedAt: now, updatedAt: now })
+        .set({
+          status: "RUNNING",
+          startedAt: now,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(workflowSteps.id, candidate.id),
@@ -225,7 +317,9 @@ export class WorkflowRepository {
           ),
         )
         .returning();
+
       if (step === undefined) return undefined;
+
       const [execution] = await transaction
         .insert(workflowStepExecutions)
         .values({
@@ -235,9 +329,15 @@ export class WorkflowRepository {
           startedAt: now,
         })
         .returning();
-      if (execution === undefined)
+
+      if (execution === undefined) {
         throw new Error("Workflow execution persistence failed");
-      return { step, execution };
+      }
+
+      return {
+        step,
+        execution,
+      };
     });
   }
 
@@ -247,23 +347,33 @@ export class WorkflowRepository {
       .from(workflows)
       .where(eq(workflows.id, workflowId))
       .limit(1);
+
     if (workflow === undefined) return undefined;
+
     const [steps, dependencies, executions] = await Promise.all([
       this.database.db
         .select()
         .from(workflowSteps)
         .where(eq(workflowSteps.workflowId, workflowId))
         .orderBy(workflowSteps.ordinal),
+
       this.database.db
         .select()
         .from(workflowStepDependencies)
         .where(eq(workflowStepDependencies.workflowId, workflowId)),
+
       this.database.db
         .select()
         .from(workflowStepExecutions)
         .where(eq(workflowStepExecutions.workflowId, workflowId)),
     ]);
-    return { workflow, steps, dependencies, executions };
+
+    return {
+      workflow,
+      steps,
+      dependencies,
+      executions,
+    };
   }
 
   public async succeed(
@@ -288,20 +398,27 @@ export class WorkflowRepository {
             eq(workflowStepExecutions.status, "RUNNING"),
           ),
         );
+
       await transaction
         .update(workflowSteps)
-        .set({ status: "SUCCEEDED", completedAt: now, updatedAt: now })
+        .set({
+          status: "SUCCEEDED",
+          completedAt: now,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(workflowSteps.id, stepId),
             eq(workflowSteps.status, "RUNNING"),
           ),
         );
-      await transaction.execute(
-        sql`update workflow_steps candidate set status = 'READY', updated_at = ${now} where candidate.workflow_id = ${workflowId} and candidate.status = 'BLOCKED' and not exists (select 1 from workflow_step_dependencies dependency join workflow_steps required on required.id = dependency.depends_on_step_id where dependency.step_id = candidate.id and required.status <> 'SUCCEEDED')`,
-      );
+
+      await unlockSatisfiedSteps(transaction, workflowId, now);
+
       const remaining = await transaction
-        .select({ id: workflowSteps.id })
+        .select({
+          id: workflowSteps.id,
+        })
         .from(workflowSteps)
         .where(
           and(
@@ -310,13 +427,19 @@ export class WorkflowRepository {
           ),
         )
         .limit(1);
-      if (remaining.length === 0)
+
+      if (remaining.length === 0) {
         await transaction
           .update(workflows)
-          .set({ status: "COMPLETED", completedAt: now, updatedAt: now })
+          .set({
+            status: "COMPLETED",
+            completedAt: now,
+            updatedAt: now,
+          })
           .where(
             and(eq(workflows.id, workflowId), eq(workflows.status, "RUNNING")),
           );
+      }
     });
   }
 
@@ -337,7 +460,11 @@ export class WorkflowRepository {
       .set({
         checkpoint,
         recoveryUpdatedAt: now,
-        ...(checkpoint === "DISPATCH_PENDING" ? { dispatchedAt: now } : {}),
+        ...(checkpoint === "DISPATCH_PENDING"
+          ? {
+              dispatchedAt: now,
+            }
+          : {}),
       })
       .where(
         and(
@@ -347,6 +474,7 @@ export class WorkflowRepository {
         ),
       )
       .returning();
+
     return updated;
   }
 
@@ -357,7 +485,11 @@ export class WorkflowRepository {
   ) {
     const [updated] = await this.database.db
       .update(workflowStepExecutions)
-      .set({ checkpoint: "DISPATCHED", result, recoveryUpdatedAt: now })
+      .set({
+        checkpoint: "DISPATCHED",
+        result,
+        recoveryUpdatedAt: now,
+      })
       .where(
         and(
           eq(workflowStepExecutions.id, executionId),
@@ -366,6 +498,7 @@ export class WorkflowRepository {
         ),
       )
       .returning();
+
     return updated;
   }
 
@@ -402,10 +535,14 @@ export class WorkflowRepository {
           ),
         )
         .limit(1);
+
       if (candidate === undefined) return undefined;
+
       const [claimed] = await transaction
         .update(workflowStepExecutions)
-        .set({ recoveryUpdatedAt: now })
+        .set({
+          recoveryUpdatedAt: now,
+        })
         .where(
           and(
             eq(workflowStepExecutions.id, candidate.execution.id),
@@ -414,9 +551,13 @@ export class WorkflowRepository {
           ),
         )
         .returning();
+
       return claimed === undefined
         ? undefined
-        : { ...candidate, execution: claimed };
+        : {
+            ...candidate,
+            execution: claimed,
+          };
     });
   }
 
@@ -437,6 +578,7 @@ export class WorkflowRepository {
           recoveryUpdatedAt: now,
         })
         .where(eq(workflowStepExecutions.id, executionId));
+
       await transaction
         .update(workflowSteps)
         .set({
@@ -445,11 +587,296 @@ export class WorkflowRepository {
           completedAt: now,
         })
         .where(eq(workflowSteps.id, stepId));
+
       await transaction
         .update(workflows)
-        .set({ status: "RECOVERY_REQUIRED", updatedAt: now })
+        .set({
+          status: "RECOVERY_REQUIRED",
+          updatedAt: now,
+        })
         .where(eq(workflows.id, workflowId));
     });
+  }
+
+  public async resolveAmbiguousOwned(
+    actorId: string,
+    workflowId: string,
+    resolution: WorkflowAmbiguityResolution,
+    now: Date,
+  ): Promise<WorkflowAmbiguityResolutionResult> {
+    try {
+      return await this.database.db.transaction(async (transaction) => {
+        const [workflow] = await transaction
+          .select()
+          .from(workflows)
+          .where(
+            and(eq(workflows.id, workflowId), eq(workflows.actorId, actorId)),
+          )
+          .limit(1)
+          .for("update");
+
+        if (workflow === undefined) {
+          return {
+            outcome: "NOT_FOUND",
+          };
+        }
+
+        if (workflow.status !== "RECOVERY_REQUIRED") {
+          return {
+            outcome: "STATE_INVALID",
+          };
+        }
+
+        const rows = await transaction
+          .select({
+            execution: workflowStepExecutions,
+            step: workflowSteps,
+          })
+          .from(workflowStepExecutions)
+          .innerJoin(
+            workflowSteps,
+            eq(workflowSteps.id, workflowStepExecutions.stepId),
+          )
+          .where(
+            and(
+              eq(workflowStepExecutions.workflowId, workflowId),
+              eq(workflowStepExecutions.status, "AMBIGUOUS"),
+              eq(workflowStepExecutions.checkpoint, "AMBIGUOUS"),
+              eq(workflowSteps.status, "RECOVERY_REQUIRED"),
+            ),
+          )
+          .orderBy(workflowSteps.ordinal);
+
+        if (rows.length !== 1) {
+          return {
+            outcome: "STATE_INVALID",
+          };
+        }
+
+        const ambiguous = rows[0];
+
+        if (ambiguous === undefined) {
+          return {
+            outcome: "STATE_INVALID",
+          };
+        }
+
+        if (resolution === "CONFIRMED_NOT_EXECUTED") {
+          const [execution] = await transaction
+            .update(workflowStepExecutions)
+            .set({
+              status: "FAILED",
+              checkpoint: "FINALIZED",
+              errorCode: "WORKFLOW_AMBIGUITY_NOT_EXECUTED",
+              completedAt: now,
+              recoveryUpdatedAt: now,
+            })
+            .where(
+              and(
+                eq(workflowStepExecutions.id, ambiguous.execution.id),
+                eq(workflowStepExecutions.status, "AMBIGUOUS"),
+                eq(workflowStepExecutions.checkpoint, "AMBIGUOUS"),
+              ),
+            )
+            .returning();
+
+          if (execution === undefined) {
+            throw ambiguityStateChanged();
+          }
+
+          const [step] = await transaction
+            .update(workflowSteps)
+            .set({
+              status: "FAILED",
+              completedAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(workflowSteps.id, ambiguous.step.id),
+                eq(workflowSteps.status, "RECOVERY_REQUIRED"),
+              ),
+            )
+            .returning();
+
+          if (step === undefined) {
+            throw ambiguityStateChanged();
+          }
+
+          await transaction
+            .update(workflowSteps)
+            .set({
+              status: "SKIPPED",
+              completedAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(workflowSteps.workflowId, workflowId),
+                inArray(workflowSteps.status, ["READY", "BLOCKED"]),
+              ),
+            );
+
+          const [resolvedWorkflow] = await transaction
+            .update(workflows)
+            .set({
+              status: "FAILED",
+              completedAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(workflows.id, workflowId),
+                eq(workflows.actorId, actorId),
+                eq(workflows.status, "RECOVERY_REQUIRED"),
+              ),
+            )
+            .returning();
+
+          if (resolvedWorkflow === undefined) {
+            throw ambiguityStateChanged();
+          }
+
+          return {
+            outcome: "RESOLVED",
+            workflow: resolvedWorkflow,
+          };
+        }
+
+        const remainingSteps = await transaction
+          .select()
+          .from(workflowSteps)
+          .where(eq(workflowSteps.workflowId, workflowId));
+
+        if (
+          remainingSteps.some(
+            (step) =>
+              step.id !== ambiguous.step.id &&
+              payloadReferencesStep(step.payload, ambiguous.step.stepKey),
+          )
+        ) {
+          return {
+            outcome: "RESULT_REQUIRED",
+          };
+        }
+
+        const [execution] = await transaction
+          .update(workflowStepExecutions)
+          .set({
+            status: "SUCCEEDED",
+            checkpoint: "FINALIZED",
+            errorCode: null,
+            completedAt: now,
+            recoveryUpdatedAt: now,
+          })
+          .where(
+            and(
+              eq(workflowStepExecutions.id, ambiguous.execution.id),
+              eq(workflowStepExecutions.status, "AMBIGUOUS"),
+              eq(workflowStepExecutions.checkpoint, "AMBIGUOUS"),
+            ),
+          )
+          .returning();
+
+        if (execution === undefined) {
+          throw ambiguityStateChanged();
+        }
+
+        const [step] = await transaction
+          .update(workflowSteps)
+          .set({
+            status: "SUCCEEDED",
+            completedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(workflowSteps.id, ambiguous.step.id),
+              eq(workflowSteps.status, "RECOVERY_REQUIRED"),
+            ),
+          )
+          .returning();
+
+        if (step === undefined) {
+          throw ambiguityStateChanged();
+        }
+
+        const [runningWorkflow] = await transaction
+          .update(workflows)
+          .set({
+            status: "RUNNING",
+            completedAt: null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(workflows.id, workflowId),
+              eq(workflows.actorId, actorId),
+              eq(workflows.status, "RECOVERY_REQUIRED"),
+            ),
+          )
+          .returning();
+
+        if (runningWorkflow === undefined) {
+          throw ambiguityStateChanged();
+        }
+
+        await unlockSatisfiedSteps(transaction, workflowId, now);
+
+        const remaining = await transaction
+          .select({
+            id: workflowSteps.id,
+          })
+          .from(workflowSteps)
+          .where(
+            and(
+              eq(workflowSteps.workflowId, workflowId),
+              sql`${workflowSteps.status} <> 'SUCCEEDED'`,
+            ),
+          )
+          .limit(1);
+
+        if (remaining.length === 0) {
+          const [completed] = await transaction
+            .update(workflows)
+            .set({
+              status: "COMPLETED",
+              completedAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(workflows.id, workflowId),
+                eq(workflows.actorId, actorId),
+                eq(workflows.status, "RUNNING"),
+              ),
+            )
+            .returning();
+
+          if (completed === undefined) {
+            throw ambiguityStateChanged();
+          }
+
+          return {
+            outcome: "RESOLVED",
+            workflow: completed,
+          };
+        }
+
+        return {
+          outcome: "RESOLVED",
+          workflow: runningWorkflow,
+        };
+      });
+    } catch (error) {
+      if (error instanceof WorkflowAmbiguityStateChangedError) {
+        return {
+          outcome: "STATE_INVALID",
+        };
+      }
+
+      throw error;
+    }
   }
 
   public async fail(
@@ -469,22 +896,37 @@ export class WorkflowRepository {
           completedAt: now,
         })
         .where(eq(workflowStepExecutions.id, executionId));
+
       await transaction
         .update(workflowSteps)
-        .set({ status: "FAILED", completedAt: now, updatedAt: now })
+        .set({
+          status: "FAILED",
+          completedAt: now,
+          updatedAt: now,
+        })
         .where(eq(workflowSteps.id, stepId));
+
       await transaction
         .update(workflowSteps)
-        .set({ status: "SKIPPED", completedAt: now, updatedAt: now })
+        .set({
+          status: "SKIPPED",
+          completedAt: now,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(workflowSteps.workflowId, workflowId),
             inArray(workflowSteps.status, ["READY", "BLOCKED"]),
           ),
         );
+
       await transaction
         .update(workflows)
-        .set({ status: "FAILED", completedAt: now, updatedAt: now })
+        .set({
+          status: "FAILED",
+          completedAt: now,
+          updatedAt: now,
+        })
         .where(eq(workflows.id, workflowId));
     });
   }
@@ -506,13 +948,21 @@ export class WorkflowRepository {
           recoveryUpdatedAt: now,
         })
         .where(eq(workflowStepExecutions.id, executionId));
+
       await transaction
         .update(workflowSteps)
-        .set({ status: "AWAITING_APPROVAL", updatedAt: now })
+        .set({
+          status: "AWAITING_APPROVAL",
+          updatedAt: now,
+        })
         .where(eq(workflowSteps.id, stepId));
+
       await transaction
         .update(workflows)
-        .set({ status: "AWAITING_APPROVAL", updatedAt: now })
+        .set({
+          status: "AWAITING_APPROVAL",
+          updatedAt: now,
+        })
         .where(eq(workflows.id, workflowId));
     });
   }
@@ -544,15 +994,25 @@ export class WorkflowRepository {
           ),
         )
         .limit(1);
+
       if (row === undefined) return undefined;
+
       await transaction
         .update(workflows)
-        .set({ status: "RUNNING", updatedAt: now })
+        .set({
+          status: "RUNNING",
+          updatedAt: now,
+        })
         .where(eq(workflows.id, row.workflow.id));
+
       await transaction
         .update(workflowSteps)
-        .set({ status: "RUNNING", updatedAt: now })
+        .set({
+          status: "RUNNING",
+          updatedAt: now,
+        })
         .where(eq(workflowSteps.id, row.step.id));
+
       await transaction
         .update(workflowStepExecutions)
         .set({
@@ -561,13 +1021,16 @@ export class WorkflowRepository {
           recoveryUpdatedAt: now,
         })
         .where(eq(workflowStepExecutions.id, row.execution.id));
+
       return row;
     });
   }
 
   public async canResumeApproval(actorId: string, approvalId: string) {
     const [row] = await this.database.db
-      .select({ id: workflowStepExecutions.id })
+      .select({
+        id: workflowStepExecutions.id,
+      })
       .from(workflowStepExecutions)
       .innerJoin(
         workflowSteps,
@@ -584,19 +1047,96 @@ export class WorkflowRepository {
         ),
       )
       .limit(1);
+
     return row !== undefined;
   }
+}
+
+class WorkflowAmbiguityStateChangedError extends Error {
+  public constructor() {
+    super("Workflow ambiguity state changed during resolution");
+    this.name = "WorkflowAmbiguityStateChangedError";
+  }
+}
+
+function ambiguityStateChanged(): WorkflowAmbiguityStateChangedError {
+  return new WorkflowAmbiguityStateChangedError();
+}
+
+type WorkflowTransaction = Parameters<
+  Parameters<DatabaseClient["db"]["transaction"]>[0]
+>[0];
+
+async function unlockSatisfiedSteps(
+  transaction: WorkflowTransaction,
+  workflowId: string,
+  now: Date,
+): Promise<void> {
+  await transaction.execute(
+    sql`
+      update workflow_steps candidate
+      set
+        status = 'READY',
+        updated_at = ${now}
+      where
+        candidate.workflow_id = ${workflowId}
+        and candidate.status = 'BLOCKED'
+        and not exists (
+          select 1
+          from workflow_step_dependencies dependency
+          join workflow_steps required
+            on required.id = dependency.depends_on_step_id
+          where
+            dependency.step_id = candidate.id
+            and required.status <> 'SUCCEEDED'
+        )
+    `,
+  );
+}
+
+function payloadReferencesStep(payload: unknown, stepKey: string): boolean {
+  const root = object(payload);
+  const tool = object(root?.tool);
+  const input = object(tool?.input);
+
+  if (input === undefined) return false;
+
+  return Object.values(input).some((value) => {
+    const reference = object(value);
+
+    if (reference === undefined) return false;
+
+    return (
+      reference.fromStep === stepKey &&
+      typeof reference.field === "string" &&
+      reference.field.length > 0
+    );
+  });
+}
+
+function object(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function safePayload(step: WorkflowStep): Record<string, unknown> {
   switch (step.kind) {
     case "tool":
-      return { tool: step.tool };
+      return {
+        tool: step.tool,
+      };
+
     case "memory_read":
-      return { memoryKind: step.memoryKind };
+      return {
+        memoryKind: step.memoryKind,
+      };
+
     case "memory_search":
     case "knowledge_search":
-      return { query: step.query };
+      return {
+        query: step.query,
+      };
   }
 }
 
@@ -605,6 +1145,10 @@ function requireStepId(
   key: string,
 ): string {
   const id = byKey.get(key);
-  if (id === undefined) throw new Error("Workflow step mapping failed");
+
+  if (id === undefined) {
+    throw new Error("Workflow step mapping failed");
+  }
+
   return id;
 }

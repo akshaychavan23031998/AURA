@@ -3,6 +3,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { fileURLToPath } from "node:url";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { ApprovalRepository } from "../src/approvals/approval-repository.js";
 import { createAccessTokenVerifier } from "../src/auth/token-verifier.js";
 import { createDatabaseClient, type DatabaseClient } from "../src/db/client.js";
 import {
@@ -21,7 +22,6 @@ import {
   workflowWorkerLeases,
   workflows,
 } from "../src/db/schema.js";
-import { ApprovalRepository } from "../src/approvals/approval-repository.js";
 import { IdentityRepository } from "../src/identity/repositories.js";
 import {
   InvalidSessionError,
@@ -32,26 +32,29 @@ import {
   GOOGLE_CALENDAR_READ_SCOPE,
   ProviderCredentialRepository,
 } from "../src/identity/provider-credentials.js";
-import { testConfig } from "./test-config.js";
-import { MemoryRepository } from "../src/memory/memory-repository.js";
-import { MemoryEmbeddingRepository } from "../src/memory/memory-embedding-repository.js";
-import { KnowledgeRepository } from "../src/knowledge/knowledge-repository.js";
 import { KnowledgeEmbeddingRepository } from "../src/knowledge/knowledge-embedding-repository.js";
+import { KnowledgeRepository } from "../src/knowledge/knowledge-repository.js";
 import { sha256 } from "../src/knowledge/knowledge-service.js";
-import { WorkflowRepository } from "../src/workflows/workflow-repository.js";
-import { WorkflowService } from "../src/workflows/workflow-service.js";
+import { MemoryEmbeddingRepository } from "../src/memory/memory-embedding-repository.js";
+import { MemoryRepository } from "../src/memory/memory-repository.js";
+import { WorkflowActorPolicy } from "../src/workflows/workflow-actor-policy.js";
 import { WorkflowExecutor } from "../src/workflows/workflow-executor.js";
 import { WorkflowLeaseRepository } from "../src/workflows/workflow-lease-repository.js";
-import { WorkflowActorPolicy } from "../src/workflows/workflow-actor-policy.js";
+import { WorkflowRepository } from "../src/workflows/workflow-repository.js";
+import { WorkflowService } from "../src/workflows/workflow-service.js";
 import { WorkflowWorker } from "../src/workflows/workflow-worker.js";
+import { testConfig } from "./test-config.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
+
 if (!databaseUrl) {
   throw new Error(
     "TEST_DATABASE_URL is required for Gateway identity integration tests. Start the isolated PostgreSQL service and point it to a database whose name ends in _test.",
   );
 }
+
 const parsedDatabaseUrl = new URL(databaseUrl);
+
 if (!/_(?:test|tests)$/.test(parsedDatabaseUrl.pathname.slice(1))) {
   throw new Error(
     "TEST_DATABASE_URL database name must end in _test or _tests to protect development data",
@@ -60,8 +63,12 @@ if (!/_(?:test|tests)$/.test(parsedDatabaseUrl.pathname.slice(1))) {
 
 const database: DatabaseClient = createDatabaseClient({
   ...testConfig,
-  database: { ...testConfig.database, url: databaseUrl },
+  database: {
+    ...testConfig.database,
+    url: databaseUrl,
+  },
 });
+
 const repository = new IdentityRepository(database);
 const sessions = new SessionService(repository, testConfig.auth);
 const approvals = new ApprovalRepository(database);
@@ -76,9 +83,11 @@ beforeAll(async () => {
   await database.db.execute(sql`drop schema if exists public cascade`);
   await database.db.execute(sql`drop schema if exists drizzle cascade`);
   await database.db.execute(sql`create schema public`);
+
   await migrate(database.db, {
     migrationsFolder: fileURLToPath(new URL("../drizzle", import.meta.url)),
   });
+
   return async () => database.close();
 });
 
@@ -90,7 +99,9 @@ describe.sequential("PostgreSQL identity persistence", () => {
   it("applies migrations and bootstraps one stable development user", async () => {
     const first = await repository.bootstrapDevelopmentUser();
     const second = await repository.bootstrapDevelopmentUser();
+
     expect(second).toBe(first);
+
     await expect(repository.findActiveUser(first)).resolves.toMatchObject({
       id: first,
       status: "ACTIVE",
@@ -100,13 +111,17 @@ describe.sequential("PostgreSQL identity persistence", () => {
   it("persists only the refresh digest and validates the created session", async () => {
     const userId = await repository.bootstrapDevelopmentUser();
     const created = await sessions.create(userId);
+
     const principal = await createAccessTokenVerifier(
       testConfig,
       sessions,
     ).verify(created.accessToken);
+
     expect(principal.actorId).toBe(userId);
     expect(principal.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+
     const stored = await database.db.select().from(refreshTokens);
+
     expect(stored).toHaveLength(1);
     expect(stored[0]?.tokenHash).toBe(digestRefreshToken(created.refreshToken));
     expect(stored[0]?.tokenHash).not.toBe(created.refreshToken);
@@ -116,9 +131,11 @@ describe.sequential("PostgreSQL identity persistence", () => {
     const userId = await repository.bootstrapDevelopmentUser();
     const first = await sessions.create(userId);
     const second = await sessions.rotate(first.refreshToken);
+
     await expect(sessions.rotate(first.refreshToken)).rejects.toBeInstanceOf(
       InvalidSessionError,
     );
+
     await expect(sessions.rotate(second.refreshToken)).rejects.toBeInstanceOf(
       InvalidSessionError,
     );
@@ -127,13 +144,16 @@ describe.sequential("PostgreSQL identity persistence", () => {
   it("allows only one of two concurrent rotations to succeed", async () => {
     const userId = await repository.bootstrapDevelopmentUser();
     const created = await sessions.create(userId);
+
     const outcomes = await Promise.allSettled([
       sessions.rotate(created.refreshToken),
       sessions.rotate(created.refreshToken),
     ]);
+
     expect(
       outcomes.filter((result) => result.status === "fulfilled"),
     ).toHaveLength(1);
+
     expect(
       outcomes.filter((result) => result.status === "rejected"),
     ).toHaveLength(1);
@@ -142,14 +162,18 @@ describe.sequential("PostgreSQL identity persistence", () => {
   it("rejects revoked and expired sessions", async () => {
     const userId = await repository.bootstrapDevelopmentUser();
     const revoked = await sessions.create(userId);
+
     const revokedPrincipal = await createAccessTokenVerifier(
       testConfig,
       sessions,
     ).verify(revoked.accessToken);
+
     await sessions.revoke(revokedPrincipal.sessionId, userId);
+
     await expect(sessions.rotate(revoked.refreshToken)).rejects.toBeInstanceOf(
       InvalidSessionError,
     );
+
     await expect(
       createAccessTokenVerifier(testConfig, sessions).verify(
         revoked.accessToken,
@@ -157,11 +181,13 @@ describe.sequential("PostgreSQL identity persistence", () => {
     ).rejects.toBeDefined();
 
     const expiredToken = "expired-refresh-token";
+
     await repository.createSession(
       userId,
       digestRefreshToken(expiredToken),
       new Date(Date.now() - 1),
     );
+
     await expect(sessions.rotate(expiredToken)).rejects.toBeInstanceOf(
       InvalidSessionError,
     );
@@ -170,18 +196,22 @@ describe.sequential("PostgreSQL identity persistence", () => {
   it("rejects access, refresh, and future issuance for a disabled user", async () => {
     const userId = await repository.bootstrapDevelopmentUser();
     const created = await sessions.create(userId);
+
     await database.db
       .update(users)
       .set({ status: "DISABLED" })
       .where(eq(users.id, userId));
+
     await expect(
       createAccessTokenVerifier(testConfig, sessions).verify(
         created.accessToken,
       ),
     ).rejects.toBeDefined();
+
     await expect(sessions.rotate(created.refreshToken)).rejects.toBeInstanceOf(
       InvalidSessionError,
     );
+
     await expect(sessions.create(userId)).rejects.toBeInstanceOf(
       InvalidSessionError,
     );
@@ -194,13 +224,17 @@ describe.sequential("PostgreSQL identity persistence", () => {
       email: "verified@example.com",
       emailVerified: true,
     };
+
     const first = await repository.resolveExternalIdentity(verified);
+
     const second = await repository.resolveExternalIdentity({
       ...verified,
       email: "changed@example.com",
     });
+
     expect(second).toBe(first);
     expect(await database.db.select().from(users)).toHaveLength(1);
+
     expect(await database.db.select().from(externalIdentities)).toEqual([
       expect.objectContaining({
         userId: first,
@@ -218,42 +252,54 @@ describe.sequential("PostgreSQL identity persistence", () => {
       email: "untrusted@example.com",
       emailVerified: false,
     });
+
     const [binding] = await database.db.select().from(externalIdentities);
+
     expect(binding?.emailAtLinkTime).toBeNull();
   });
 
   it("encrypts Calendar credentials and isolates them by linked user", async () => {
     const subject = "calendar-google-subject";
+
     const userId = await repository.resolveExternalIdentity({
       provider: "google",
       subject,
       emailVerified: false,
     });
+
     const otherUserId = await repository.bootstrapDevelopmentUser();
+
     const credentials = new ProviderCredentialRepository(
       database,
       Buffer.alloc(32, 7),
     );
+
     await credentials.storeGoogle(
       userId,
       subject,
       "provider-refresh-token-must-stay-secret",
       [GOOGLE_CALENDAR_READ_SCOPE],
     );
+
     await expect(credentials.getGoogle(userId)).resolves.toMatchObject({
       subject,
       refreshToken: "provider-refresh-token-must-stay-secret",
       scopes: [GOOGLE_CALENDAR_READ_SCOPE],
     });
+
     await expect(credentials.getGoogle(otherUserId)).resolves.toBeUndefined();
+
     const [stored] = await database.db.select().from(providerCredentials);
+
     expect(stored?.encryptedRefreshToken).not.toContain(
       "provider-refresh-token-must-stay-secret",
     );
+
     await credentials.storeGoogle(userId, subject, undefined, [
       GOOGLE_CALENDAR_READ_SCOPE,
       "https://www.googleapis.com/auth/contacts.readonly",
     ]);
+
     await expect(credentials.getGoogle(userId)).resolves.toMatchObject({
       refreshToken: "provider-refresh-token-must-stay-secret",
       scopes: [
@@ -261,7 +307,9 @@ describe.sequential("PostgreSQL identity persistence", () => {
         "https://www.googleapis.com/auth/contacts.readonly",
       ],
     });
+
     await credentials.disconnectGoogle(userId);
+
     await expect(credentials.getGoogle(userId)).resolves.toBeUndefined();
   });
 
@@ -271,10 +319,12 @@ describe.sequential("PostgreSQL identity persistence", () => {
       subject: "concurrent-google-subject",
       emailVerified: false,
     };
+
     const [first, second] = await Promise.all([
       repository.resolveExternalIdentity(identity),
       repository.resolveExternalIdentity(identity),
     ]);
+
     expect(second).toBe(first);
     expect(await database.db.select().from(users)).toHaveLength(1);
     expect(await database.db.select().from(externalIdentities)).toHaveLength(1);
@@ -282,10 +332,12 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("persists, owns, rejects, expires, and consumes approvals once", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const otherActor = await database.db
       .insert(users)
       .values({})
       .returning({ id: users.id });
+
     const create = (expiresAt: Date) =>
       approvals.create({
         actorId,
@@ -298,43 +350,60 @@ describe.sequential("PostgreSQL identity persistence", () => {
         preview: "Run test approval-required action",
         expiresAt,
       });
+
     const persisted = await create(new Date(Date.now() + 60_000));
+
     expect(
       await new ApprovalRepository(database).findOwned(persisted.id, actorId),
-    ).toMatchObject({ id: persisted.id, status: "PENDING" });
+    ).toMatchObject({
+      id: persisted.id,
+      status: "PENDING",
+    });
+
     expect(
       await approvals.findOwned(persisted.id, otherActor[0]!.id),
     ).toBeUndefined();
+
     const [first, second] = await Promise.all([
       approvals.consume(persisted.id, actorId, new Date()),
       approvals.consume(persisted.id, actorId, new Date()),
     ]);
+
     expect([first, second].filter(Boolean)).toHaveLength(1);
     expect((first ?? second)?.status).toBe("CONSUMED");
 
     const rejected = await create(new Date(Date.now() + 60_000));
+
     expect(
       (await approvals.reject(rejected.id, actorId, new Date()))?.status,
     ).toBe("REJECTED");
+
     expect(
       await approvals.consume(rejected.id, actorId, new Date()),
     ).toBeUndefined();
+
     const expired = await create(new Date(Date.now() - 1));
+
     expect(
       await approvals.consume(expired.id, actorId, new Date()),
     ).toBeUndefined();
+
     const decisionRace = await create(new Date(Date.now() + 60_000));
+
     const [approvedRace, rejectedRace] = await Promise.all([
       approvals.consume(decisionRace.id, actorId, new Date()),
       approvals.reject(decisionRace.id, actorId, new Date()),
     ]);
+
     expect([approvedRace, rejectedRace].filter(Boolean)).toHaveLength(1);
     expect(await database.db.select().from(toolApprovals)).toHaveLength(4);
   });
 
   it("persists owner-scoped memories and preserves them across repository recreation", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const [otherActor] = await database.db.insert(users).values({}).returning();
+
     const created = await memories.create(actorId, {
       kind: "preference",
       content: "Prefer concise answers",
@@ -347,12 +416,15 @@ describe.sequential("PostgreSQL identity persistence", () => {
       source: "user_explicit",
       status: "ACTIVE",
     });
+
     await expect(
       memories.getOwned(otherActor!.id, created.id),
     ).resolves.toBeUndefined();
+
     await expect(
       memories.listOwned(otherActor!.id, { limit: 20 }),
     ).resolves.toEqual([]);
+
     await expect(
       memories.deleteOwned(otherActor!.id, created.id, new Date()),
     ).resolves.toBeUndefined();
@@ -360,48 +432,65 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("soft-deletes memories atomically and excludes terminal records", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await memories.create(actorId, {
       kind: "note",
       content: "A private note",
     });
+
     const now = new Date();
+
     await expect(
       memories.deleteOwned(actorId, created.id, now),
     ).resolves.toEqual({
       id: created.id,
     });
+
     await expect(
       memories.deleteOwned(actorId, created.id, now),
     ).resolves.toBeUndefined();
+
     await expect(
       memories.getOwned(actorId, created.id),
     ).resolves.toBeUndefined();
+
     await expect(memories.listOwned(actorId, { limit: 20 })).resolves.toEqual(
       [],
     );
+
     const [stored] = await database.db.select().from(userMemories);
-    expect(stored).toMatchObject({ status: "DELETED", deletedAt: now });
+
+    expect(stored).toMatchObject({
+      status: "DELETED",
+      deletedAt: now,
+    });
   });
 
   it("ranks semantic memories inside the active owner boundary", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const [otherActor] = await database.db.insert(users).values({}).returning();
+
     const related = await memories.create(actorId, {
       kind: "preference",
       content: "Prefers TypeScript",
     });
+
     const unrelated = await memories.create(actorId, {
       kind: "note",
       content: "Prefers morning meetings",
     });
+
     const foreign = await memories.create(otherActor!.id, {
       kind: "fact",
       content: "Uses TypeScript",
     });
+
     const axis = (index: number) =>
       Array.from({ length: 384 }, (_, position) =>
         position === index ? 1 : 0,
       );
+
     await memoryEmbeddings.upsert(related.id, "test-model", axis(0));
     await memoryEmbeddings.upsert(unrelated.id, "test-model", axis(1));
     await memoryEmbeddings.upsert(foreign.id, "test-model", axis(0));
@@ -414,7 +503,9 @@ describe.sequential("PostgreSQL identity persistence", () => {
         content: "Prefers TypeScript",
       }),
     ]);
+
     await memories.deleteOwned(actorId, related.id, new Date());
+
     await expect(
       memoryEmbeddings.searchOwned(actorId, "test-model", axis(0), 5, 0.5),
     ).resolves.toEqual([]);
@@ -431,7 +522,9 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("transactionally persists owner-scoped knowledge and deterministic chunks", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const [otherActor] = await database.db.insert(users).values({}).returning();
+
     const created = await knowledge.createTransactional(actorId, {
       title: "Architecture",
       sourceType: "file_txt",
@@ -450,6 +543,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
       ],
     });
+
     await expect(
       knowledge.getOwned(actorId, created.id),
     ).resolves.toMatchObject({
@@ -458,20 +552,30 @@ describe.sequential("PostgreSQL identity persistence", () => {
       status: "ACTIVE",
       chunkCount: 2,
     });
+
     await expect(
       knowledge.getOwned(otherActor!.id, created.id),
     ).resolves.toBeUndefined();
+
     await expect(knowledge.listOwned(otherActor!.id, 20)).resolves.toEqual([]);
+
     await expect(
       knowledge.listOwnedActiveChunks(actorId, created.id),
     ).resolves.toEqual([
-      expect.objectContaining({ ordinal: 0, content: "First paragraph." }),
-      expect.objectContaining({ ordinal: 1, content: "Second paragraph." }),
+      expect.objectContaining({
+        ordinal: 0,
+        content: "First paragraph.",
+      }),
+      expect.objectContaining({
+        ordinal: 1,
+        content: "Second paragraph.",
+      }),
     ]);
   });
 
   it("rolls back the document when any chunk insert fails", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     await expect(
       knowledge.createTransactional(actorId, {
         title: "Rollback",
@@ -486,9 +590,11 @@ describe.sequential("PostgreSQL identity persistence", () => {
         ],
       }),
     ).rejects.toBeDefined();
+
     await expect(
       database.db.select().from(knowledgeDocuments),
     ).resolves.toEqual([]);
+
     await expect(database.db.select().from(knowledgeChunks)).resolves.toEqual(
       [],
     );
@@ -496,71 +602,105 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("soft-deletes owned knowledge and makes retained chunks inaccessible", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const [otherActor] = await database.db.insert(users).values({}).returning();
+
     const create = (title: string) =>
       knowledge.createTransactional(actorId, {
         title,
         normalizedContent: title,
         contentHash: sha256(title),
-        chunks: [{ ordinal: 0, content: title, contentHash: sha256(title) }],
+        chunks: [
+          {
+            ordinal: 0,
+            content: title,
+            contentHash: sha256(title),
+          },
+        ],
       });
+
     const older = await create("Older");
     const newer = await create("Newer");
+
     const olderAt = new Date("2026-08-19T00:00:00Z");
     const newerAt = new Date("2026-08-20T00:00:00Z");
+
     await database.db
       .update(knowledgeDocuments)
       .set({ createdAt: olderAt })
       .where(eq(knowledgeDocuments.id, older.id));
+
     await database.db
       .update(knowledgeDocuments)
       .set({ createdAt: newerAt })
       .where(eq(knowledgeDocuments.id, newer.id));
+
     await expect(knowledge.listOwned(actorId, 1)).resolves.toEqual([
       expect.objectContaining({ id: newer.id }),
     ]);
+
     await expect(
       knowledge.deleteOwned(otherActor!.id, newer.id, new Date()),
     ).resolves.toBeUndefined();
+
     await expect(
       knowledge.deleteOwned(actorId, newer.id, newerAt),
-    ).resolves.toEqual({ id: newer.id });
+    ).resolves.toEqual({
+      id: newer.id,
+    });
+
     await expect(
       knowledge.deleteOwned(actorId, newer.id, newerAt),
     ).resolves.toBeUndefined();
+
     await expect(
       knowledge.getOwned(actorId, newer.id),
     ).resolves.toBeUndefined();
+
     await expect(
       knowledge.listOwnedActiveChunks(actorId, newer.id),
     ).resolves.toEqual([]);
+
     expect(await database.db.select().from(knowledgeChunks)).toHaveLength(2);
   });
 
   it("upserts model-aware chunk vectors and selects only ACTIVE missing chunks", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const create = (title: string) =>
       knowledge.createTransactional(actorId, {
         title,
         normalizedContent: title,
         contentHash: sha256(title),
-        chunks: [{ ordinal: 0, content: title, contentHash: sha256(title) }],
+        chunks: [
+          {
+            ordinal: 0,
+            content: title,
+            contentHash: sha256(title),
+          },
+        ],
       });
+
     const active = await create("Active chunk");
     const deleted = await create("Deleted chunk");
+
     const activeChunk = active.chunks[0]!;
     const vector = Array.from({ length: 384 }, () => 0.25);
 
     await knowledgeEmbeddings.upsert(activeChunk.id, "model-a", vector);
     await knowledgeEmbeddings.upsert(activeChunk.id, "model-a", vector);
     await knowledgeEmbeddings.upsert(activeChunk.id, "model-b", vector);
+
     expect(
       await database.db.select().from(knowledgeChunkEmbeddings),
     ).toHaveLength(2);
+
     await knowledge.deleteOwned(actorId, deleted.id, new Date());
+
     await expect(
       knowledgeEmbeddings.listActiveMissing("model-a", 25),
     ).resolves.toEqual([]);
+
     await expect(
       knowledgeEmbeddings.listActiveMissing("model-c", 1),
     ).resolves.toEqual([
@@ -570,6 +710,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
         content: "Active chunk",
       }),
     ]);
+
     await expect(
       knowledgeEmbeddings.upsert(activeChunk.id, "model-a", [1, 2]),
     ).rejects.toThrow("Invalid knowledge embedding vector");
@@ -577,14 +718,23 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("performs cosine knowledge retrieval inside owner, lifecycle, and model boundaries", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const [otherActor] = await database.db.insert(users).values({}).returning();
+
     const create = (owner: string, title: string) =>
       knowledge.createTransactional(owner, {
         title,
         normalizedContent: title,
         contentHash: sha256(title),
-        chunks: [{ ordinal: 0, content: title, contentHash: sha256(title) }],
+        chunks: [
+          {
+            ordinal: 0,
+            content: title,
+            contentHash: sha256(title),
+          },
+        ],
       });
+
     const exactA = await create(actorId, "Exact A");
     const exactB = await create(actorId, "Exact B");
     const related = await create(actorId, "Related");
@@ -593,42 +743,51 @@ describe.sequential("PostgreSQL identity persistence", () => {
     const unembedded = await create(actorId, "Unembedded");
     const deleted = await create(actorId, "Deleted");
     const foreign = await create(otherActor!.id, "Foreign");
+
     const axis = (first: number, second = 0) => [
       first,
       second,
       ...Array.from({ length: 382 }, () => 0),
     ];
-    for (const document of [exactA, exactB])
+
+    for (const document of [exactA, exactB]) {
       await knowledgeEmbeddings.upsert(
         document.chunks[0]!.id,
         "current-model",
         axis(1),
       );
+    }
+
     await knowledgeEmbeddings.upsert(
       related.chunks[0]!.id,
       "current-model",
       axis(0.8, 0.6),
     );
+
     await knowledgeEmbeddings.upsert(
       unrelated.chunks[0]!.id,
       "current-model",
       axis(0, 1),
     );
+
     await knowledgeEmbeddings.upsert(
       wrongModel.chunks[0]!.id,
       "old-model",
       axis(1),
     );
+
     await knowledgeEmbeddings.upsert(
       deleted.chunks[0]!.id,
       "current-model",
       axis(1),
     );
+
     await knowledgeEmbeddings.upsert(
       foreign.chunks[0]!.id,
       "current-model",
       axis(1),
     );
+
     await knowledge.deleteOwned(actorId, deleted.id, new Date());
 
     const results = await knowledgeEmbeddings.searchOwned(
@@ -638,11 +797,14 @@ describe.sequential("PostgreSQL identity persistence", () => {
       10,
       0.5,
     );
+
     const exactIds = [exactA.id, exactB.id].sort();
+
     expect(results.map((result) => result.documentId)).toEqual([
       ...exactIds,
       related.id,
     ]);
+
     expect(results.map((result) => result.title)).not.toEqual(
       expect.arrayContaining([
         unrelated.title,
@@ -652,8 +814,10 @@ describe.sequential("PostgreSQL identity persistence", () => {
         foreign.title,
       ]),
     );
+
     expect(results[0]!.similarity).toBeCloseTo(1);
     expect(results[2]!.similarity).toBeCloseTo(0.8);
+
     await expect(
       knowledgeEmbeddings.searchOwned(
         actorId,
@@ -667,6 +831,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("persists and reconstructs an actor-owned workflow graph atomically", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Prepare for the meeting",
@@ -675,7 +840,10 @@ describe.sequential("PostgreSQL identity persistence", () => {
           id: "meeting",
           kind: "tool",
           dependsOn: [],
-          tool: { name: "calendar.events.list", input: { maxResults: 1 } },
+          tool: {
+            name: "calendar.events.list",
+            input: { maxResults: 1 },
+          },
         },
         {
           id: "notes",
@@ -685,19 +853,25 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
       ],
     });
+
     expect(created.status).toBe("READY");
+
     expect(
       created.steps.map((step) => [step.stepKey, step.status, step.dependsOn]),
     ).toEqual([
       ["meeting", "READY", []],
       ["notes", "BLOCKED", ["meeting"]],
     ]);
+
     const recreated = new WorkflowService(new WorkflowRepository(database));
+
     await expect(recreated.getOwned(actorId, created.id)).resolves.toEqual(
       created,
     );
+
     expect(await database.db.select().from(workflows)).toHaveLength(1);
     expect(await database.db.select().from(workflowSteps)).toHaveLength(2);
+
     expect(
       await database.db.select().from(workflowStepDependencies),
     ).toHaveLength(1);
@@ -705,10 +879,12 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("keeps foreign workflows indistinguishable and cancellation idempotent", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const [other] = await database.db
       .insert(users)
       .values({ developmentKey: "workflow-other" })
       .returning();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Read saved preferences",
@@ -721,22 +897,32 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
       ],
     });
+
     await expect(
       workflowService.getOwned(other!.id, created.id),
-    ).rejects.toMatchObject({ code: "WORKFLOW_NOT_FOUND" });
+    ).rejects.toMatchObject({
+      code: "WORKFLOW_NOT_FOUND",
+    });
+
     await expect(
       workflowService.cancelOwned(other!.id, created.id),
-    ).rejects.toMatchObject({ code: "WORKFLOW_NOT_FOUND" });
+    ).rejects.toMatchObject({
+      code: "WORKFLOW_NOT_FOUND",
+    });
+
     const first = await workflowService.cancelOwned(actorId, created.id);
     const second = await workflowService.cancelOwned(actorId, created.id);
+
     expect(first.status).toBe("CANCELLED");
     expect(first.steps[0]?.status).toBe("CANCELLED");
     expect(second).toEqual(first);
+
     await expect(workflowService.listOwned(other!.id, 20)).resolves.toEqual([]);
   });
 
   it("cascades durable steps and dependencies with workflow deletion", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Ordered reads",
@@ -755,8 +941,11 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
       ],
     });
+
     await database.db.delete(workflows).where(eq(workflows.id, created.id));
+
     await expect(database.db.select().from(workflowSteps)).resolves.toEqual([]);
+
     await expect(
       database.db.select().from(workflowStepDependencies),
     ).resolves.toEqual([]);
@@ -764,12 +953,17 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("rolls back the complete graph when dependency persistence fails", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     await expect(
       database.db.transaction(async (transaction) => {
         const [workflow] = await transaction
           .insert(workflows)
-          .values({ actorId, goal: "Rollback dependency failure" })
+          .values({
+            actorId,
+            goal: "Rollback dependency failure",
+          })
           .returning();
+
         const steps = await transaction
           .insert(workflowSteps)
           .values([
@@ -791,6 +985,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
             },
           ])
           .returning();
+
         await transaction.insert(workflowStepDependencies).values({
           workflowId: workflow!.id,
           stepId: steps[1]!.id,
@@ -798,6 +993,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
         });
       }),
     ).rejects.toBeDefined();
+
     await expect(
       database.db
         .select()
@@ -808,25 +1004,38 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("atomically claims one workflow step and forbids attempt two", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Claim exactly once",
       steps: [
-        { id: "read", kind: "memory_read", dependsOn: [], memoryKind: null },
+        {
+          id: "read",
+          kind: "memory_read",
+          dependsOn: [],
+          memoryKind: null,
+        },
       ],
     });
+
     const claims = await Promise.all([
       workflowRepository.startOwned(actorId, created.id, new Date()),
       workflowRepository.startOwned(actorId, created.id, new Date()),
     ]);
+
     expect(claims.filter((claim) => claim?.claimed)).toHaveLength(1);
+
     const steps = await Promise.all([
       workflowRepository.claimNext(created.id, new Date()),
       workflowRepository.claimNext(created.id, new Date()),
     ]);
+
     expect(steps.filter(Boolean)).toHaveLength(1);
+
     const [execution] = await database.db.select().from(workflowStepExecutions);
+
     expect(execution?.attemptNumber).toBe(1);
+
     await expect(
       database.db.insert(workflowStepExecutions).values({
         workflowId: created.id,
@@ -839,11 +1048,17 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("executes dependency-ready account-data steps sequentially to completion", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Read memory then knowledge",
       steps: [
-        { id: "memory", kind: "memory_read", dependsOn: [], memoryKind: null },
+        {
+          id: "memory",
+          kind: "memory_read",
+          dependsOn: [],
+          memoryKind: null,
+        },
         {
           id: "knowledge",
           kind: "knowledge_search",
@@ -852,7 +1067,9 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
       ],
     });
+
     const calls: string[] = [];
+
     const executor = new WorkflowExecutor(
       workflowRepository,
       workflowService,
@@ -878,6 +1095,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
       },
     );
+
     const result = await executor.run(
       actorId,
       created.id,
@@ -887,18 +1105,26 @@ describe.sequential("PostgreSQL identity persistence", () => {
       },
       "workflow-run-1",
     );
+
     expect(calls).toEqual(["memory", "knowledge"]);
     expect(result.status).toBe("COMPLETED");
+
     expect(result.steps.map((step) => step.status)).toEqual([
       "SUCCEEDED",
       "SUCCEEDED",
     ]);
+
     expect(result.steps.every((step) => step.hasResult)).toBe(true);
   });
 
   it("resolves a persisted scalar ancestor reference without mutating its template", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
-    const reference = { fromStep: "calculate", field: "result" };
+
+    const reference = {
+      fromStep: "calculate",
+      field: "result",
+    };
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Calculate a bounded list size",
@@ -907,7 +1133,10 @@ describe.sequential("PostgreSQL identity persistence", () => {
           id: "calculate",
           kind: "tool",
           dependsOn: [],
-          tool: { name: "utility.calculator", input: { expression: "1+2" } },
+          tool: {
+            name: "utility.calculator",
+            input: { expression: "1+2" },
+          },
         },
         {
           id: "list",
@@ -924,7 +1153,9 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
       ],
     });
+
     const dispatched: unknown[] = [];
+
     const executor = new WorkflowExecutor(
       new WorkflowRepository(database),
       new WorkflowService(new WorkflowRepository(database)),
@@ -933,34 +1164,48 @@ describe.sequential("PostgreSQL identity persistence", () => {
           Promise.resolve(preparation(request, "IDEMPOTENT")),
         execute: (request) => {
           dispatched.push(request);
+
           return Promise.resolve({
             status: "success" as const,
             tool: request.tool,
             data:
               request.tool === "utility.calculator"
-                ? { expression: "1+2", result: 3 }
-                : { events: [] },
+                ? {
+                    expression: "1+2",
+                    result: 3,
+                  }
+                : {
+                    events: [],
+                  },
           });
         },
       },
-      { create: () => Promise.reject(new Error("unexpected approval")) },
       {
-        create: () => Promise.reject(new Error("unexpected memory")),
-        getOwned: () => Promise.reject(new Error("unexpected memory")),
-        listOwned: () => Promise.reject(new Error("unexpected memory")),
-        deleteOwned: () => Promise.reject(new Error("unexpected memory")),
+        create: () => Promise.reject(new Error("unexpected approval")),
       },
-      { searchOwned: () => Promise.reject(new Error("unexpected knowledge")) },
+      unexpectedMemories(),
+      unexpectedKnowledge(),
     );
+
     const completed = await executor.run(
       actorId,
       created.id,
-      { actorId, grantedPermissions: ["workflow.write"] },
+      {
+        actorId,
+        grantedPermissions: ["workflow.write"],
+      },
       "workflow-reference-1",
     );
+
     expect(completed.status).toBe("COMPLETED");
+
     expect(dispatched).toEqual([
-      { tool: "utility.calculator", input: { expression: "1+2" } },
+      {
+        tool: "utility.calculator",
+        input: {
+          expression: "1+2",
+        },
+      },
       {
         tool: "calendar.events.list",
         input: {
@@ -970,16 +1215,22 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
       },
     ]);
+
     const graph = await new WorkflowRepository(database).getOwned(
       actorId,
       created.id,
     );
+
     const persistedInput = (
       graph!.steps[1]!.payload as {
-        tool: { input: Record<string, unknown> };
+        tool: {
+          input: Record<string, unknown>;
+        };
       }
     ).tool.input;
+
     expect(persistedInput.maxResults).toEqual(reference);
+
     expect(graph!.executions[0]!.result).toEqual({
       expression: "1+2",
       result: 3,
@@ -988,6 +1239,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("binds an approval to resolved input and resumes that exact action", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Calculate then list",
@@ -996,7 +1248,12 @@ describe.sequential("PostgreSQL identity persistence", () => {
           id: "calculate",
           kind: "tool",
           dependsOn: [],
-          tool: { name: "utility.calculator", input: { expression: "2+2" } },
+          tool: {
+            name: "utility.calculator",
+            input: {
+              expression: "2+2",
+            },
+          },
         },
         {
           id: "list",
@@ -1007,26 +1264,37 @@ describe.sequential("PostgreSQL identity persistence", () => {
             input: {
               timeMin: "2026-01-01T00:00:00Z",
               timeMax: "2026-01-02T00:00:00Z",
-              maxResults: { fromStep: "calculate", field: "result" },
+              maxResults: {
+                fromStep: "calculate",
+                field: "result",
+              },
             },
           },
         },
       ],
     });
+
     const executions: unknown[] = [];
+
     const executor = new WorkflowExecutor(
       workflowRepository,
       workflowService,
       {
         execute: (request) => {
           executions.push(request);
+
           return Promise.resolve({
             status: "success" as const,
             tool: request.tool,
             data:
               request.tool === "utility.calculator"
-                ? { expression: "2+2", result: 4 }
-                : { events: [] },
+                ? {
+                    expression: "2+2",
+                    result: 4,
+                  }
+                : {
+                    events: [],
+                  },
           });
         },
         prepare: (request) =>
@@ -1045,33 +1313,46 @@ describe.sequential("PostgreSQL identity persistence", () => {
           }),
       },
       approvals,
-      {
-        create: () => Promise.reject(new Error("unexpected memory")),
-        getOwned: () => Promise.reject(new Error("unexpected memory")),
-        listOwned: () => Promise.reject(new Error("unexpected memory")),
-        deleteOwned: () => Promise.reject(new Error("unexpected memory")),
-      },
-      { searchOwned: () => Promise.reject(new Error("unexpected knowledge")) },
+      unexpectedMemories(),
+      unexpectedKnowledge(),
     );
+
     const waiting = await executor.run(
       actorId,
       created.id,
-      { actorId, grantedPermissions: ["workflow.write"] },
+      {
+        actorId,
+        grantedPermissions: ["workflow.write"],
+      },
       "workflow-reference-approval",
     );
+
     expect(waiting.status).toBe("AWAITING_APPROVAL");
+
     const [approval] = await database.db.select().from(toolApprovals);
-    expect(approval!.inputEnvelope).toMatchObject({ maxResults: 4 });
+
+    expect(approval!.inputEnvelope).toMatchObject({
+      maxResults: 4,
+    });
+
     expect(approval!.inputDigest).toBe("a".repeat(64));
+
     await expect(
       executor.recover(
         actorId,
         created.id,
-        { actorId, grantedPermissions: ["workflow.write"] },
+        {
+          actorId,
+          grantedPermissions: ["workflow.write"],
+        },
         "workflow-reference-pending",
       ),
-    ).resolves.toMatchObject({ status: "AWAITING_APPROVAL" });
+    ).resolves.toMatchObject({
+      status: "AWAITING_APPROVAL",
+    });
+
     expect(await database.db.select().from(toolApprovals)).toHaveLength(1);
+
     await database.db
       .update(toolApprovals)
       .set({
@@ -1080,18 +1361,29 @@ describe.sequential("PostgreSQL identity persistence", () => {
         decidedAt: new Date(),
       })
       .where(eq(toolApprovals.id, approval!.id));
+
     const completed = await executor.recover(
       actorId,
       created.id,
-      { actorId, grantedPermissions: ["workflow.write"] },
+      {
+        actorId,
+        grantedPermissions: ["workflow.write"],
+      },
       "workflow-reference-approved",
     );
+
     expect(completed.status).toBe("COMPLETED");
-    expect(executions.at(-1)).toMatchObject({ input: { maxResults: 4 } });
+
+    expect(executions.at(-1)).toMatchObject({
+      input: {
+        maxResults: 4,
+      },
+    });
   });
 
   it("recovers one stale idempotent attempt after repository recreation", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Recover calculator",
@@ -1100,22 +1392,34 @@ describe.sequential("PostgreSQL identity persistence", () => {
           id: "calculate",
           kind: "tool",
           dependsOn: [],
-          tool: { name: "utility.calculator", input: { expression: "4+5" } },
+          tool: {
+            name: "utility.calculator",
+            input: {
+              expression: "4+5",
+            },
+          },
         },
       ],
     });
+
     const old = new Date("2026-01-01T00:00:00.000Z");
+
     await workflowRepository.startOwned(actorId, created.id, old);
+
     const claimed = await workflowRepository.claimNext(created.id, old);
+
     await workflowRepository.checkpoint(
       claimed!.execution.id,
       ["CLAIMED"],
       "PREPARED",
       old,
     );
+
     let dispatches = 0;
+
     const recreatedRepository = new WorkflowRepository(database);
     const recreatedService = new WorkflowService(recreatedRepository);
+
     const recovered = await new WorkflowExecutor(
       recreatedRepository,
       recreatedService,
@@ -1124,10 +1428,14 @@ describe.sequential("PostgreSQL identity persistence", () => {
           Promise.resolve(preparation(request, "IDEMPOTENT")),
         execute: (request) => {
           dispatches += 1;
+
           return Promise.resolve({
             status: "success" as const,
             tool: request.tool,
-            data: { expression: "4+5", result: 9 },
+            data: {
+              expression: "4+5",
+              result: 9,
+            },
           });
         },
       },
@@ -1140,23 +1448,34 @@ describe.sequential("PostgreSQL identity persistence", () => {
     ).recover(
       actorId,
       created.id,
-      { actorId, grantedPermissions: ["workflow.write", "utility.calculator"] },
+      {
+        actorId,
+        grantedPermissions: ["workflow.write", "utility.calculator"],
+      },
       "recover-safe",
     );
+
     expect(recovered.status).toBe("COMPLETED");
     expect(dispatches).toBe(1);
+
     const executions = await database.db.select().from(workflowStepExecutions);
+
     expect(executions).toHaveLength(1);
+
     expect(executions[0]).toMatchObject({
       attemptNumber: 1,
       status: "SUCCEEDED",
       checkpoint: "FINALIZED",
-      result: { expression: "4+5", result: 9 },
+      result: {
+        expression: "4+5",
+        result: 9,
+      },
     });
   });
 
   it("reconciles a persisted dispatch result without executing again", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Reconcile calculator",
@@ -1165,31 +1484,47 @@ describe.sequential("PostgreSQL identity persistence", () => {
           id: "calculate",
           kind: "tool",
           dependsOn: [],
-          tool: { name: "utility.calculator", input: { expression: "2+3" } },
+          tool: {
+            name: "utility.calculator",
+            input: {
+              expression: "2+3",
+            },
+          },
         },
       ],
     });
+
     const old = new Date("2026-01-01T00:00:00.000Z");
+
     await workflowRepository.startOwned(actorId, created.id, old);
+
     const claimed = await workflowRepository.claimNext(created.id, old);
+
     await workflowRepository.checkpoint(
       claimed!.execution.id,
       ["CLAIMED"],
       "PREPARED",
       old,
     );
+
     await workflowRepository.checkpoint(
       claimed!.execution.id,
       ["PREPARED"],
       "DISPATCH_PENDING",
       old,
     );
+
     await workflowRepository.recordDispatchedResult(
       claimed!.execution.id,
-      { expression: "2+3", result: 5 },
+      {
+        expression: "2+3",
+        result: 5,
+      },
       old,
     );
+
     const recreatedRepository = new WorkflowRepository(database);
+
     const recovered = await new WorkflowExecutor(
       recreatedRepository,
       new WorkflowService(recreatedRepository),
@@ -1206,10 +1541,15 @@ describe.sequential("PostgreSQL identity persistence", () => {
     ).recover(
       actorId,
       created.id,
-      { actorId, grantedPermissions: ["workflow.write"] },
+      {
+        actorId,
+        grantedPermissions: ["workflow.write"],
+      },
       "recover-result",
     );
+
     expect(recovered.status).toBe("COMPLETED");
+
     expect(
       await database.db.select().from(workflowStepExecutions),
     ).toHaveLength(1);
@@ -1217,6 +1557,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("marks a possibly dispatched non-idempotent action ambiguous without replay", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Do not repeat a mutation",
@@ -1227,28 +1568,40 @@ describe.sequential("PostgreSQL identity persistence", () => {
           dependsOn: [],
           tool: {
             name: "gmail.messages.send",
-            input: { to: "user@example.com", subject: "Test", body: "Body" },
+            input: {
+              to: "user@example.com",
+              subject: "Test",
+              body: "Body",
+            },
           },
         },
       ],
     });
+
     const old = new Date("2026-01-01T00:00:00.000Z");
+
     await workflowRepository.startOwned(actorId, created.id, old);
+
     const claimed = await workflowRepository.claimNext(created.id, old);
+
     await workflowRepository.checkpoint(
       claimed!.execution.id,
       ["CLAIMED"],
       "PREPARED",
       old,
     );
+
     await workflowRepository.checkpoint(
       claimed!.execution.id,
       ["PREPARED"],
       "DISPATCH_PENDING",
       old,
     );
+
     let dispatches = 0;
+
     const recreatedRepository = new WorkflowRepository(database);
+
     const executor = new WorkflowExecutor(
       recreatedRepository,
       new WorkflowService(recreatedRepository),
@@ -1267,6 +1620,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
       10_000,
       () => new Date("2026-01-01T00:01:00.000Z"),
     );
+
     const recovered = await executor.recover(
       actorId,
       created.id,
@@ -1276,12 +1630,16 @@ describe.sequential("PostgreSQL identity persistence", () => {
       },
       "recover-ambiguous",
     );
+
     expect(recovered.status).toBe("RECOVERY_REQUIRED");
+
     expect(recovered.steps[0]).toMatchObject({
       status: "RECOVERY_REQUIRED",
       errorCode: "WORKFLOW_EXECUTION_AMBIGUOUS",
     });
+
     expect(dispatches).toBe(0);
+
     await expect(
       executor.recover(
         actorId,
@@ -1292,14 +1650,313 @@ describe.sequential("PostgreSQL identity persistence", () => {
         },
         "recover-ambiguous-again",
       ),
-    ).resolves.toMatchObject({ status: "RECOVERY_REQUIRED" });
+    ).resolves.toMatchObject({
+      status: "RECOVERY_REQUIRED",
+    });
+
     expect(
       await database.db.select().from(workflowStepExecutions),
     ).toHaveLength(1);
   });
 
+  it("fails a recovery-required workflow when the user confirms the ambiguous action did not execute", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Resolve a non-executed ambiguous send",
+      steps: [
+        {
+          id: "send",
+          kind: "tool",
+          dependsOn: [],
+          tool: {
+            name: "gmail.messages.send",
+            input: {
+              to: "user@example.com",
+              subject: "Ambiguous",
+              body: "Body",
+            },
+          },
+        },
+        {
+          id: "followup",
+          kind: "knowledge_search",
+          dependsOn: ["send"],
+          query: "follow-up context",
+        },
+      ],
+    });
+
+    const old = new Date("2026-01-01T00:00:00.000Z");
+
+    await workflowRepository.startOwned(actorId, created.id, old);
+
+    const claimed = await workflowRepository.claimNext(created.id, old);
+
+    expect(claimed).toBeDefined();
+
+    await workflowRepository.markAmbiguous(
+      created.id,
+      claimed!.step.id,
+      claimed!.execution.id,
+      old,
+    );
+
+    const result = await workflowRepository.resolveAmbiguousOwned(
+      actorId,
+      created.id,
+      "CONFIRMED_NOT_EXECUTED",
+      new Date("2026-01-01T00:01:00.000Z"),
+    );
+
+    expect(result.outcome).toBe("RESOLVED");
+
+    if (result.outcome !== "RESOLVED") {
+      throw new Error("Expected ambiguity resolution to succeed");
+    }
+
+    expect(result.workflow.status).toBe("FAILED");
+
+    const resolved = await workflowService.getOwned(actorId, created.id);
+
+    expect(resolved.status).toBe("FAILED");
+
+    expect(resolved.steps).toEqual([
+      expect.objectContaining({
+        stepKey: "send",
+        status: "FAILED",
+        errorCode: "WORKFLOW_AMBIGUITY_NOT_EXECUTED",
+      }),
+      expect.objectContaining({
+        stepKey: "followup",
+        status: "SKIPPED",
+      }),
+    ]);
+
+    const [execution] = await database.db.select().from(workflowStepExecutions);
+
+    expect(execution).toMatchObject({
+      status: "FAILED",
+      checkpoint: "FINALIZED",
+      errorCode: "WORKFLOW_AMBIGUITY_NOT_EXECUTED",
+    });
+  });
+
+  it("completes a workflow when the user confirms a terminal ambiguous action executed", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Resolve an executed ambiguous send",
+      steps: [
+        {
+          id: "send",
+          kind: "tool",
+          dependsOn: [],
+          tool: {
+            name: "gmail.messages.send",
+            input: {
+              to: "user@example.com",
+              subject: "Confirmed",
+              body: "Body",
+            },
+          },
+        },
+      ],
+    });
+
+    const old = new Date("2026-01-01T00:00:00.000Z");
+
+    await workflowRepository.startOwned(actorId, created.id, old);
+
+    const claimed = await workflowRepository.claimNext(created.id, old);
+
+    expect(claimed).toBeDefined();
+
+    await workflowRepository.markAmbiguous(
+      created.id,
+      claimed!.step.id,
+      claimed!.execution.id,
+      old,
+    );
+
+    const result = await workflowRepository.resolveAmbiguousOwned(
+      actorId,
+      created.id,
+      "CONFIRMED_EXECUTED",
+      new Date("2026-01-01T00:01:00.000Z"),
+    );
+
+    expect(result.outcome).toBe("RESOLVED");
+
+    if (result.outcome !== "RESOLVED") {
+      throw new Error("Expected ambiguity resolution to succeed");
+    }
+
+    expect(result.workflow.status).toBe("COMPLETED");
+
+    const resolved = await workflowService.getOwned(actorId, created.id);
+
+    expect(resolved.status).toBe("COMPLETED");
+
+    expect(resolved.steps[0]).toMatchObject({
+      stepKey: "send",
+      status: "SUCCEEDED",
+      errorCode: null,
+    });
+
+    const [execution] = await database.db.select().from(workflowStepExecutions);
+
+    expect(execution).toMatchObject({
+      status: "SUCCEEDED",
+      checkpoint: "FINALIZED",
+      errorCode: null,
+    });
+  });
+
+  it("refuses confirmed-executed ambiguity resolution when a downstream step requires the missing result", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Preserve missing calculator result",
+      steps: [
+        {
+          id: "calculate",
+          kind: "tool",
+          dependsOn: [],
+          tool: {
+            name: "utility.calculator",
+            input: {
+              expression: "2+3",
+            },
+          },
+        },
+        {
+          id: "list",
+          kind: "tool",
+          dependsOn: ["calculate"],
+          tool: {
+            name: "calendar.events.list",
+            input: {
+              timeMin: "2026-01-01T00:00:00Z",
+              timeMax: "2026-01-02T00:00:00Z",
+              maxResults: {
+                fromStep: "calculate",
+                field: "result",
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const old = new Date("2026-01-01T00:00:00.000Z");
+
+    await workflowRepository.startOwned(actorId, created.id, old);
+
+    const claimed = await workflowRepository.claimNext(created.id, old);
+
+    expect(claimed).toBeDefined();
+
+    await workflowRepository.markAmbiguous(
+      created.id,
+      claimed!.step.id,
+      claimed!.execution.id,
+      old,
+    );
+
+    const result = await workflowRepository.resolveAmbiguousOwned(
+      actorId,
+      created.id,
+      "CONFIRMED_EXECUTED",
+      new Date("2026-01-01T00:01:00.000Z"),
+    );
+
+    expect(result).toEqual({
+      outcome: "RESULT_REQUIRED",
+    });
+
+    const unresolved = await workflowService.getOwned(actorId, created.id);
+
+    expect(unresolved.status).toBe("RECOVERY_REQUIRED");
+
+    expect(unresolved.steps).toEqual([
+      expect.objectContaining({
+        stepKey: "calculate",
+        status: "RECOVERY_REQUIRED",
+        errorCode: "WORKFLOW_EXECUTION_AMBIGUOUS",
+      }),
+      expect.objectContaining({
+        stepKey: "list",
+        status: "BLOCKED",
+      }),
+    ]);
+
+    const [execution] = await database.db.select().from(workflowStepExecutions);
+
+    expect(execution).toMatchObject({
+      status: "AMBIGUOUS",
+      checkpoint: "AMBIGUOUS",
+      errorCode: "WORKFLOW_EXECUTION_AMBIGUOUS",
+    });
+  });
+
+  it("keeps ambiguity resolution actor-owned and state-bound", async () => {
+    const actorId = await repository.bootstrapDevelopmentUser();
+
+    const [otherActor] = await database.db
+      .insert(users)
+      .values({ developmentKey: "ambiguity-other" })
+      .returning();
+
+    const created = await workflowService.create(actorId, {
+      type: "workflow",
+      goal: "Actor-owned ambiguity",
+      steps: [
+        {
+          id: "send",
+          kind: "tool",
+          dependsOn: [],
+          tool: {
+            name: "gmail.messages.send",
+            input: {
+              to: "user@example.com",
+              subject: "Ownership",
+              body: "Body",
+            },
+          },
+        },
+      ],
+    });
+
+    await expect(
+      workflowRepository.resolveAmbiguousOwned(
+        otherActor!.id,
+        created.id,
+        "CONFIRMED_NOT_EXECUTED",
+        new Date(),
+      ),
+    ).resolves.toEqual({
+      outcome: "NOT_FOUND",
+    });
+
+    await expect(
+      workflowRepository.resolveAmbiguousOwned(
+        actorId,
+        created.id,
+        "CONFIRMED_NOT_EXECUTED",
+        new Date(),
+      ),
+    ).resolves.toEqual({
+      outcome: "STATE_INVALID",
+    });
+  });
+
   it("allows only one PostgreSQL recovery claimant", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Race recovery",
@@ -1308,14 +1965,23 @@ describe.sequential("PostgreSQL identity persistence", () => {
           id: "calculate",
           kind: "tool",
           dependsOn: [],
-          tool: { name: "utility.calculator", input: { expression: "1+1" } },
+          tool: {
+            name: "utility.calculator",
+            input: {
+              expression: "1+1",
+            },
+          },
         },
       ],
     });
+
     const old = new Date("2026-01-01T00:00:00.000Z");
+
     await workflowRepository.startOwned(actorId, created.id, old);
     await workflowRepository.claimNext(created.id, old);
+
     const now = new Date("2026-01-01T00:01:00.000Z");
+
     const claims = await Promise.all([
       new WorkflowRepository(database).claimRecoveryOwned(
         actorId,
@@ -1330,7 +1996,9 @@ describe.sequential("PostgreSQL identity persistence", () => {
         now,
       ),
     ]);
+
     expect(claims.filter((claim) => claim !== undefined)).toHaveLength(1);
+
     expect(
       await database.db.select().from(workflowStepExecutions),
     ).toHaveLength(1);
@@ -1338,6 +2006,7 @@ describe.sequential("PostgreSQL identity persistence", () => {
 
   it("fences two durable workers and preserves one attempt and dispatch", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Worker calculator",
@@ -1348,31 +2017,42 @@ describe.sequential("PostgreSQL identity persistence", () => {
           dependsOn: [],
           tool: {
             name: "utility.calculator",
-            input: { expression: "12 * 7" },
+            input: {
+              expression: "12 * 7",
+            },
           },
         },
       ],
     });
+
     const now = new Date("2026-08-21T00:00:00Z");
+
     await workflowRepository.requestExecutionOwned(
       actorId,
       created.id,
       ["workflow.write", "utility.calculator"],
       now,
     );
+
     let dispatches = 0;
+
     const tools = {
       prepare: (request: { tool: string; input: unknown }) =>
         Promise.resolve(preparation(request, "IDEMPOTENT")),
+
       execute: (request: { tool: string; input: unknown }) => {
         dispatches += 1;
+
         return Promise.resolve({
           status: "success" as const,
           tool: request.tool,
-          data: { result: 84 },
+          data: {
+            result: 84,
+          },
         });
       },
     };
+
     const makeWorker = () =>
       new WorkflowWorker(
         {
@@ -1391,27 +2071,38 @@ describe.sequential("PostgreSQL identity persistence", () => {
           unexpectedMemories(),
           unexpectedKnowledge(),
         ),
-        { info() {}, warn() {}, error() {} },
+        {
+          info() {},
+          warn() {},
+          error() {},
+        },
         () => now,
       );
+
     const [first, second] = await Promise.all([
       makeWorker().pollOnce(),
       makeWorker().pollOnce(),
     ]);
+
     expect([first, second].filter(Boolean)).toHaveLength(1);
     expect(dispatches).toBe(1);
+
     expect(await workflowService.getOwned(actorId, created.id)).toMatchObject({
       status: "COMPLETED",
     });
+
     expect(
       await database.db.select().from(workflowStepExecutions),
     ).toHaveLength(1);
+
     const [storedLease] = await database.db.select().from(workflowWorkerLeases);
+
     expect(storedLease?.leaseGeneration).toBe(1);
   });
 
   it("increments an expired lease generation and rejects the stale owner", async () => {
     const actorId = await repository.bootstrapDevelopmentUser();
+
     const created = await workflowService.create(actorId, {
       type: "workflow",
       goal: "Lease generation",
@@ -1422,49 +2113,67 @@ describe.sequential("PostgreSQL identity persistence", () => {
           dependsOn: [],
           tool: {
             name: "utility.calculator",
-            input: { expression: "1 + 1" },
+            input: {
+              expression: "1 + 1",
+            },
           },
         },
       ],
     });
+
     const leases = new WorkflowLeaseRepository(database);
     const start = new Date("2026-08-21T00:00:00Z");
+
     await workflowRepository.requestExecutionOwned(
       actorId,
       created.id,
       ["workflow.write", "utility.calculator"],
       start,
     );
+
     const first = await leases.acquireNext("worker-a", start, 5000);
+
     expect(first?.generation).toBe(1);
+
     const renewed = await leases.heartbeat(
       first!,
       new Date(start.getTime() + 1000),
       5000,
     );
+
     expect(renewed?.expiresAt).toEqual(new Date(start.getTime() + 6000));
+
     await expect(
       leases.heartbeat(
-        { ...first!, owner: "wrong-worker" },
+        {
+          ...first!,
+          owner: "wrong-worker",
+        },
         new Date(start.getTime() + 1001),
         5000,
       ),
     ).resolves.toBeUndefined();
+
     await expect(
       leases.acquireNext("worker-b", new Date(start.getTime() + 5001), 5000),
     ).resolves.toBeUndefined();
+
     const second = await leases.acquireNext(
       "worker-b",
       new Date(start.getTime() + 6001),
       5000,
     );
+
     expect(second?.generation).toBe(2);
+
     await expect(
       leases.assertOwned(first!, new Date(start.getTime() + 6002)),
     ).resolves.toBe(false);
+
     await expect(
       leases.heartbeat(first!, new Date(start.getTime() + 6002), 5000),
     ).resolves.toBeUndefined();
+
     await expect(
       leases.assertOwned(second!, new Date(start.getTime() + 6002)),
     ).resolves.toBe(true);
@@ -1472,7 +2181,10 @@ describe.sequential("PostgreSQL identity persistence", () => {
 });
 
 function preparation(
-  request: { tool: string; input: unknown },
+  request: {
+    tool: string;
+    input: unknown;
+  },
   idempotency: "IDEMPOTENT" | "NON_IDEMPOTENT",
 ) {
   return {
